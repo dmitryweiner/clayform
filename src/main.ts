@@ -17,6 +17,7 @@ import { buildVessel, vesselSurface } from './geo/build';
 import { buildHandles } from './geo/handle';
 import { buildPrintableVessel } from './geo/assemble';
 import { initCSG } from './geo/csg';
+import { analyzeMold } from './geo/mold/analyze';
 import type { HollowState } from './geo/hollow';
 import {
   buildHollowVessel, WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM,
@@ -55,6 +56,8 @@ const statusEl = el('status', HTMLParagraphElement);
 const auditEl = el('audit', HTMLParagraphElement);
 const warningsEl = el('warnings', HTMLParagraphElement);
 const blockersEl = el('blockers', HTMLParagraphElement);
+const schemeNote = el('schemeNote', HTMLParagraphElement);
+const partList = el('partList', HTMLUListElement);
 
 const scene = createScene(view);
 let state: AppState = defaultState();
@@ -161,7 +164,22 @@ function refresh(): void {
     `глины ${formatVolume(clayMl)}`,
   ].join(' · ');
 
-  const warnings: string[] = [];
+  // Схему разъёма считаем по телу без ручки: ручка влияет на выбор фактом
+  // своего существования (сквозное отверстие), а гонять ради этого CSG на
+  // каждое движение ползунка незачем.
+  const scheme = analyzeMold(outer, { hasHandle: state.handle.on });
+  schemeNote.textContent = scheme.reason;
+  partList.textContent = '';
+  for (const part of scheme.parts) {
+    const item = document.createElement('li');
+    const name = document.createElement('span');
+    name.className = 'part-name';
+    name.textContent = part.label;
+    item.append(name);
+    partList.append(item);
+  }
+
+  const warnings: string[] = [...scheme.warnings];
   if (hollow.pinchedFraction > 0) {
     warnings.push(
       `Рельеф уходит внутрь глубже стенки на ${(hollow.pinchedFraction * 100).toFixed(1)} % поверхности — ` +
