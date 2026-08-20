@@ -153,17 +153,69 @@ for (const [id, value] of [['print_wall', '0.8'], ['print_wall', '60'], ['print_
 
 // конечный продукт приложения — файл; проверяем, что он реально выгружается
 label('export');
-const download = await Promise.all([
-  page.waitForEvent('download', { timeout: 30000 }),
-  page.click('#exportBtn'),
-]).then(([d]) => d);
-const stlPath = await download.path();
-const { size } = await stat(stlPath);
-if (!download.suggestedFilename().endsWith('.stl')) {
-  errors.push(`[export] имя файла "${download.suggestedFilename()}"`);
+await expectDownloads(1, 'vessel');
+
+// Литейная оснастка: у каждой схемы своё число деталей. Ручку и носик
+// снимаем — они расширяют габарит и через это меняют выбор схемы, а здесь
+// проверяется именно соответствие «силуэт → число деталей».
+label('mold');
+await page.uncheck('#on_handle');
+await page.uncheck('#on_spout');
+for (const [family, index, tab, expected] of [
+  ['миска', 1, '#tabBath', 1],
+  ['горшок', 0, '#tabBath', 3],
+  ['ваза', 3, '#tabBath', 2],
+  ['ваза', 3, '#tabMaster', 1],
+]) {
+  label(`mold:${family}:${tab}`);
+  await page.locator('#familyGrid .family-btn').nth(index).click();
+  await page.click(tab);
+  await page.waitForFunction(
+    () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
+    { timeout: 60000 },
+  );
+  const parts = await page.locator('#partList li').count();
+  if (parts !== expected) {
+    errors.push(`[mold:${family}${tab}] деталей ${parts}, ожидалось ${expected}`);
+  }
+  const blockers = (await page.locator('#blockers').textContent()).trim();
+  if (blockers) errors.push(`[mold:${family}${tab}] blockers="${blockers}"`);
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/mold-${family}-${tab.slice(4)}.png` });
 }
-// 84 байта заголовка + 50 на треугольник; на 192×192 ждём сотни тысяч
-if (size < 84 + 50 * 10000) errors.push(`[export] подозрительно маленький STL: ${size} байт`);
+
+// экспорт оснастки: у горшка это три отдельных файла
+label('export-mold');
+await page.locator('#familyGrid .family-btn').nth(0).click();
+await page.click('#tabBath');
+await page.waitForFunction(
+  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
+  { timeout: 60000 },
+);
+await expectDownloads(3, 'mold');
+
+async function expectDownloads(count, tag) {
+  const seen = [];
+  const collect = (download) => seen.push(download);
+  page.on('download', collect);
+  await page.click('#exportBtn');
+  const deadline = Date.now() + 120000;
+  while (seen.length < count && Date.now() < deadline) {
+    await page.waitForTimeout(200);
+  }
+  page.off('download', collect);
+  if (seen.length !== count) {
+    errors.push(`[${tag}] файлов ${seen.length}, ожидалось ${count}`);
+    return;
+  }
+  for (const download of seen) {
+    if (!download.suggestedFilename().endsWith('.stl')) {
+      errors.push(`[${tag}] имя файла "${download.suggestedFilename()}"`);
+    }
+    const { size } = await stat(await download.path());
+    // 84 байта заголовка + 50 на треугольник
+    if (size < 84 + 50 * 1000) errors.push(`[${tag}] подозрительно маленький STL: ${size} байт`);
+  }
+}
 
 await app.close();
 

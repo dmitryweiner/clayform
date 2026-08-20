@@ -1,6 +1,9 @@
 // Точка входа: состояние → ядро геометрии → рендер и UI.
-// Растёт по вехам плана; сейчас (M5) — форма, рельеф, накатка, ручка с
-// носиком и экспорт полого изделия для прямой печати глиной.
+//
+// Два разных по цене конвейера. Изделие строится чисто параметрически за
+// десяток миллисекунд и пересобирается на каждое движение ползунка. Оснастка
+// требует булевых операций в WASM и стоит сотни миллисекунд, поэтому она
+// пересобирается с задержкой, когда пользователь остановился.
 
 import './style.css';
 import { el } from './ui/dom';
@@ -9,37 +12,34 @@ import { renderFamilyPicker } from './ui/family';
 import { renderParams } from './ui/params';
 import { renderReliefCards } from './ui/reliefCards';
 import { renderAttachCards } from './ui/attachCards';
-import { renderControls } from './ui/controls';
-import type { Control } from './ui/controls';
+import { renderExportPanel } from './ui/exportPanel';
 import { setupAdjustmentButtons } from './ui/adjust';
 import { drawProfileGraph } from './ui/graph';
+import type { SurfaceMesh } from './geo/surface';
 import { buildVessel, vesselSurface } from './geo/build';
 import { buildHandles } from './geo/handle';
-import { buildPrintableVessel } from './geo/assemble';
+import { buildSolidVessel, buildPrintableVessel } from './geo/assemble';
 import { initCSG } from './geo/csg';
-import { analyzeMold } from './geo/mold/analyze';
-import type { HollowState } from './geo/hollow';
-import {
-  buildHollowVessel, WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM,
-} from './geo/hollow';
+import type { MoldPartMesh } from './geo/mold';
+import { analyzeMold, buildMaster, buildBaths } from './geo/mold';
+import { buildHollowVessel } from './geo/hollow';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
 import { rouletteRepeats } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
-import type { AppState } from './state/schema';
+import type { AppState, ExportMode } from './state/schema';
 import { defaultState, stateForFamily, sanitizeState, toBuildParams, RESOLUTIONS } from './state/schema';
 
-// Превью строится на главном потоке: 192×192 — это ~10 мс, незаметно даже при
-// перетаскивании ползунка, и ровно та детализация, что уходит в STL по
-// умолчанию. Более высокие значения из «Детализации» применяются к экспорту.
+/** Детализация превью изделия: ~10 мс на пересборку, незаметно при перетаскивании. */
 const PREVIEW_SEGMENTS = 192;
-/**
- * Полная проверка меша (манифолдность, свесы) стоит ~70 мс — на каждое
- * движение ползунка это заметная задержка. Меши у нас замкнуты по построению,
- * поэтому проверка нужна как страховка, а не покадрово: гоняем её, когда
- * пользователь остановился.
- */
+/** Для оснастки сетку огрубляем: стоимость булевых операций растёт с числом граней. */
+const MOLD_PREVIEW_SEGMENTS = 96;
+/** Полная проверка меша стоит ~70 мс — гоняем её, когда пользователь остановился. */
 const AUDIT_DELAY_MS = 220;
+/** Сборка оснастки стоит сотни миллисекунд — ждём паузы подольше. */
+const MOLD_DELAY_MS = 400;
+/** Зазор между деталями в «разнесённом» превью, мм. */
+const EXPLODE_GAP_MM = 20;
 
 const view = el('view', HTMLCanvasElement);
 const panel = el('panel', HTMLElement);
@@ -56,25 +56,10 @@ const statusEl = el('status', HTMLParagraphElement);
 const auditEl = el('audit', HTMLParagraphElement);
 const warningsEl = el('warnings', HTMLParagraphElement);
 const blockersEl = el('blockers', HTMLParagraphElement);
-const schemeNote = el('schemeNote', HTMLParagraphElement);
-const partList = el('partList', HTMLUListElement);
 
 const scene = createScene(view);
+const csgReady = initCSG();
 let state: AppState = defaultState();
-
-const HOLLOW_CONTROLS: Control<HollowState>[] = [
-  {
-    kind: 'range', key: 'wall', label: 'Стенка', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1, unit: 'мм',
-    hint: 'толщина меряется по нормали к поверхности',
-    get: (s) => s.wallMm,
-    set: (s, v) => ({ ...s, wallMm: v }),
-  },
-  {
-    kind: 'range', key: 'base', label: 'Дно', min: BASE_MIN_MM, max: BASE_MAX_MM, step: 0.5, unit: 'мм',
-    get: (s) => s.baseMm,
-    set: (s, v) => ({ ...s, baseMm: v }),
-  },
-];
 
 const picker = renderFamilyPicker(familyGrid, state.family, (id) => {
   applyState(stateForFamily(id, state));
@@ -99,12 +84,20 @@ const attachRows = renderAttachCards(
   (spout) => applyState({ ...state, spout }),
 );
 
-const hollowRows = renderControls(
+const exportPanel = renderExportPanel(
+  {
+    vessel: el('tabVessel', HTMLButtonElement),
+    master: el('tabMaster', HTMLButtonElement),
+    bath: el('tabBath', HTMLButtonElement),
+  },
   exportParams,
-  HOLLOW_CONTROLS,
+  el('schemeNote', HTMLParagraphElement),
+  el('partList', HTMLUListElement),
   () => state.hollow,
+  () => state.mold,
+  (exportMode) => applyState({ ...state, exportMode }),
   (hollow) => applyState({ ...state, hollow }),
-  'print',
+  (mold) => applyState({ ...state, mold }),
 );
 
 function renderShapeParams(): ReturnType<typeof renderParams> {
@@ -126,15 +119,21 @@ function applyState(next: AppState): void {
   }
   reliefRows.sync(state.relief, state.roulette);
   attachRows.sync(state.handle, state.spout);
-  hollowRows.sync(state.hollow);
+  exportPanel.sync(state.exportMode, state.hollow, state.mold);
   heightInput.value = String(Math.round(state.heightMm));
   resolutionSel.value = String(state.resolution);
   refresh();
 }
 
 let auditTimer: ReturnType<typeof setTimeout> | null = null;
+let moldTimer: ReturnType<typeof setTimeout> | null = null;
+/** Растёт на каждую пересборку: поздний ответ от старой сборки не должен перебить свежую. */
+let generation = 0;
 
 function refresh(): void {
+  generation++;
+  const stamp = generation;
+
   const profile = buildProfile(state.family, state.shape, state.heightMm);
   drawProfileGraph(profileGraph, profile);
 
@@ -147,37 +146,13 @@ function refresh(): void {
 
   const buildParams = toBuildParams(state, PREVIEW_SEGMENTS);
   const hollow = buildHollowVessel(buildParams, state.hollow);
-  // Ручку в превью показываем отдельным мешем, а не результатом булевого
-  // объединения: непрозрачные пересекающиеся тела выглядят ровно как их
-  // union, а CSG на каждое движение ползунка стоил бы 300 мс вместо 10.
-  // В STL уходит уже настоящее объединение — там оно обязательно.
-  const surface = vesselSurface(buildParams);
-  const handles = buildHandles(state.handle, surface.profile, surface.heightMm);
-  scene.setMeshes([hollow.mesh, ...handles]);
+  const outer = buildVessel(buildParams);
 
-  const outer = buildVessel(toBuildParams(state, PREVIEW_SEGMENTS));
-  const widthMm = outerWidth(outer.positions);
-  const clayMl = signedVolume(hollow.mesh.positions, hollow.mesh.indices) / 1000;
-  statusEl.textContent = [
-    `⌀${widthMm.toFixed(0)} × ${state.heightMm.toFixed(0)} мм`,
-    `вместимость ${formatVolume(hollow.capacityMl)}`,
-    `глины ${formatVolume(clayMl)}`,
-  ].join(' · ');
-
-  // Схему разъёма считаем по телу без ручки: ручка влияет на выбор фактом
-  // своего существования (сквозное отверстие), а гонять ради этого CSG на
-  // каждое движение ползунка незачем.
+  // Схему разъёма считаем по телу без ручки: ручка влияет на выбор самим
+  // фактом своего существования (сквозное отверстие), а гонять ради этого
+  // CSG на каждое движение ползунка незачем.
   const scheme = analyzeMold(outer, { hasHandle: state.handle.on });
-  schemeNote.textContent = scheme.reason;
-  partList.textContent = '';
-  for (const part of scheme.parts) {
-    const item = document.createElement('li');
-    const name = document.createElement('span');
-    name.className = 'part-name';
-    name.textContent = part.label;
-    item.append(name);
-    partList.append(item);
-  }
+  exportPanel.setSchemeNote(scheme.reason);
 
   const warnings: string[] = [...scheme.warnings];
   if (hollow.pinchedFraction > 0) {
@@ -188,12 +163,96 @@ function refresh(): void {
   }
   warningsEl.textContent = warnings.join('\n');
 
-  auditEl.textContent = 'проверка…';
+  const widthMm = outerWidth(outer.positions);
+  const clayMl = signedVolume(hollow.mesh.positions, hollow.mesh.indices) / 1000;
+  statusEl.textContent = [
+    `⌀${widthMm.toFixed(0)} × ${state.heightMm.toFixed(0)} мм`,
+    `вместимость ${formatVolume(hollow.capacityMl)}`,
+    `глины ${formatVolume(clayMl)}`,
+  ].join(' · ');
+
+  if (moldTimer) clearTimeout(moldTimer);
   if (auditTimer) clearTimeout(auditTimer);
-  auditTimer = setTimeout(() => audit(hollow.mesh), AUDIT_DELAY_MS);
+
+  if (state.exportMode === 'vessel') {
+    // Ручку показываем отдельным мешем, а не результатом объединения:
+    // непрозрачные пересекающиеся тела выглядят ровно как их union, а CSG
+    // на каждое движение ползунка стоил бы 300 мс вместо 10. В STL уходит
+    // уже настоящее объединение — там оно обязательно.
+    const surface = vesselSurface(buildParams);
+    scene.setMeshes([hollow.mesh, ...buildHandles(state.handle, surface.profile, surface.heightMm)]);
+    exportPanel.setParts([{ label: 'Изделие', note: `${(clayMl / 1000).toFixed(2)} л глины` }]);
+    exportBtn.textContent = 'Экспорт STL';
+    auditEl.textContent = 'проверка…';
+    auditTimer = setTimeout(() => audit(hollow.mesh), AUDIT_DELAY_MS);
+  } else {
+    exportPanel.setParts(scheme.parts.map((part) => ({ label: part.label })));
+    exportBtn.textContent = state.exportMode === 'master' ? 'Экспорт мастера' : 'Экспорт ванночек';
+    auditEl.textContent = 'собираю оснастку…';
+    moldTimer = setTimeout(() => void showMold(stamp), MOLD_DELAY_MS);
+  }
 }
 
-function audit(mesh: ReturnType<typeof buildHollowVessel>['mesh']): void {
+async function showMold(stamp: number): Promise<void> {
+  try {
+    const csg = await csgReady;
+    if (stamp !== generation) return;
+    const parts = buildMoldParts(csg, MOLD_PREVIEW_SEGMENTS);
+    if (stamp !== generation) return;
+
+    scene.setMeshes(explode(parts.map((part) => part.mesh)));
+    exportPanel.setParts(parts.map((part) => ({
+      label: part.label,
+      note: sizeNote(part.mesh),
+    })));
+    const triangles = parts.reduce((sum, part) => sum + part.mesh.indices.length / 3, 0);
+    auditEl.textContent = `${parts.length} дет. · ${Math.round(triangles / 1000)} тыс. треугольников`;
+    blockersEl.textContent = '';
+    exportBtn.disabled = false;
+  } catch (error) {
+    if (stamp !== generation) return;
+    auditEl.textContent = '';
+    blockersEl.textContent = `Оснастку собрать не удалось: ${message(error)}`;
+    exportBtn.disabled = true;
+  }
+}
+
+/** Детали оснастки для текущего режима и заданной детализации сетки. */
+function buildMoldParts(csg: Awaited<typeof csgReady>, segments: number): MoldPartMesh[] {
+  const params = toBuildParams(state, segments);
+  const solid = buildSolidVessel(csg, params, state.handle);
+  const report = analyzeMold(solid, { hasHandle: state.handle.on });
+  return state.exportMode === 'master'
+    ? [buildMaster(csg, solid, report, state.mold)]
+    : buildBaths(csg, solid, report, state.mold);
+}
+
+/** Расставляет детали в ряд, чтобы их было видно по отдельности. */
+function explode(meshes: SurfaceMesh[]): SurfaceMesh[] {
+  let cursor = 0;
+  const placed: SurfaceMesh[] = [];
+  for (const mesh of meshes) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      if (mesh.positions[i] < min) min = mesh.positions[i];
+      if (mesh.positions[i] > max) max = mesh.positions[i];
+    }
+    const shift = cursor - min;
+    const positions = new Float32Array(mesh.positions);
+    for (let i = 0; i < positions.length; i += 3) positions[i] += shift;
+    placed.push({ ...mesh, positions });
+    cursor += max - min + EXPLODE_GAP_MM;
+  }
+  return placed;
+}
+
+function sizeNote(mesh: SurfaceMesh): string {
+  const { extents } = validateMesh({ ...mesh, normals: mesh.normals });
+  return `${extents.map((x) => Math.round(x)).join('×')} мм`;
+}
+
+function audit(mesh: SurfaceMesh): void {
   const report = validateMesh(mesh);
   const assessment = assessExport(report, true);
   const overhang = overhangFraction(mesh, 60);
@@ -224,6 +283,10 @@ function formatVolume(millilitres: number): string {
   return millilitres >= 1000 ? `${(millilitres / 1000).toFixed(2)} л` : `${millilitres.toFixed(0)} мл`;
 }
 
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 heightInput.addEventListener('input', () => {
   applyState({ ...state, heightMm: Number(heightInput.value) });
 });
@@ -239,30 +302,40 @@ resolutionSel.addEventListener('change', () => {
   applyState({ ...state, resolution: Number(resolutionSel.value) });
 });
 
-const csgReady = initCSG();
-
 exportBtn.addEventListener('click', () => {
-  void exportVessel();
+  void runExport(state.exportMode);
 });
 
-async function exportVessel(): Promise<void> {
+async function runExport(mode: ExportMode): Promise<void> {
   const label = exportBtn.textContent;
   exportBtn.disabled = true;
   exportBtn.textContent = 'Собираю…';
   try {
     const csg = await csgReady;
-    const { mesh } = buildPrintableVessel(
-      csg, toBuildParams(state, state.resolution), state.hollow, state.handle,
-    );
-    const assessment = assessExport(validateMesh(mesh), true);
-    if (assessment.blocking.length > 0) {
-      blockersEl.textContent = assessment.blocking.join('\n');
+    const files = mode === 'vessel'
+      ? [{
+          id: state.family,
+          label: 'Изделие',
+          mesh: buildPrintableVessel(
+            csg, toBuildParams(state, state.resolution), state.hollow, state.handle,
+          ).mesh,
+        }]
+      : buildMoldParts(csg, state.resolution);
+
+    const blocking = files.flatMap((file) => assessExport(validateMesh(file.mesh), true).blocking);
+    if (blocking.length > 0) {
+      blockersEl.textContent = blocking.join('\n');
       return;
     }
     blockersEl.textContent = '';
-    download(encodeSTL(mesh, { name: state.family }), `clayform-${state.family}.stl`);
+    for (const file of files) {
+      const name = `clayform-${state.family}-${file.id}.stl`;
+      download(encodeSTL(file.mesh, { name: file.id }), name);
+      // браузер глотает пачку одновременных загрузок — разносим по времени
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
   } catch (error) {
-    blockersEl.textContent = `Сборка не удалась: ${error instanceof Error ? error.message : String(error)}`;
+    blockersEl.textContent = `Сборка не удалась: ${message(error)}`;
   } finally {
     exportBtn.textContent = label;
     exportBtn.disabled = false;

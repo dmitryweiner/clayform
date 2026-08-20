@@ -16,6 +16,8 @@ import type { HandleState } from '../geo/handle';
 import { defaultHandle, sanitizeHandle } from '../geo/handle';
 import type { SpoutState } from '../geo/spout';
 import { defaultSpout, sanitizeSpout } from '../geo/spout';
+import type { MoldState } from '../geo/mold';
+import { defaultMold, sanitizeMold } from '../geo/mold';
 
 export const STATE_VERSION = 1;
 
@@ -40,6 +42,7 @@ export interface AppState {
   handle: HandleState;
   spout: SpoutState;
   hollow: HollowState;
+  mold: MoldState;
   exportMode: ExportMode;
   /** сегментов сетки для экспортной сборки */
   resolution: number;
@@ -61,6 +64,7 @@ export function defaultState(): AppState {
     handle: defaultHandle(),
     spout: defaultSpout(),
     hollow: defaultHollow(),
+    mold: defaultMold(),
     exportMode: 'vessel',
     resolution: 192,
   };
@@ -121,6 +125,7 @@ export function sanitizeState(raw: unknown): AppState {
     handle: sanitizeHandle(source.handle),
     spout: sanitizeSpout(source.spout),
     hollow: sanitizeHollow(source.hollow),
+    mold: sanitizeMold(source.mold),
     exportMode: exportModeOf(source.exportMode),
     resolution,
   };
