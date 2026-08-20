@@ -9,6 +9,8 @@ import type { SurfaceMesh } from '../geo/surface';
 
 export interface SceneHandle {
   setMesh(mesh: SurfaceMesh): void;
+  /** несколько деталей разом — «взрыв»-превью разъёмной формы */
+  setMeshes(meshes: SurfaceMesh[]): void;
   dispose(): void;
 }
 
@@ -48,8 +50,10 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
 
-  let meshObj: THREE.Mesh | null = null;
+  const objects: THREE.Mesh[] = [];
   let disposed = false;
+  /** радиус модели на прошлой посадке камеры — чтобы не сбивать зум мышью */
+  let fittedRadius = 0;
 
   function resize(): void {
     const w = canvas.clientWidth;
@@ -72,39 +76,68 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   }
   requestAnimationFrame(frame);
 
+  /** Дистанция, с которой габаритная сфера целиком попадает в кадр. */
+  function fitDistance(radius: number): number {
+    const vFov = (camera.fov * Math.PI) / 180;
+    const aspect = camera.aspect > 0 ? camera.aspect : 1;
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
+    return (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.12;
+  }
+
+  function clearObjects(): void {
+    for (const obj of objects) {
+      group.remove(obj);
+      obj.geometry.dispose();
+    }
+    objects.length = 0;
+  }
+
   return {
     setMesh(mesh: SurfaceMesh): void {
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
-      geometry.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
-      geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
-      geometry.computeBoundingBox();
-      const bb = geometry.boundingBox;
-      if (meshObj) {
-        meshObj.geometry.dispose();
-        meshObj.geometry = geometry;
-      } else {
-        meshObj = new THREE.Mesh(geometry, material);
-        group.add(meshObj);
+      this.setMeshes([mesh]);
+    },
+
+    setMeshes(meshes: SurfaceMesh[]): void {
+      clearObjects();
+      const bounds = new THREE.Box3();
+      for (const mesh of meshes) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
+        geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+        geometry.computeBoundingBox();
+        if (geometry.boundingBox) bounds.union(geometry.boundingBox);
+        const obj = new THREE.Mesh(geometry, material);
+        group.add(obj);
+        objects.push(obj);
       }
-      if (bb) {
-        // центр модели в начало координат (в z-up координатах ядра)
-        const c = new THREE.Vector3();
-        bb.getCenter(c);
-        meshObj.position.set(-c.x, -c.y, -c.z);
-        const size = new THREE.Vector3();
-        bb.getSize(size);
-        controls.target.set(0, 0, 0);
-        const radius = Math.max(size.x, size.y, size.z);
-        if (camera.position.length() < radius * 0.8 || camera.position.length() > radius * 8) {
-          camera.position.setLength(radius * 1.9);
-        }
+      if (bounds.isEmpty()) return;
+
+      // центр композиции в начало координат (в z-up координатах ядра)
+      const center = new THREE.Vector3();
+      bounds.getCenter(center);
+      for (const obj of objects) obj.position.set(-center.x, -center.y, -center.z);
+      controls.target.set(0, 0, 0);
+
+      const size = new THREE.Vector3();
+      bounds.getSize(size);
+      const radius = size.length() / 2;
+      const distance = fitDistance(radius);
+      camera.near = Math.max(0.1, distance / 500);
+      camera.far = distance * 20;
+      camera.updateProjectionMatrix();
+      // Зум, выставленный мышью, не трогаем, пока модель прежнего размера;
+      // смена семейства или высоты меняет радиус — тогда сажаем заново.
+      if (Math.abs(radius - fittedRadius) > fittedRadius * 0.08) {
+        camera.position.setLength(distance);
+        fittedRadius = radius;
       }
     },
+
     dispose(): void {
       disposed = true;
       controls.dispose();
-      meshObj?.geometry.dispose();
+      clearObjects();
       material.dispose();
       renderer.dispose();
     },
