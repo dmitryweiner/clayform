@@ -6,6 +6,10 @@
 import type { Params } from '../geo/profiles';
 import { familyById, isFamilyId, clampFamilyParams } from '../geo/profiles';
 import type { BuildParams } from '../geo/build';
+import type { ReliefState } from '../geo/relief';
+import { defaultRelief, sanitizeRelief } from '../geo/relief';
+import type { RouletteState } from '../geo/roulette';
+import { defaultRoulette, sanitizeRoulette } from '../geo/roulette';
 
 export const STATE_VERSION = 1;
 
@@ -16,6 +20,8 @@ export interface AppState {
   /** параметры выбранного семейства */
   shape: Params;
   heightMm: number;
+  relief: ReliefState;
+  roulette: RouletteState;
   /** сегментов сетки для экспортной сборки */
   resolution: number;
 }
@@ -31,6 +37,8 @@ export function defaultState(): AppState {
     family: family.id,
     shape: clampFamilyParams(family.id, {}),
     heightMm: family.defaultHeightMm,
+    relief: defaultRelief(),
+    roulette: defaultRoulette(),
     resolution: 192,
   };
 }
@@ -85,6 +93,8 @@ export function sanitizeState(raw: unknown): AppState {
     family,
     shape: clampFamilyParams(family, numericRecord(source.shape)),
     heightMm,
+    relief: sanitizeRelief(source.relief),
+    roulette: sanitizeRoulette(source.roulette),
     resolution,
   };
 }
@@ -97,5 +107,7 @@ export function toBuildParams(state: AppState, segments: number): BuildParams {
     heightMm: state.heightMm,
     nu: segments,
     nv: segments,
+    relief: state.relief,
+    roulette: state.roulette,
   };
 }

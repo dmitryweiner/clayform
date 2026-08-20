@@ -4,9 +4,13 @@
 
 import type { Grid, SurfaceMesh } from './surface';
 import { sampleGrid, assembleMesh } from './surface';
-import { meshNormals } from './normals';
+import { meshNormals, gridNormals } from './normals';
 import type { Params } from './profiles';
 import { buildProfile, profileRadius, familyById, clampFamilyParams, MIN_RADIUS_MM } from './profiles';
+import type { ReliefState } from './relief';
+import { defaultRelief, reliefDepth } from './relief';
+import type { RouletteState } from './roulette';
+import { defaultRoulette, makeRoulette } from './roulette';
 
 export interface BuildParams {
   /** идентификатор семейства: pot | bowl | cup | vase */
@@ -18,12 +22,22 @@ export interface BuildParams {
   nu: number;
   /** сегментов по высоте */
   nv: number;
+  relief: ReliefState;
+  roulette: RouletteState;
 }
 
 const NU_MIN = 8;
 const NU_MAX = 1024;
 const NV_MIN = 4;
 const NV_MAX = 1024;
+const TAU = Math.PI * 2;
+
+/**
+ * Доля высоты, на которой рельеф набирает силу от дна. Кольцо j = 0 обязано
+ * остаться нетронутым: из него строится плоская крышка дна, и смещённое
+ * кольцо означало бы, что изделие не встаёт на стол принтера.
+ */
+const BASE_GUARD = 0.03;
 
 export function defaultBuildParams(): BuildParams {
   const family = familyById('pot');
@@ -33,6 +47,8 @@ export function defaultBuildParams(): BuildParams {
     heightMm: family.defaultHeightMm,
     nu: 192,
     nv: 192,
+    relief: defaultRelief(),
+    roulette: defaultRoulette(),
   };
 }
 
@@ -41,7 +57,7 @@ const clampInt = (x: number, lo: number, hi: number): number =>
 
 /**
  * Сетка тела вращения. Ось — z, дно в z = 0, обход u против часовой стрелки
- * (нормали наружу). Рельеф M3 встроится здесь, между силуэтом и сборкой.
+ * (нормали наружу). Рельеф и накатка смещают узлы вдоль нормали силуэта.
  */
 export function vesselGrid(p: BuildParams): Grid {
   const nu = clampInt(p.nu, NU_MIN, NU_MAX);
@@ -49,12 +65,57 @@ export function vesselGrid(p: BuildParams): Grid {
   const heightMm = Number.isFinite(p.heightMm) ? Math.max(1, p.heightMm) : 100;
   const profile = buildProfile(p.family, p.shape, heightMm);
 
-  return sampleGrid(nu, nv, (u, v, out) => {
+  const grid = sampleGrid(nu, nv, (u, v, out) => {
     const r = Math.max(MIN_RADIUS_MM, profileRadius(profile, v));
     out[0] = r * Math.cos(u);
     out[1] = r * Math.sin(u);
     out[2] = v * heightMm;
   });
+
+  const relief = p.relief ?? defaultRelief();
+  const roulette = p.roulette ?? defaultRoulette();
+  const roll = makeRoulette(roulette, {
+    heightMm,
+    // шаг накатки колесо «видит» на той окружности, по которой катится
+    bandRadiusMm: profileRadius(profile, roulette.bandCenter),
+  });
+  if (!relief.wave.on && !roulette.on) return grid;
+
+  // Смещаем по нормалям исходного силуэта, а не пересчитываем их по ходу:
+  // иначе рельеф съезжал бы сам от себя и волна переставала быть волной.
+  const normals = gridNormals(grid);
+  const positions = grid.positions;
+  for (let j = 0; j <= nv; j++) {
+    const v = j / nv;
+    const guard = smoothstep(v / BASE_GUARD);
+    if (guard === 0) continue;
+    for (let i = 0; i < nu; i++) {
+      const u = (TAU * i) / nu;
+      const depth = (reliefDepth(relief, u, v) + roll(u, v)) * guard;
+      if (depth === 0) continue;
+      const k = (j * nu + i) * 3;
+      let x = positions[k] + normals[k] * depth;
+      let y = positions[k + 1] + normals[k + 1] * depth;
+      const z = positions[k + 2] + normals[k + 2] * depth;
+      // глубокая волна внутрь не должна проткнуть ось: за ней поверхность
+      // вывернулась бы наизнанку и меш перестал быть манифолдом
+      const r = Math.hypot(x, y);
+      if (r < MIN_RADIUS_MM) {
+        const scale = r > 1e-9 ? MIN_RADIUS_MM / r : 0;
+        x = r > 1e-9 ? x * scale : MIN_RADIUS_MM * Math.cos(u);
+        y = r > 1e-9 ? y * scale : MIN_RADIUS_MM * Math.sin(u);
+      }
+      positions[k] = x;
+      positions[k + 1] = y;
+      positions[k + 2] = z;
+    }
+  }
+  return grid;
+}
+
+function smoothstep(x: number): number {
+  const q = Math.min(1, Math.max(0, x));
+  return q * q * (3 - 2 * q);
 }
 
 /** Замкнутый солид изделия: боковая поверхность + дно + верх. */

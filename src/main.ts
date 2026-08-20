@@ -7,21 +7,27 @@ import { el } from './ui/dom';
 import { createScene } from './render/scene';
 import { renderFamilyPicker } from './ui/family';
 import { renderParams } from './ui/params';
+import { renderReliefCards } from './ui/reliefCards';
 import { setupAdjustmentButtons } from './ui/adjust';
 import { drawProfileGraph } from './ui/graph';
 import { buildVessel } from './geo/build';
-import { buildProfile, familyById } from './geo/profiles';
+import { buildProfile, familyById, profileRadius } from './geo/profiles';
+import { rouletteRepeats } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction } from './geo/validate';
 import type { AppState } from './state/schema';
 import { defaultState, stateForFamily, sanitizeState, toBuildParams, RESOLUTIONS } from './state/schema';
 
-const PREVIEW_SEGMENTS = 96;
+// Превью строится на главном потоке: 192×192 — это ~12 мс, незаметно даже
+// при перетаскивании ползунка, и ровно та детализация, что уходит в STL по
+// умолчанию. Более высокие значения из «Детализации» применяются к экспорту.
+const PREVIEW_SEGMENTS = 192;
 
 const view = el('view', HTMLCanvasElement);
 const panel = el('panel', HTMLElement);
 const familyGrid = el('familyGrid', HTMLDivElement);
 const shapeParams = el('shapeParams', HTMLDivElement);
+const reliefCards = el('reliefCards', HTMLDivElement);
 const profileGraph = el('profileGraph', HTMLCanvasElement);
 const heightInput = el('heightMm', HTMLInputElement);
 const resolutionSel = el('resolution', HTMLSelectElement);
@@ -39,6 +45,14 @@ const picker = renderFamilyPicker(familyGrid, state.family, (id) => {
 setupAdjustmentButtons(panel);
 
 let paramRows = renderShapeParams();
+
+const reliefRows = renderReliefCards(
+  reliefCards,
+  () => state.relief,
+  () => state.roulette,
+  (relief) => applyState({ ...state, relief }),
+  (roulette) => applyState({ ...state, roulette }),
+);
 
 function renderShapeParams(): ReturnType<typeof renderParams> {
   return renderParams(shapeParams, familyById(state.family).params, state.shape, (key, value) => {
@@ -63,7 +77,16 @@ function applyState(next: AppState): void {
 }
 
 function refresh(): void {
-  drawProfileGraph(profileGraph, buildProfile(state.family, state.shape, state.heightMm));
+  const profile = buildProfile(state.family, state.shape, state.heightMm);
+  drawProfileGraph(profileGraph, profile);
+  reliefRows.sync(state.relief, state.roulette);
+
+  const bandRadiusMm = profileRadius(profile, state.roulette.bandCenter);
+  const repeats = rouletteRepeats(state.roulette, { heightMm: state.heightMm, bandRadiusMm });
+  const step = (2 * Math.PI * bandRadiusMm) / repeats;
+  reliefRows.setRepeatsNote(
+    `${repeats} оттисков за оборот, шаг ${step.toFixed(1)} мм по окружности ⌀${(bandRadiusMm * 2).toFixed(0)} мм.`,
+  );
 
   const mesh = buildVessel(toBuildParams(state, PREVIEW_SEGMENTS));
   scene.setMesh(mesh);

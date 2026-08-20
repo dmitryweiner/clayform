@@ -73,6 +73,45 @@ await page.waitForTimeout(200);
 const heightStatus = await page.locator('#status').textContent();
 if (!heightStatus.includes('× 300 мм')) errors.push(`[height] status="${heightStatus}"`);
 
+// рельеф: каждая форма волны и каждый узор накатки строятся без ошибок
+label('relief');
+await page.locator('#familyGrid .family-btn').nth(0).click();
+await page.waitForTimeout(150);
+await page.check('#on_wave');
+await page.fill('#wave_amp', '3');
+await page.waitForTimeout(150);
+for (const shape of await page.$$eval('#wave_shape option', (o) => o.map((x) => x.value))) {
+  label(`wave:${shape}`);
+  await page.selectOption('#wave_shape', shape);
+  for (const axis of ['z', 'theta', 'spiral']) {
+    await page.selectOption('#wave_axis', axis);
+    await page.waitForTimeout(80);
+    const status = await page.locator('#status').textContent();
+    if (!status.includes('замкнуто ✓')) errors.push(`[wave:${shape}/${axis}] status="${status}"`);
+  }
+}
+
+label('wave2');
+await page.check('#on_wave2');
+await page.waitForTimeout(150);
+if (!(await page.locator('#status').textContent()).includes('замкнуто ✓')) {
+  errors.push('[wave2] меш перестал быть замкнутым');
+}
+
+label('roulette');
+await page.check('#on_roulette');
+await page.fill('#roul_bandWidth', '40');
+await page.fill('#roul_depth', '2');
+await page.waitForTimeout(150);
+for (const pattern of await page.$$eval('#roul_pattern option', (o) => o.map((x) => x.value))) {
+  label(`roulette:${pattern}`);
+  await page.selectOption('#roul_pattern', pattern);
+  await page.waitForTimeout(120);
+  const status = await page.locator('#status').textContent();
+  if (!status.includes('замкнуто ✓')) errors.push(`[roulette:${pattern}] status="${status}"`);
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-${pattern}.png` });
+}
+
 await app.close();
 
 if (errors.length) {
