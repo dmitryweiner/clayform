@@ -1,6 +1,6 @@
 // Точка входа: состояние → ядро геометрии → рендер и UI.
-// Растёт по вехам плана; сейчас (M4) — форма, рельеф, накатка и экспорт
-// полого изделия для прямой печати глиной.
+// Растёт по вехам плана; сейчас (M5) — форма, рельеф, накатка, ручка с
+// носиком и экспорт полого изделия для прямой печати глиной.
 
 import './style.css';
 import { el } from './ui/dom';
@@ -8,11 +8,15 @@ import { createScene } from './render/scene';
 import { renderFamilyPicker } from './ui/family';
 import { renderParams } from './ui/params';
 import { renderReliefCards } from './ui/reliefCards';
+import { renderAttachCards } from './ui/attachCards';
 import { renderControls } from './ui/controls';
 import type { Control } from './ui/controls';
 import { setupAdjustmentButtons } from './ui/adjust';
 import { drawProfileGraph } from './ui/graph';
-import { buildVessel } from './geo/build';
+import { buildVessel, vesselSurface } from './geo/build';
+import { buildHandles } from './geo/handle';
+import { buildPrintableVessel } from './geo/assemble';
+import { initCSG } from './geo/csg';
 import type { HollowState } from './geo/hollow';
 import {
   buildHollowVessel, WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM,
@@ -41,6 +45,7 @@ const panel = el('panel', HTMLElement);
 const familyGrid = el('familyGrid', HTMLDivElement);
 const shapeParams = el('shapeParams', HTMLDivElement);
 const reliefCards = el('reliefCards', HTMLDivElement);
+const attachCards = el('attachCards', HTMLDivElement);
 const exportParams = el('exportParams', HTMLDivElement);
 const profileGraph = el('profileGraph', HTMLCanvasElement);
 const heightInput = el('heightMm', HTMLInputElement);
@@ -83,6 +88,14 @@ const reliefRows = renderReliefCards(
   (roulette) => applyState({ ...state, roulette }),
 );
 
+const attachRows = renderAttachCards(
+  attachCards,
+  () => state.handle,
+  () => state.spout,
+  (handle) => applyState({ ...state, handle }),
+  (spout) => applyState({ ...state, spout }),
+);
+
 const hollowRows = renderControls(
   exportParams,
   HOLLOW_CONTROLS,
@@ -109,6 +122,7 @@ function applyState(next: AppState): void {
     paramRows.setValues(state.shape);
   }
   reliefRows.sync(state.relief, state.roulette);
+  attachRows.sync(state.handle, state.spout);
   hollowRows.sync(state.hollow);
   heightInput.value = String(Math.round(state.heightMm));
   resolutionSel.value = String(state.resolution);
@@ -128,8 +142,15 @@ function refresh(): void {
     `${repeats} оттисков за оборот, шаг ${step.toFixed(1)} мм по окружности ⌀${(bandRadiusMm * 2).toFixed(0)} мм.`,
   );
 
-  const hollow = buildHollowVessel(toBuildParams(state, PREVIEW_SEGMENTS), state.hollow);
-  scene.setMesh(hollow.mesh);
+  const buildParams = toBuildParams(state, PREVIEW_SEGMENTS);
+  const hollow = buildHollowVessel(buildParams, state.hollow);
+  // Ручку в превью показываем отдельным мешем, а не результатом булевого
+  // объединения: непрозрачные пересекающиеся тела выглядят ровно как их
+  // union, а CSG на каждое движение ползунка стоил бы 300 мс вместо 10.
+  // В STL уходит уже настоящее объединение — там оно обязательно.
+  const surface = vesselSurface(buildParams);
+  const handles = buildHandles(state.handle, surface.profile, surface.heightMm);
+  scene.setMeshes([hollow.mesh, ...handles]);
 
   const outer = buildVessel(toBuildParams(state, PREVIEW_SEGMENTS));
   const widthMm = outerWidth(outer.positions);
@@ -200,15 +221,35 @@ resolutionSel.addEventListener('change', () => {
   applyState({ ...state, resolution: Number(resolutionSel.value) });
 });
 
+const csgReady = initCSG();
+
 exportBtn.addEventListener('click', () => {
-  const { mesh } = buildHollowVessel(toBuildParams(state, state.resolution), state.hollow);
-  const assessment = assessExport(validateMesh(mesh), true);
-  if (assessment.blocking.length > 0) {
-    blockersEl.textContent = assessment.blocking.join('\n');
-    return;
-  }
-  download(encodeSTL(mesh, { name: state.family }), `clayform-${state.family}.stl`);
+  void exportVessel();
 });
+
+async function exportVessel(): Promise<void> {
+  const label = exportBtn.textContent;
+  exportBtn.disabled = true;
+  exportBtn.textContent = 'Собираю…';
+  try {
+    const csg = await csgReady;
+    const { mesh } = buildPrintableVessel(
+      csg, toBuildParams(state, state.resolution), state.hollow, state.handle,
+    );
+    const assessment = assessExport(validateMesh(mesh), true);
+    if (assessment.blocking.length > 0) {
+      blockersEl.textContent = assessment.blocking.join('\n');
+      return;
+    }
+    blockersEl.textContent = '';
+    download(encodeSTL(mesh, { name: state.family }), `clayform-${state.family}.stl`);
+  } catch (error) {
+    blockersEl.textContent = `Сборка не удалась: ${error instanceof Error ? error.message : String(error)}`;
+  } finally {
+    exportBtn.textContent = label;
+    exportBtn.disabled = false;
+  }
+}
 
 function download(buffer: ArrayBuffer, filename: string): void {
   const url = URL.createObjectURL(new Blob([buffer], { type: 'model/stl' }));

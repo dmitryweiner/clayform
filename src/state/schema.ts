@@ -12,6 +12,10 @@ import type { RouletteState } from '../geo/roulette';
 import { defaultRoulette, sanitizeRoulette } from '../geo/roulette';
 import type { HollowState } from '../geo/hollow';
 import { defaultHollow, sanitizeHollow } from '../geo/hollow';
+import type { HandleState } from '../geo/handle';
+import { defaultHandle, sanitizeHandle } from '../geo/handle';
+import type { SpoutState } from '../geo/spout';
+import { defaultSpout, sanitizeSpout } from '../geo/spout';
 
 export const STATE_VERSION = 1;
 
@@ -33,6 +37,8 @@ export interface AppState {
   heightMm: number;
   relief: ReliefState;
   roulette: RouletteState;
+  handle: HandleState;
+  spout: SpoutState;
   hollow: HollowState;
   exportMode: ExportMode;
   /** сегментов сетки для экспортной сборки */
@@ -52,6 +58,8 @@ export function defaultState(): AppState {
     heightMm: family.defaultHeightMm,
     relief: defaultRelief(),
     roulette: defaultRoulette(),
+    handle: defaultHandle(),
+    spout: defaultSpout(),
     hollow: defaultHollow(),
     exportMode: 'vessel',
     resolution: 192,
@@ -110,6 +118,8 @@ export function sanitizeState(raw: unknown): AppState {
     heightMm,
     relief: sanitizeRelief(source.relief),
     roulette: sanitizeRoulette(source.roulette),
+    handle: sanitizeHandle(source.handle),
+    spout: sanitizeSpout(source.spout),
     hollow: sanitizeHollow(source.hollow),
     exportMode: exportModeOf(source.exportMode),
     resolution,
@@ -131,5 +141,6 @@ export function toBuildParams(state: AppState, segments: number): BuildParams {
     nv: segments,
     relief: state.relief,
     roulette: state.roulette,
+    spout: state.spout,
   };
 }

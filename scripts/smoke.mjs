@@ -122,11 +122,28 @@ for (const pattern of await page.$$eval('#roul_pattern option', (o) => o.map((x)
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-${pattern}.png` });
 }
 
-// стенка и дно: крайние значения не должны рвать полость
-label('hollow');
+// ручка и носик: крайние значения и обе конфигурации ручки
+label('attachments');
 await page.uncheck('#on_wave');
 await page.uncheck('#on_wave2');
 await page.uncheck('#on_roulette');
+await page.check('#on_handle');
+await page.check('#on_spout');
+for (const [id, value] of [['handle_reach', '3'], ['handle_reach', '120'], ['handle_reach', '28'],
+                           ['handle_thickness', '3'], ['handle_thickness', '40'], ['handle_thickness', '11'],
+                           ['handle_count', '2'], ['handle_count', '1'],
+                           ['spout_pull', '60'], ['spout_width', '180'], ['spout_pull', '14'],
+                           ['spout_width', '60']]) {
+  const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
+  if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
+  else await page.fill(`#${id}`, value);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[attach:${id}=${value}] audit="${verdict}"`);
+}
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/attachments.png` });
+
+// стенка и дно: крайние значения не должны рвать полость
+label('hollow');
 for (const [id, value] of [['print_wall', '0.8'], ['print_wall', '60'], ['print_wall', '3'],
                            ['print_base', '1'], ['print_base', '60'], ['print_base', '4']]) {
   await page.fill(`#${id}`, value);

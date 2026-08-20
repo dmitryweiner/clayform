@@ -11,6 +11,8 @@ import type { ReliefState } from './relief';
 import { defaultRelief, reliefDepth } from './relief';
 import type { RouletteState } from './roulette';
 import { defaultRoulette, makeRoulette } from './roulette';
+import type { SpoutState } from './spout';
+import { defaultSpout, makeSpout } from './spout';
 
 export interface BuildParams {
   /** идентификатор семейства: pot | bowl | cup | vase */
@@ -24,6 +26,7 @@ export interface BuildParams {
   nv: number;
   relief: ReliefState;
   roulette: RouletteState;
+  spout: SpoutState;
 }
 
 const NU_MIN = 8;
@@ -49,6 +52,7 @@ export function defaultBuildParams(): BuildParams {
     nv: 192,
     relief: defaultRelief(),
     roulette: defaultRoulette(),
+    spout: defaultSpout(),
   };
 }
 
@@ -67,6 +71,8 @@ export interface VesselSurface {
    * сколько рельеф уходит внутрь: глубже стенки его пускать нельзя.
    */
   depthAt(u: number, v: number): number;
+  /** вытяг носика наружу по радиусу, мм — поверх смещения по нормали */
+  pullAt(u: number, v: number): number;
 }
 
 export function vesselSurface(p: BuildParams): VesselSurface {
@@ -83,6 +89,7 @@ export function vesselSurface(p: BuildParams): VesselSurface {
     bandRadiusMm: profileRadius(profile, roulette.bandCenter),
   });
   const flat = !relief.wave.on && !roulette.on;
+  const pull = makeSpout(p.spout ?? defaultSpout());
 
   return {
     profile,
@@ -93,6 +100,7 @@ export function vesselSurface(p: BuildParams): VesselSurface {
       if (flat) return 0;
       return (reliefDepth(relief, u, v) + roll(u, v)) * smoothstep(v / BASE_GUARD);
     },
+    pullAt: pull,
   };
 }
 
@@ -125,7 +133,8 @@ export function vesselGrid(p: BuildParams, minDepthMm = -Infinity): Grid {
     for (let i = 0; i < nu; i++) {
       const u = (TAU * i) / nu;
       const depth = Math.max(surface.depthAt(u, v), minDepthMm);
-      if (depth === 0) continue;
+      const pull = surface.pullAt(u, v);
+      if (depth === 0 && pull === 0) continue;
       const k = (j * nu + i) * 3;
       let x = positions[k] + normals[k] * depth;
       let y = positions[k + 1] + normals[k + 1] * depth;
@@ -137,6 +146,14 @@ export function vesselGrid(p: BuildParams, minDepthMm = -Infinity): Grid {
         const scale = r > 1e-9 ? MIN_RADIUS_MM / r : 0;
         x = r > 1e-9 ? x * scale : MIN_RADIUS_MM * Math.cos(u);
         y = r > 1e-9 ? y * scale : MIN_RADIUS_MM * Math.sin(u);
+      }
+      // Носик добавляет материал наружу по радиусу — уже после рельефа,
+      // потому что это оттяжка края, а не узор на нём.
+      if (pull !== 0) {
+        const radius = Math.hypot(x, y);
+        const scale = (radius + pull) / Math.max(radius, 1e-9);
+        x *= scale;
+        y *= scale;
       }
       positions[k] = x;
       positions[k + 1] = y;

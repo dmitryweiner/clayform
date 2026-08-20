@@ -25,7 +25,9 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   const scene = new THREE.Scene();
   // Модель в миллиметрах (сосуд ~100–300 мм), отсюда near/far в мм.
   const camera = new THREE.PerspectiveCamera(45, 1, 1, 8000);
-  camera.position.set(190, 120, 190);
+  // Смотрим почти вдоль плоскости разъёма (модельная ось y): ручка слева,
+  // носик справа — обе приставные детали видно сразу, без вращения мышью.
+  camera.position.set(50, 120, 240);
 
   scene.add(new THREE.HemisphereLight(0xf0e2d4, 0x3a2e24, 0.9));
   const key = new THREE.DirectionalLight(0xfff4e8, 1.6);
