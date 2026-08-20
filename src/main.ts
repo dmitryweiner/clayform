@@ -29,6 +29,11 @@ import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
 import type { AppState, ExportMode } from './state/schema';
 import { defaultState, stateForFamily, sanitizeState, toBuildParams, RESOLUTIONS } from './state/schema';
+import { PRESETS, presetByName } from './state/presets';
+import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
+import type { UserPreset } from './state/userPresets';
+import { loadUserPresets, saveUserPresets, nextPresetNumber } from './state/userPresets';
+import { History } from './state/history';
 
 /** Детализация превью изделия: ~10 мс на пересборку, незаметно при перетаскивании. */
 const PREVIEW_SEGMENTS = 192;
@@ -40,6 +45,11 @@ const AUDIT_DELAY_MS = 220;
 const MOLD_DELAY_MS = 400;
 /** Зазор между деталями в «разнесённом» превью, мм. */
 const EXPLODE_GAP_MM = 20;
+/**
+ * Через сколько тишины изменение попадает в историю. Протаскивание ползунка
+ * от края до края — это одно действие пользователя, а не двести.
+ */
+const HISTORY_DELAY_MS = 500;
 
 const view = el('view', HTMLCanvasElement);
 const panel = el('panel', HTMLElement);
@@ -56,10 +66,22 @@ const statusEl = el('status', HTMLParagraphElement);
 const auditEl = el('audit', HTMLParagraphElement);
 const warningsEl = el('warnings', HTMLParagraphElement);
 const blockersEl = el('blockers', HTMLParagraphElement);
+const presetSel = el('presetSel', HTMLSelectElement);
+const saveBtn = el('saveBtn', HTMLButtonElement);
+const shareBtn = el('shareBtn', HTMLButtonElement);
+const undoBtn = el('undoBtn', HTMLButtonElement);
+const redoBtn = el('redoBtn', HTMLButtonElement);
 
 const scene = createScene(view);
 const csgReady = initCSG();
-let state: AppState = defaultState();
+const history = new History<AppState>(startingState());
+let state: AppState = history.value;
+
+/** Ссылка со состоянием важнее дефолта: по ней и открывают чужую работу. */
+function startingState(): AppState {
+  const token = tokenFromHash(location.hash);
+  return (token && decodeStateToken(token)) || defaultState();
+}
 
 const picker = renderFamilyPicker(familyGrid, state.family, (id) => {
   applyState(stateForFamily(id, state));
@@ -106,11 +128,13 @@ function renderShapeParams(): ReturnType<typeof renderParams> {
   });
 }
 
-function applyState(next: AppState): void {
+function applyState(next: AppState, record = true): void {
   // у каждого семейства свой набор параметров, поэтому смена семейства
   // требует пересоздать строки, а не просто обновить значения
   const familyChanged = next.family !== state.family;
   state = sanitizeState(next);
+  if (record) rememberLater(state);
+  else history.replace(state);
   if (familyChanged) {
     picker.setActive(state.family);
     paramRows = renderShapeParams();
@@ -122,7 +146,23 @@ function applyState(next: AppState): void {
   exportPanel.sync(state.exportMode, state.hollow, state.mold);
   heightInput.value = String(Math.round(state.heightMm));
   resolutionSel.value = String(state.resolution);
+  updateHistoryButtons();
   refresh();
+}
+
+let historyTimer: ReturnType<typeof setTimeout> | null = null;
+
+function rememberLater(next: AppState): void {
+  if (historyTimer) clearTimeout(historyTimer);
+  historyTimer = setTimeout(() => {
+    history.push(next);
+    updateHistoryButtons();
+  }, HISTORY_DELAY_MS);
+}
+
+function updateHistoryButtons(): void {
+  undoBtn.disabled = !history.canUndo;
+  redoBtn.disabled = !history.canRedo;
 }
 
 let auditTimer: ReturnType<typeof setTimeout> | null = null;
@@ -151,7 +191,10 @@ function refresh(): void {
   // Схему разъёма считаем по телу без ручки: ручка влияет на выбор самим
   // фактом своего существования (сквозное отверстие), а гонять ради этого
   // CSG на каждое движение ползунка незачем.
-  const scheme = analyzeMold(outer, { hasHandle: state.handle.on });
+  const scheme = analyzeMold(outer, {
+    hasHandle: state.handle.on,
+    angularRelief: hasAngularRelief(),
+  });
   exportPanel.setSchemeNote(scheme.reason);
 
   const warnings: string[] = [...scheme.warnings];
@@ -271,6 +314,18 @@ function audit(mesh: SurfaceMesh): void {
   exportBtn.disabled = assessment.blocking.length > 0;
 }
 
+/**
+ * Меняется ли рельеф по углу. Именно это — единственная причина, по которой
+ * у тела вращения появляются зацепы при разъёме на половины, поэтому
+ * анализатор с этим знанием даёт не число, а совет.
+ */
+function hasAngularRelief(): boolean {
+  const angular = (axis: string): boolean => axis !== 'z';
+  return (state.relief.wave.on && angular(state.relief.wave.axis))
+    || (state.relief.wave2.on && angular(state.relief.wave2.axis))
+    || state.roulette.on;
+}
+
 function outerWidth(positions: Float32Array): number {
   let max = 0;
   for (let i = 0; i < positions.length; i += 3) {
@@ -351,4 +406,106 @@ function download(buffer: ArrayBuffer, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-applyState(state);
+// --- пресеты ---
+
+let userPresets: UserPreset[] = loadUserPresets();
+
+function fillPresetList(): void {
+  presetSel.textContent = '';
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Пресеты…';
+  presetSel.append(placeholder);
+
+  const builtin = document.createElement('optgroup');
+  builtin.label = 'Готовые';
+  for (const preset of PRESETS) {
+    const option = document.createElement('option');
+    option.value = `b:${preset.name}`;
+    option.textContent = preset.name;
+    option.title = preset.note;
+    builtin.append(option);
+  }
+  presetSel.append(builtin);
+
+  if (userPresets.length > 0) {
+    const mine = document.createElement('optgroup');
+    mine.label = 'Мои';
+    for (const preset of userPresets) {
+      const option = document.createElement('option');
+      option.value = `u:${preset.name}`;
+      option.textContent = preset.name;
+      mine.append(option);
+    }
+    presetSel.append(mine);
+  }
+}
+
+presetSel.addEventListener('change', () => {
+  const value = presetSel.value;
+  presetSel.value = '';
+  if (value.startsWith('b:')) {
+    const preset = presetByName(value.slice(2));
+    if (preset) applyState(preset.build());
+  } else if (value.startsWith('u:')) {
+    const preset = userPresets.find((item) => item.name === value.slice(2));
+    if (preset) applyState(preset.state);
+  }
+});
+
+saveBtn.addEventListener('click', () => {
+  const suggested = `Моё ${nextPresetNumber(userPresets)}`;
+  const name = prompt('Имя пресета', suggested)?.trim();
+  if (!name) return;
+  userPresets = [...userPresets.filter((item) => item.name !== name), { name, state }];
+  if (saveUserPresets(userPresets)) {
+    fillPresetList();
+    flash(saveBtn, '✓');
+  } else {
+    blockersEl.textContent = 'Не удалось сохранить пресет: браузер запретил доступ к хранилищу.';
+  }
+});
+
+shareBtn.addEventListener('click', () => {
+  const token = encodeStateToken(state);
+  location.hash = `s=${token}`;
+  // Ссылка уже в адресной строке; буфер обмена — удобство, и его отсутствие
+  // (нет разрешения, не тот протокол) не должно выглядеть как поломка.
+  void navigator.clipboard?.writeText(`${location.origin}${location.pathname}#s=${token}`).then(
+    () => flash(shareBtn, '✓'),
+    () => flash(shareBtn, '↑'),
+  );
+});
+
+function flash(button: HTMLButtonElement, mark: string): void {
+  const original = button.textContent;
+  button.textContent = mark;
+  setTimeout(() => {
+    button.textContent = original;
+  }, 900);
+}
+
+// --- отмена и повтор ---
+
+undoBtn.addEventListener('click', () => stepHistory('undo'));
+redoBtn.addEventListener('click', () => stepHistory('redo'));
+
+function stepHistory(direction: 'undo' | 'redo'): void {
+  // ждущая запись сначала фиксируется, иначе отмена вернула бы туда же
+  if (historyTimer) {
+    clearTimeout(historyTimer);
+    historyTimer = null;
+    history.push(state);
+  }
+  const restored = direction === 'undo' ? history.undo() : history.redo();
+  if (restored) applyState(restored, false);
+}
+
+window.addEventListener('keydown', (event) => {
+  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z') return;
+  event.preventDefault();
+  stepHistory(event.shiftKey ? 'redo' : 'undo');
+});
+
+fillPresetList();
+applyState(state, false);

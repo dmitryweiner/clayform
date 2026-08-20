@@ -122,6 +122,65 @@ for (const pattern of await page.$$eval('#roul_pattern option', (o) => o.map((x)
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-${pattern}.png` });
 }
 
+// каждый встроенный пресет открывается и строится
+label('presets');
+const presetValues = await page.$$eval(
+  '#presetSel optgroup[label="Готовые"] option',
+  (nodes) => nodes.map((n) => n.value),
+);
+if (presetValues.length < 10) errors.push(`[presets] пресетов ${presetValues.length}, ожидалось ≥10`);
+for (const value of presetValues) {
+  label(`preset:${value}`);
+  await page.selectOption('#presetSel', value);
+  await page.waitForTimeout(120);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[${value}] audit="${verdict}"`);
+  const blockers = (await page.locator('#blockers').textContent()).trim();
+  if (blockers) errors.push(`[${value}] blockers="${blockers}"`);
+  // Предупреждения о свесах законны: тарелку с почти горизонтальной стенкой
+  // глиной без опор и правда не напечатать, а отливается она прекрасно.
+  // А вот поднутрения — брак пресета: форма его не отпустит.
+  const warnings = (await page.locator('#warnings').textContent()).trim();
+  if (warnings.includes('Поднутрения')) errors.push(`[${value}] warnings="${warnings}"`);
+}
+
+// ссылка переносит состояние: открываем её в чистой вкладке и сверяем статус
+label('share');
+await page.selectOption('#presetSel', presetValues[1]);
+await auditVerdict(page);
+const beforeShare = await page.locator('#status').textContent();
+await page.click('#shareBtn');
+await page.waitForTimeout(300);
+const shared = page.url();
+if (!shared.includes('#s=')) errors.push(`[share] в адресе нет токена: ${shared}`);
+await page.goto('about:blank');
+await page.goto(shared);
+await auditVerdict(page);
+const afterShare = await page.locator('#status').textContent();
+if (afterShare !== beforeShare) {
+  errors.push(`[share] состояние не восстановилось: "${beforeShare}" → "${afterShare}"`);
+}
+
+// отмена возвращает к прежнему состоянию, повтор — обратно
+label('undo');
+await page.goto(shared.split('#')[0]);
+await auditVerdict(page);
+const initial = await page.locator('#status').textContent();
+await page.fill('#heightMm', '260');
+await page.waitForTimeout(900); // дольше склейки истории
+const changed = await page.locator('#status').textContent();
+if (changed === initial) errors.push('[undo] высота не изменилась, проверять нечего');
+await page.click('#undoBtn');
+await page.waitForTimeout(200);
+if ((await page.locator('#status').textContent()) !== initial) {
+  errors.push('[undo] отмена не вернула прежнее состояние');
+}
+await page.click('#redoBtn');
+await page.waitForTimeout(200);
+if ((await page.locator('#status').textContent()) !== changed) {
+  errors.push('[undo] повтор не вернул изменение');
+}
+
 // ручка и носик: крайние значения и обе конфигурации ручки
 label('attachments');
 await page.uncheck('#on_wave');
