@@ -10,8 +10,19 @@ import type { ReliefState } from '../geo/relief';
 import { defaultRelief, sanitizeRelief } from '../geo/relief';
 import type { RouletteState } from '../geo/roulette';
 import { defaultRoulette, sanitizeRoulette } from '../geo/roulette';
+import type { HollowState } from '../geo/hollow';
+import { defaultHollow, sanitizeHollow } from '../geo/hollow';
 
 export const STATE_VERSION = 1;
+
+/**
+ * Что уходит в STL:
+ *  vessel — само изделие, полое, как его печатают глиной;
+ *  master — мастер-позитив под ручную силиконовую форму;
+ *  bath   — ванночки-опалубки под заливку силикона (по одной на часть).
+ */
+export const EXPORT_MODES = ['vessel', 'master', 'bath'] as const;
+export type ExportMode = (typeof EXPORT_MODES)[number];
 
 export interface AppState {
   version: number;
@@ -22,6 +33,8 @@ export interface AppState {
   heightMm: number;
   relief: ReliefState;
   roulette: RouletteState;
+  hollow: HollowState;
+  exportMode: ExportMode;
   /** сегментов сетки для экспортной сборки */
   resolution: number;
 }
@@ -39,6 +52,8 @@ export function defaultState(): AppState {
     heightMm: family.defaultHeightMm,
     relief: defaultRelief(),
     roulette: defaultRoulette(),
+    hollow: defaultHollow(),
+    exportMode: 'vessel',
     resolution: 192,
   };
 }
@@ -95,8 +110,15 @@ export function sanitizeState(raw: unknown): AppState {
     heightMm,
     relief: sanitizeRelief(source.relief),
     roulette: sanitizeRoulette(source.roulette),
+    hollow: sanitizeHollow(source.hollow),
+    exportMode: exportModeOf(source.exportMode),
     resolution,
   };
+}
+
+function exportModeOf(raw: unknown): ExportMode {
+  for (const mode of EXPORT_MODES) if (raw === mode) return mode;
+  return 'vessel';
 }
 
 /** Состояние + детализация → параметры сборки геометрии. */

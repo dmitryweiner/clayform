@@ -83,6 +83,24 @@ export function overhangFraction(mesh: Pick<SurfaceMesh, 'positions' | 'indices'
   return total > 0 ? bad / total : 0;
 }
 
+/**
+ * Знаковый объём замкнутого меша (сумма тетраэдров от начала координат).
+ * Положителен, когда нормали смотрят наружу.
+ */
+export function signedVolume(positions: Float32Array, indices: Uint32Array): number {
+  let volume6 = 0;
+  for (let t = 0; t < indices.length; t += 3) {
+    const a = indices[t] * 3;
+    const b = indices[t + 1] * 3;
+    const c = indices[t + 2] * 3;
+    volume6 +=
+      positions[a] * (positions[b + 1] * positions[c + 2] - positions[b + 2] * positions[c + 1]) -
+      positions[a + 1] * (positions[b] * positions[c + 2] - positions[b + 2] * positions[c]) +
+      positions[a + 2] * (positions[b] * positions[c + 1] - positions[b + 1] * positions[c]);
+  }
+  return volume6 / 6;
+}
+
 export function validateMesh(mesh: SurfaceMesh, areaEps = 1e-12): MeshReport {
   const { positions, indices } = mesh;
 
@@ -118,7 +136,6 @@ export function validateMesh(mesh: SurfaceMesh, areaEps = 1e-12): MeshReport {
     }
   }
   const edgeKey = (a: number, b: number): number => (a < b ? a * nVerts + b : b * nVerts + a);
-  let volume6 = 0;
   let degenerate = 0;
   for (let t = 0; indicesValid && t < indices.length; t += 3) {
     const ia = indices[t];
@@ -146,11 +163,6 @@ export function validateMesh(mesh: SurfaceMesh, areaEps = 1e-12): MeshReport {
     const nz = abx * acy - aby * acx;
     const area2 = Math.hypot(nx, ny, nz);
     if (area2 * 0.5 < areaEps) degenerate++;
-    // знаковый объём тетраэдра (0, A, B, C) × 6
-    volume6 +=
-      positions[a] * (positions[b + 1] * positions[c + 2] - positions[b + 2] * positions[c + 1]) -
-      positions[a + 1] * (positions[b] * positions[c + 2] - positions[b + 2] * positions[c]) +
-      positions[a + 2] * (positions[b] * positions[c + 1] - positions[b + 1] * positions[c]);
   }
   let watertight = indicesValid && indices.length > 0;
   for (const e of edges.values()) {
@@ -169,7 +181,7 @@ export function validateMesh(mesh: SurfaceMesh, areaEps = 1e-12): MeshReport {
     finite,
     indicesValid,
     watertight,
-    volume: volume6 / 6,
+    volume: indicesValid ? signedVolume(positions, indices) : 0,
     bbox: { min, max },
     degenerateTriangles: degenerate,
     triangleCount: indices.length / 3,

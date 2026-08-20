@@ -228,6 +228,17 @@ input[type='number'] {
   margin: 10px 2px 0;
 }
 
+#audit {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 3px 2px 0;
+}
+
+.tab[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 #warnings {
   color: var(--warn);
   font-size: 12px;

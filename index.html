@@ -36,8 +36,10 @@
           <section class="card">
             <div class="tabs" role="tablist">
               <button class="tab" id="tabVessel" role="tab" aria-selected="true">Изделие</button>
-              <button class="tab" id="tabMaster" role="tab" aria-selected="false">Мастер</button>
-              <button class="tab" id="tabBath" role="tab" aria-selected="false">Ванночки</button>
+              <button class="tab" id="tabMaster" role="tab" aria-selected="false" disabled
+                      title="Появится вместе с литейной оснасткой">Мастер</button>
+              <button class="tab" id="tabBath" role="tab" aria-selected="false" disabled
+                      title="Появится вместе с литейной оснасткой">Ванночки</button>
             </div>
             <div id="exportParams"></div>
             <p id="schemeNote" class="scheme-note"></p>
@@ -56,6 +58,7 @@
           </label>
 
           <p id="status"></p>
+          <p id="audit"></p>
           <p id="warnings"></p>
           <p id="blockers" class="blockers"></p>
         </aside>

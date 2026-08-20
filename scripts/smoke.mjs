@@ -9,11 +9,21 @@
 // Любая ошибка консоли/страницы → ненулевой код выхода (годится для CI).
 
 import { mkdirSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { parseArgs, openApp } from './lib/harness.mjs';
 
 const flags = parseArgs(process.argv.slice(2), ['shots']);
 const shotsDir = flags.get('shots');
 if (shotsDir) mkdirSync(shotsDir, { recursive: true });
+
+/** Аудит меша отложен, чтобы не тормозить превью — ждём его вердикт. */
+async function auditVerdict(page) {
+  await page.waitForFunction(
+    () => !(document.querySelector('#audit')?.textContent ?? '').includes('проверка'),
+    { timeout: 15000 },
+  );
+  return page.locator('#audit').textContent();
+}
 
 const app = await openApp({ preview: flags.has('preview') });
 const { page, errors, label } = app;
@@ -36,8 +46,8 @@ for (let i = 0; i < families.length; i++) {
   await page.locator('#familyGrid .family-btn').nth(i).click();
   await page.waitForTimeout(200);
 
-  const status = await page.locator('#status').textContent();
-  if (!status.includes('замкнуто ✓')) errors.push(`[family:${name}] status="${status}"`);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[family:${name}] audit="${verdict}"`);
 
   const blockers = await page.locator('#blockers').textContent();
   if (blockers.trim()) errors.push(`[family:${name}] blockers="${blockers}"`);
@@ -61,9 +71,9 @@ for (let i = 0; i < count; i++) {
     await page.waitForTimeout(60);
   }
 }
-const afterExtremes = await page.locator('#status').textContent();
+const afterExtremes = await auditVerdict(page);
 if (!afterExtremes.includes('замкнуто ✓')) {
-  errors.push(`[slider-extremes] status="${afterExtremes}"`);
+  errors.push(`[slider-extremes] audit="${afterExtremes}"`);
 }
 
 // высота в миллиметрах доезжает до габаритов модели
@@ -86,15 +96,15 @@ for (const shape of await page.$$eval('#wave_shape option', (o) => o.map((x) => 
   for (const axis of ['z', 'theta', 'spiral']) {
     await page.selectOption('#wave_axis', axis);
     await page.waitForTimeout(80);
-    const status = await page.locator('#status').textContent();
-    if (!status.includes('замкнуто ✓')) errors.push(`[wave:${shape}/${axis}] status="${status}"`);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[wave:${shape}/${axis}] audit="${verdict}"`);
   }
 }
 
 label('wave2');
 await page.check('#on_wave2');
 await page.waitForTimeout(150);
-if (!(await page.locator('#status').textContent()).includes('замкнуто ✓')) {
+if (!(await auditVerdict(page)).includes('замкнуто ✓')) {
   errors.push('[wave2] меш перестал быть замкнутым');
 }
 
@@ -107,10 +117,36 @@ for (const pattern of await page.$$eval('#roul_pattern option', (o) => o.map((x)
   label(`roulette:${pattern}`);
   await page.selectOption('#roul_pattern', pattern);
   await page.waitForTimeout(120);
-  const status = await page.locator('#status').textContent();
-  if (!status.includes('замкнуто ✓')) errors.push(`[roulette:${pattern}] status="${status}"`);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[roulette:${pattern}] audit="${verdict}"`);
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-${pattern}.png` });
 }
+
+// стенка и дно: крайние значения не должны рвать полость
+label('hollow');
+await page.uncheck('#on_wave');
+await page.uncheck('#on_wave2');
+await page.uncheck('#on_roulette');
+for (const [id, value] of [['print_wall', '0.8'], ['print_wall', '60'], ['print_wall', '3'],
+                           ['print_base', '1'], ['print_base', '60'], ['print_base', '4']]) {
+  await page.fill(`#${id}`, value);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[hollow:${id}=${value}] audit="${verdict}"`);
+}
+
+// конечный продукт приложения — файл; проверяем, что он реально выгружается
+label('export');
+const download = await Promise.all([
+  page.waitForEvent('download', { timeout: 30000 }),
+  page.click('#exportBtn'),
+]).then(([d]) => d);
+const stlPath = await download.path();
+const { size } = await stat(stlPath);
+if (!download.suggestedFilename().endsWith('.stl')) {
+  errors.push(`[export] имя файла "${download.suggestedFilename()}"`);
+}
+// 84 байта заголовка + 50 на треугольник; на 192×192 ждём сотни тысяч
+if (size < 84 + 50 * 10000) errors.push(`[export] подозрительно маленький STL: ${size} байт`);
 
 await app.close();
 

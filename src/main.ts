@@ -1,6 +1,6 @@
 // Точка входа: состояние → ядро геометрии → рендер и UI.
-// Растёт по вехам плана; сейчас (M2) — выбор семейства, параметры силуэта,
-// живое превью и экспорт сплошного тела.
+// Растёт по вехам плана; сейчас (M4) — форма, рельеф, накатка и экспорт
+// полого изделия для прямой печати глиной.
 
 import './style.css';
 import { el } from './ui/dom';
@@ -8,36 +8,65 @@ import { createScene } from './render/scene';
 import { renderFamilyPicker } from './ui/family';
 import { renderParams } from './ui/params';
 import { renderReliefCards } from './ui/reliefCards';
+import { renderControls } from './ui/controls';
+import type { Control } from './ui/controls';
 import { setupAdjustmentButtons } from './ui/adjust';
 import { drawProfileGraph } from './ui/graph';
 import { buildVessel } from './geo/build';
+import type { HollowState } from './geo/hollow';
+import {
+  buildHollowVessel, WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM,
+} from './geo/hollow';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
 import { rouletteRepeats } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
-import { validateMesh, assessExport, overhangFraction } from './geo/validate';
+import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
 import type { AppState } from './state/schema';
 import { defaultState, stateForFamily, sanitizeState, toBuildParams, RESOLUTIONS } from './state/schema';
 
-// Превью строится на главном потоке: 192×192 — это ~12 мс, незаметно даже
-// при перетаскивании ползунка, и ровно та детализация, что уходит в STL по
+// Превью строится на главном потоке: 192×192 — это ~10 мс, незаметно даже при
+// перетаскивании ползунка, и ровно та детализация, что уходит в STL по
 // умолчанию. Более высокие значения из «Детализации» применяются к экспорту.
 const PREVIEW_SEGMENTS = 192;
+/**
+ * Полная проверка меша (манифолдность, свесы) стоит ~70 мс — на каждое
+ * движение ползунка это заметная задержка. Меши у нас замкнуты по построению,
+ * поэтому проверка нужна как страховка, а не покадрово: гоняем её, когда
+ * пользователь остановился.
+ */
+const AUDIT_DELAY_MS = 220;
 
 const view = el('view', HTMLCanvasElement);
 const panel = el('panel', HTMLElement);
 const familyGrid = el('familyGrid', HTMLDivElement);
 const shapeParams = el('shapeParams', HTMLDivElement);
 const reliefCards = el('reliefCards', HTMLDivElement);
+const exportParams = el('exportParams', HTMLDivElement);
 const profileGraph = el('profileGraph', HTMLCanvasElement);
 const heightInput = el('heightMm', HTMLInputElement);
 const resolutionSel = el('resolution', HTMLSelectElement);
 const exportBtn = el('exportBtn', HTMLButtonElement);
 const statusEl = el('status', HTMLParagraphElement);
+const auditEl = el('audit', HTMLParagraphElement);
 const warningsEl = el('warnings', HTMLParagraphElement);
 const blockersEl = el('blockers', HTMLParagraphElement);
 
 const scene = createScene(view);
 let state: AppState = defaultState();
+
+const HOLLOW_CONTROLS: Control<HollowState>[] = [
+  {
+    kind: 'range', key: 'wall', label: 'Стенка', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1, unit: 'мм',
+    hint: 'толщина меряется по нормали к поверхности',
+    get: (s) => s.wallMm,
+    set: (s, v) => ({ ...s, wallMm: v }),
+  },
+  {
+    kind: 'range', key: 'base', label: 'Дно', min: BASE_MIN_MM, max: BASE_MAX_MM, step: 0.5, unit: 'мм',
+    get: (s) => s.baseMm,
+    set: (s, v) => ({ ...s, baseMm: v }),
+  },
+];
 
 const picker = renderFamilyPicker(familyGrid, state.family, (id) => {
   applyState(stateForFamily(id, state));
@@ -52,6 +81,14 @@ const reliefRows = renderReliefCards(
   () => state.roulette,
   (relief) => applyState({ ...state, relief }),
   (roulette) => applyState({ ...state, roulette }),
+);
+
+const hollowRows = renderControls(
+  exportParams,
+  HOLLOW_CONTROLS,
+  () => state.hollow,
+  (hollow) => applyState({ ...state, hollow }),
+  'print',
 );
 
 function renderShapeParams(): ReturnType<typeof renderParams> {
@@ -71,15 +108,18 @@ function applyState(next: AppState): void {
   } else {
     paramRows.setValues(state.shape);
   }
+  reliefRows.sync(state.relief, state.roulette);
+  hollowRows.sync(state.hollow);
   heightInput.value = String(Math.round(state.heightMm));
   resolutionSel.value = String(state.resolution);
   refresh();
 }
 
+let auditTimer: ReturnType<typeof setTimeout> | null = null;
+
 function refresh(): void {
   const profile = buildProfile(state.family, state.shape, state.heightMm);
   drawProfileGraph(profileGraph, profile);
-  reliefRows.sync(state.relief, state.roulette);
 
   const bandRadiusMm = profileRadius(profile, state.roulette.bandCenter);
   const repeats = rouletteRepeats(state.roulette, { heightMm: state.heightMm, bandRadiusMm });
@@ -88,27 +128,61 @@ function refresh(): void {
     `${repeats} оттисков за оборот, шаг ${step.toFixed(1)} мм по окружности ⌀${(bandRadiusMm * 2).toFixed(0)} мм.`,
   );
 
-  const mesh = buildVessel(toBuildParams(state, PREVIEW_SEGMENTS));
-  scene.setMesh(mesh);
+  const hollow = buildHollowVessel(toBuildParams(state, PREVIEW_SEGMENTS), state.hollow);
+  scene.setMesh(hollow.mesh);
 
-  const report = validateMesh(mesh);
-  const assessment = assessExport(report, true);
-  const width = Math.max(report.extents[0], report.extents[1]);
-  const litres = report.volume / 1e6;
+  const outer = buildVessel(toBuildParams(state, PREVIEW_SEGMENTS));
+  const widthMm = outerWidth(outer.positions);
+  const clayMl = signedVolume(hollow.mesh.positions, hollow.mesh.indices) / 1000;
   statusEl.textContent = [
-    `⌀${width.toFixed(0)} × ${report.extents[2].toFixed(0)} мм`,
-    `объём тела ${litres.toFixed(2)} л`,
-    report.watertight ? 'замкнуто ✓' : 'не замкнуто',
+    `⌀${widthMm.toFixed(0)} × ${state.heightMm.toFixed(0)} мм`,
+    `вместимость ${formatVolume(hollow.capacityMl)}`,
+    `глины ${formatVolume(clayMl)}`,
   ].join(' · ');
 
-  const warnings = [...assessment.warnings];
-  const overhang = overhangFraction(mesh, 60);
-  if (overhang > 0.15) {
-    warnings.push(`Свесы круче 60°: ${(overhang * 100).toFixed(0)} % поверхности — печать глиной потребует опор.`);
+  const warnings: string[] = [];
+  if (hollow.pinchedFraction > 0) {
+    warnings.push(
+      `Рельеф уходит внутрь глубже стенки на ${(hollow.pinchedFraction * 100).toFixed(1)} % поверхности — ` +
+      'там стенка тоньше заданной. Уменьшите глубину волны или увеличьте стенку.',
+    );
   }
   warningsEl.textContent = warnings.join('\n');
+
+  auditEl.textContent = 'проверка…';
+  if (auditTimer) clearTimeout(auditTimer);
+  auditTimer = setTimeout(() => audit(hollow.mesh), AUDIT_DELAY_MS);
+}
+
+function audit(mesh: ReturnType<typeof buildHollowVessel>['mesh']): void {
+  const report = validateMesh(mesh);
+  const assessment = assessExport(report, true);
+  const overhang = overhangFraction(mesh, 60);
+
+  auditEl.textContent = report.watertight
+    ? `замкнуто ✓ · ${Math.round(report.triangleCount / 1000)} тыс. треугольников`
+    : 'меш не замкнут';
+
+  const extra = [...assessment.warnings];
+  if (overhang > 0.15) {
+    extra.push(`Свесы круче 60° на ${(overhang * 100).toFixed(0)} % поверхности — печать глиной потребует опор.`);
+  }
+  const existing = warningsEl.textContent ? [warningsEl.textContent] : [];
+  warningsEl.textContent = [...existing, ...extra].join('\n');
   blockersEl.textContent = assessment.blocking.join('\n');
   exportBtn.disabled = assessment.blocking.length > 0;
+}
+
+function outerWidth(positions: Float32Array): number {
+  let max = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    max = Math.max(max, Math.hypot(positions[i], positions[i + 1]));
+  }
+  return max * 2;
+}
+
+function formatVolume(millilitres: number): string {
+  return millilitres >= 1000 ? `${(millilitres / 1000).toFixed(2)} л` : `${millilitres.toFixed(0)} мл`;
 }
 
 heightInput.addEventListener('input', () => {
@@ -127,7 +201,7 @@ resolutionSel.addEventListener('change', () => {
 });
 
 exportBtn.addEventListener('click', () => {
-  const mesh = buildVessel(toBuildParams(state, state.resolution));
+  const { mesh } = buildHollowVessel(toBuildParams(state, state.resolution), state.hollow);
   const assessment = assessExport(validateMesh(mesh), true);
   if (assessment.blocking.length > 0) {
     blockersEl.textContent = assessment.blocking.join('\n');

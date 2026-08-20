@@ -38,10 +38,20 @@ async function serverUp(base) {
   }
 }
 
+function run(cmd, args) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, { stdio: 'inherit' });
+    proc.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} → ${code}`))));
+  });
+}
+
 /** Поднимает dev/preview-сервер, если он ещё не слушает порт. */
 export async function ensureServer(preview) {
   const base = baseUrl(preview);
   if (await serverUp(base)) return { base, proc: null };
+  // vite preview раздаёт последнюю сборку; без пересборки смоук проверял бы
+  // код позапрошлой недели и падал на непонятном месте
+  if (preview) await run('npx', ['vite', 'build']);
   const port = preview ? 4173 : 5173;
   const cmd = preview
     ? ['vite', 'preview', '--port', String(port), '--strictPort']
@@ -64,7 +74,7 @@ export async function ensureServer(preview) {
 export async function openApp({ preview = false, width = 1280, height = 860 } = {}) {
   const { base, proc } = await ensureServer(preview);
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width, height } });
+  const page = await browser.newPage({ viewport: { width, height }, acceptDownloads: true });
   const errors = [];
   let context = 'app';
   page.on('pageerror', (e) => errors.push(`[${context}] ${String(e)}`));
