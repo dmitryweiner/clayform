@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClayForm — посуда и литейные формы для 3D-печати</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <span id="brand">ClayForm</span>
+        <select id="presetSel" title="Пресеты"></select>
+        <button id="saveBtn" class="tb-btn" title="Сохранить как пресет">💾</button>
+        <button id="shareBtn" class="tb-btn" title="Скопировать ссылку">🔗</button>
+        <button id="undoBtn" class="tb-btn" title="Отменить (Ctrl/Cmd+Z)" disabled>↩️</button>
+        <button id="redoBtn" class="tb-btn" title="Повторить (Ctrl/Cmd+Shift+Z)" disabled>↪️</button>
+        <span class="tb-spacer"></span>
+        <label id="heightLab">Высота <input type="number" id="heightMm" min="20" max="400" step="1" value="140" /> мм</label>
+      </header>
+      <div id="content">
+        <aside id="panel">
+          <section class="card">
+            <h2>Форма</h2>
+            <div id="familyGrid" class="family-grid"></div>
+            <div id="shapeParams"></div>
+            <canvas id="profileGraph"></canvas>
+          </section>
+
+          <h3 class="group-title">Рельеф</h3>
+          <div id="reliefCards"></div>
+
+          <h3 class="group-title">Ручка и носик</h3>
+          <div id="attachCards"></div>
+
+          <h3 class="group-title">Экспорт STL</h3>
+          <section class="card">
+            <div class="tabs" role="tablist">
+              <button class="tab" id="tabVessel" role="tab" aria-selected="true">Изделие</button>
+              <button class="tab" id="tabMaster" role="tab" aria-selected="false">Мастер</button>
+              <button class="tab" id="tabBath" role="tab" aria-selected="false">Ванночки</button>
+            </div>
+            <div id="exportParams"></div>
+            <p id="schemeNote" class="scheme-note"></p>
+            <ul id="partList" class="part-list"></ul>
+            <button id="exportBtn" class="tb-btn primary" style="width: 100%">Экспорт STL</button>
+          </section>
+
+          <label class="row">
+            <span>Детализация</span>
+            <select id="resolution">
+              <option value="128">128 × 128</option>
+              <option value="192" selected>192 × 192</option>
+              <option value="256">256 × 256</option>
+              <option value="384">384 × 384</option>
+            </select>
+          </label>
+
+          <p id="status"></p>
+          <p id="warnings"></p>
+          <p id="blockers" class="blockers"></p>
+        </aside>
+        <main id="viewWrap">
+          <canvas id="view"></canvas>
+          <div id="progressWrap" hidden>
+            <div id="progressBar"><div id="progressFill"></div></div>
+            <span id="progressLabel"></span>
+          </div>
+        </main>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
