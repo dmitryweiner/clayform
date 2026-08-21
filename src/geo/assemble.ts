@@ -63,11 +63,17 @@ export function buildPrintableVessel(
 
   const scope = new CsgScope();
   try {
-    const solid = scope.keep(toManifold(csg, buildVessel(p)));
+    // Объединяем с ГОТОВОЙ полой оболочкой, а не со сплошным телом: у неё уже
+    // и полость на месте, и венчик заглажен. Сплошное тело пришлось бы потом
+    // вскрывать полостью, а полость обрывается на радиус кромки ниже верха —
+    // изделие оставалось бы запечатанным.
+    const shell = scope.keep(toManifold(csg, result.mesh));
     const withHandles = scope.keep(csg.Manifold.union([
-      solid,
+      shell,
       ...handles.map((mesh) => scope.keep(toManifold(csg, mesh))),
     ]));
+    // Утопленные в стенку торцы ручки торчат внутрь полости — срезаем их,
+    // чтобы внутри кружки не осталось бугра.
     const cavity = scope.keep(toManifold(csg, assembleMesh(result.innerGrid, 'both')));
     const mesh = fromManifold(scope.keep(withHandles.subtract(cavity)));
     return { mesh, capacityMl: result.capacityMl, pinchedFraction: result.pinchedFraction };

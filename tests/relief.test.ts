@@ -106,14 +106,101 @@ describe('шов θ = 0 / 2π', () => {
     expect(relief.wave.freq).toBe(6);
   });
 
-  it('волна волны тоже смыкается по шву', () => {
-    const relief = sanitizeRelief({
-      wave: { on: true, axis: 'z', shape: 'sin', freq: 8, ampMm: 4, phase: 0, spiralK: 0 },
-      wave2: { on: true, axis: 'theta', shape: 'tri', freq: 5.3, fm: 0.4, am: 0.6, spiralK: 0 },
-    });
-    for (const v of [0.1, 0.55, 0.95]) {
-      expect(Math.abs(reliefDepth(relief, TAU, v) - reliefDepth(relief, 0, v))).toBeLessThan(1e-6);
+  it('волна волны тоже смыкается по шву, в обоих режимах', () => {
+    for (const mode of ['weave', 'modulate']) {
+      const relief = sanitizeRelief({
+        wave: { on: true, axis: 'z', shape: 'sin', freq: 8, ampMm: 4, phase: 0, spiralK: 0 },
+        wave2: { on: true, mode, axis: 'theta', shape: 'tri', freq: 5.3, phase: 0.3, fm: 0.4, am: 0.6, spiralK: 0 },
+      });
+      for (const v of [0.1, 0.55, 0.95]) {
+        expect(Math.abs(reliefDepth(relief, TAU, v) - reliefDepth(relief, 0, v)), mode).toBeLessThan(1e-6);
+      }
     }
+  });
+
+  it('дробный шаг спирали разрешён — округляется произведение, а не сам шаг', () => {
+    const relief = sanitizeRelief({
+      wave: { on: true, axis: 'spiral', shape: 'sin', freq: 16, ampMm: 3, phase: 0, spiralK: 0.7 },
+    });
+    // при 16 гребнях допустимы шаги кратные 1/16
+    expect(relief.wave.spiralK).toBeCloseTo(11 / 16, 9);
+    expect(Number.isInteger(relief.wave.spiralK)).toBe(false);
+    expect(Number.isInteger(relief.wave.freq * relief.wave.spiralK)).toBe(true);
+  });
+
+  it('дробный шаг спирали смыкается по шву при любой частоте', () => {
+    for (const freq of [3, 7, 16, 41]) {
+      for (const spiralK of [0.2, 0.7, 1.35, 3.9, -2.4]) {
+        const relief = sanitizeRelief({
+          wave: { on: true, axis: 'spiral', shape: 'rounded', freq, ampMm: 3, phase: 0, spiralK },
+        });
+        for (const v of [0.15, 0.6, 0.9]) {
+          expect(
+            Math.abs(reliefDepth(relief, TAU, v) - reliefDepth(relief, 0, v)),
+            `freq=${freq} k=${spiralK} v=${v}`,
+          ).toBeLessThan(1e-6);
+        }
+      }
+    }
+  });
+});
+
+describe('волна волны: режим «плетение»', () => {
+  const weave = (over: Record<string, unknown> = {}) => sanitizeRelief({
+    wave: { on: true, axis: 'theta', shape: 'sin', freq: 12, ampMm: 4, phase: 0, spiralK: 0 },
+    wave2: { on: true, mode: 'weave', axis: 'z', shape: 'sin', freq: 6, phase: 0, spiralK: 0, ...over },
+    zone: { from: 0, to: 1, fade: 0 },
+  });
+
+  it('это произведение двух волн: обнуляется там, где обнуляется любая из них', () => {
+    const relief = weave();
+    // вторая волна по высоте, freq 6 → нули в v = k/6
+    expect(reliefDepth(relief, 0.3, 1 / 6)).toBeCloseTo(0, 6);
+    expect(reliefDepth(relief, 0.3, 2 / 6)).toBeCloseTo(0, 6);
+    // первая волна вокруг оси, freq 12 → нули в u = 2πk/12
+    expect(reliefDepth(relief, (2 * Math.PI) / 12, 0.42)).toBeCloseTo(0, 6);
+  });
+
+  it('в пучности достигает полной амплитуды', () => {
+    const relief = weave();
+    // обе волны в максимуме: u = 2π/48, v = 1/24
+    expect(reliefDepth(relief, (2 * Math.PI) / 48, 1 / 24)).toBeCloseTo(4, 4);
+  });
+
+  it('даёт клетчатый рисунок: знак меняется и по кругу, и по высоте', () => {
+    const relief = weave();
+    const at = (u: number, v: number) => Math.sign(reliefDepth(relief, u, v));
+    // соседняя клетка — это ПОЛпериода: у 12 гребней вокруг это 2π/24,
+    // у 6 по высоте — 1/12
+    const uLow = (2 * Math.PI) / 48;
+    const uHigh = uLow + (2 * Math.PI) / 24;
+    const vLow = 1 / 24;
+    const vHigh = vLow + 1 / 12;
+    expect(at(uLow, vLow)).toBe(1);
+    expect(at(uHigh, vLow)).toBe(-1);
+    expect(at(uLow, vHigh)).toBe(-1);
+    expect(at(uHigh, vHigh)).toBe(1);
+  });
+
+  it('плетение и модуляция дают разный рельеф при одних параметрах', () => {
+    const woven = weave();
+    const modulated = sanitizeRelief({ ...woven, wave2: { ...woven.wave2, mode: 'modulate' } });
+    let differs = 0;
+    for (let i = 0; i <= 40; i++) {
+      if (Math.abs(reliefDepth(woven, 1.1, i / 40) - reliefDepth(modulated, 1.1, i / 40)) > 0.2) differs++;
+    }
+    expect(differs).toBeGreaterThan(10);
+  });
+
+  it('фаза второй волны сдвигает рисунок по её оси', () => {
+    const plain = weave();
+    const shifted = weave({ phase: 0.25 });
+    expect(reliefDepth(plain, 0.3, 1 / 6)).toBeCloseTo(0, 6);
+    expect(Math.abs(reliefDepth(shifted, 0.3, 1 / 6))).toBeGreaterThan(1);
+  });
+
+  it('по умолчанию режим — плетение: оно проще и предсказуемее', () => {
+    expect(defaultRelief().wave2.mode).toBe('weave');
   });
 });
 

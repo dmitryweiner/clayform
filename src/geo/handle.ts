@@ -28,10 +28,20 @@ export interface HandleState {
   thicknessMm: number;
   /** ширина сечения поперёк плоскости, в долях толщины */
   widthRatio: number;
+  /**
+   * Под каким углом дуга отходит от стенки вверху, градусы от горизонтали;
+   * положительный — вверх. Ноль означает выход под прямым углом к оси: это и
+   * самый прочный стык, и самый чистый разъём формы. Отклонения дают ухо,
+   * лебединую шею и прочие живые формы.
+   */
+  topAngleDeg: number;
+  /** то же для нижнего крепления */
+  bottomAngleDeg: number;
 }
 
 export const REACH_MAX_MM = 120;
 export const THICKNESS_MAX_MM = 40;
+export const ANGLE_MAX_DEG = 75;
 
 /** Насколько концы дуги утоплены в стенку, чтобы объединение было надёжным. */
 const EMBED_MM = 2.5;
@@ -47,6 +57,8 @@ export function defaultHandle(): HandleState {
     reachMm: 28,
     thicknessMm: 11,
     widthRatio: 0.7,
+    topAngleDeg: 0,
+    bottomAngleDeg: 0,
   };
 }
 
@@ -71,6 +83,8 @@ export function sanitizeHandle(raw: unknown): HandleState {
     reachMm: clamp(num(source.reachMm, fallback.reachMm), 3, REACH_MAX_MM),
     thicknessMm: clamp(num(source.thicknessMm, fallback.thicknessMm), 3, THICKNESS_MAX_MM),
     widthRatio: clamp(num(source.widthRatio, fallback.widthRatio), 0.25, 3),
+    topAngleDeg: clamp(num(source.topAngleDeg, fallback.topAngleDeg), -ANGLE_MAX_DEG, ANGLE_MAX_DEG),
+    bottomAngleDeg: clamp(num(source.bottomAngleDeg, fallback.bottomAngleDeg), -ANGLE_MAX_DEG, ANGLE_MAX_DEG),
   };
 }
 
@@ -92,8 +106,7 @@ export function buildHandles(
   const p0: Vec3 = { x: -(rTop - embed), y: 0, z: state.topAt * heightMm };
   const p1: Vec3 = { x: -(rBottom - embed), y: 0, z: state.bottomAt * heightMm };
   const push = solvePush(state, p0, p1, rTop, rBottom);
-  const c0: Vec3 = { x: -(rTop + push), y: 0, z: p0.z };
-  const c1: Vec3 = { x: -(rBottom + push), y: 0, z: p1.z };
+  const [c0, c1] = controlPoints(state, p0, p1, rTop, rBottom, push);
 
   const halfDepth = state.thicknessMm / 2;
   const halfWidth = (state.thicknessMm * state.widthRatio) / 2;
@@ -109,6 +122,36 @@ export function buildHandles(
 }
 
 /**
+ * Управляющие точки дуги. Обе отнесены от креплений на push и повёрнуты на
+ * заданный угол от горизонтали: касательная в начале смотрит на c0, в конце —
+ * приходит от c1, поэтому углы и задают, под каким наклоном ручка отходит от
+ * стенки вверху и внизу.
+ */
+function controlPoints(
+  state: HandleState,
+  p0: Vec3,
+  p1: Vec3,
+  rTop: number,
+  rBottom: number,
+  push: number,
+): [Vec3, Vec3] {
+  const top = (state.topAngleDeg * Math.PI) / 180;
+  const bottom = (state.bottomAngleDeg * Math.PI) / 180;
+  return [
+    {
+      x: -(rTop + push * Math.cos(top)),
+      y: 0,
+      z: p0.z + push * Math.sin(top),
+    },
+    {
+      x: -(rBottom + push * Math.cos(bottom)),
+      y: 0,
+      z: p1.z + push * Math.sin(bottom),
+    },
+  ];
+}
+
+/**
  * Подбирает вынос управляющих точек так, чтобы дуга отходила от стенки ровно
  * на reachMm. Кубическая кривая отстаёт от своих управляющих точек, и на
  * сколько именно — зависит от того, насколько разнесены крепления и как
@@ -119,8 +162,7 @@ export function buildHandles(
 function solvePush(state: HandleState, p0: Vec3, p1: Vec3, rTop: number, rBottom: number): number {
   const wall = Math.max(rTop, rBottom);
   const bulgeFor = (push: number): number => {
-    const c0: Vec3 = { x: -(rTop + push), y: 0, z: p0.z };
-    const c1: Vec3 = { x: -(rBottom + push), y: 0, z: p1.z };
+    const [c0, c1] = controlPoints(state, p0, p1, rTop, rBottom, push);
     let farthest = 0;
     for (let i = 0; i <= 64; i++) {
       farthest = Math.max(farthest, -bezier(p0, c0, c1, p1, i / 64).x);

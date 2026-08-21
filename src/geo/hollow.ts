@@ -23,6 +23,13 @@ export interface HollowState {
   wallMm: number;
   /** толщина дна, мм */
   baseMm: number;
+  /**
+   * Радиус заглаженного венчика, мм. Сырой край получается плоским срезом,
+   * а гончар его заглаживает: стенку обрезают на радиус ниже, а верх
+   * добирает дуга. Больше половины стенки радиус быть не может — это уже
+   * было бы поднутрение.
+   */
+  rimRadiusMm: number;
 }
 
 export interface HollowResult {
@@ -50,8 +57,12 @@ const MIN_CAVITY_MM = 0.3;
 /** Дно не может съесть всё изделие. */
 const MAX_BASE_FRACTION = 0.7;
 
+export const RIM_MAX_MM = 8;
+/** Колец в дуге кромки: на глаз достаточно, чтобы край читался круглым. */
+const RIM_STEPS = 8;
+
 export function defaultHollow(): HollowState {
-  return { wallMm: 3, baseMm: 4 };
+  return { wallMm: 3, baseMm: 4, rimRadiusMm: 1.5 };
 }
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
@@ -67,7 +78,72 @@ export function sanitizeHollow(raw: unknown): HollowState {
   return {
     wallMm: clamp(num(source.wallMm, fallback.wallMm), WALL_MIN_MM, WALL_MAX_MM),
     baseMm: clamp(num(source.baseMm, fallback.baseMm), BASE_MIN_MM, BASE_MAX_MM),
+    rimRadiusMm: clamp(num(source.rimRadiusMm, fallback.rimRadiusMm), 0, RIM_MAX_MM),
   };
+}
+
+/**
+ * Кольца заглаженного венчика. В осевом сечении путь идёт от внешней стенки
+ * четвертью круга наверх, коротким плоским участком поперёк торца и такой же
+ * четвертью вниз к стенке полости. При радиусе, равном половине стенки,
+ * плоский участок исчезает и край становится полукруглым; при нуле колец нет
+ * вовсе и остаётся плоский срез.
+ *
+ * Радиус берётся по каждому углу отдельно: у наклонной стенки радиальный
+ * зазор между поверхностями больше толщины, и общий радиус загнал бы дугу
+ * в стенку.
+ */
+function rimRings(
+  outer: Grid,
+  inner: Float32Array,
+  nu: number,
+  nv: number,
+  rimR: number,
+): Float32Array[] {
+  if (rimR < 1e-6) return [];
+  const rings: Float32Array[] = [];
+  for (let m = 1; m < RIM_STEPS; m++) rings.push(new Float32Array(nu * 3));
+
+  const top = nv * nu;
+  for (let i = 0; i < nu; i++) {
+    const k = (top + i) * 3;
+    const ro = Math.hypot(outer.positions[k], outer.positions[k + 1]);
+    const zo = outer.positions[k + 2];
+    const ri = Math.hypot(inner[k], inner[k + 1]);
+    const zi = inner[k + 2];
+    const cos = ro > 1e-9 ? outer.positions[k] / ro : 1;
+    const sin = ro > 1e-9 ? outer.positions[k + 1] / ro : 0;
+
+    const gap = ro - ri;
+    const radius = Math.min(rimR, gap / 2);
+    const arc = (radius * Math.PI) / 2;
+    const flat = Math.hypot(gap - 2 * radius, zo - zi);
+    const total = 2 * arc + flat;
+
+    for (let m = 1; m < RIM_STEPS; m++) {
+      const s = (total * m) / RIM_STEPS;
+      let r: number;
+      let z: number;
+      if (s < arc) {
+        const a = s / Math.max(radius, 1e-9);
+        r = ro - radius + radius * Math.cos(a);
+        z = zo + radius * Math.sin(a);
+      } else if (s < arc + flat) {
+        const t = flat > 1e-9 ? (s - arc) / flat : 0;
+        r = (ro - radius) + t * ((ri + radius) - (ro - radius));
+        z = (zo + radius) + t * ((zi + radius) - (zo + radius));
+      } else {
+        const a = Math.PI / 2 + (s - arc - flat) / Math.max(radius, 1e-9);
+        r = ri + radius + radius * Math.cos(a);
+        z = zi + radius * Math.sin(a);
+      }
+      const ring = rings[m - 1];
+      ring[i * 3] = r * cos;
+      ring[i * 3 + 1] = r * sin;
+      ring[i * 3 + 2] = z;
+    }
+  }
+  return rings;
 }
 
 /** Точка гладкого силуэта, отодвинутая внутрь на wallMm по нормали. */
@@ -115,11 +191,17 @@ export function buildHollowVessel(p: BuildParams, hollow: HollowState): HollowRe
   const depthFloorMm = -(wallMm - MIN_WALL_MM);
 
   const surface = vesselSurface(p);
-  const outer = vesselGrid(p, depthFloorMm);
   const { nu, nv, profile, heightMm } = surface;
   const radiusAt = (v: number): number => profileRadius(profile, v);
 
-  const floorZ = Math.min(hollow.baseMm, heightMm * MAX_BASE_FRACTION);
+  // Под заглаженный венчик стенку обрезаем на радиус кромки ниже: остаток
+  // добирает дуга, и полная высота изделия остаётся ровно заданной.
+  const rimR = Math.min(hollow.rimRadiusMm, wallMm / 2);
+  const zTop = heightMm - rimR;
+  const vTop = zTop / heightMm;
+  const outer = vesselGrid(p, { minDepthMm: depthFloorMm, vMax: vTop });
+
+  const floorZ = Math.min(hollow.baseMm, zTop * MAX_BASE_FRACTION);
   const vFloor = floorParam(radiusAt, heightMm, wallMm, floorZ);
 
   const inner = new Float32Array(outer.positions.length);
@@ -130,17 +212,16 @@ export function buildHollowVessel(p: BuildParams, hollow: HollowState): HollowRe
     // Полость параметризуется по-своему: её j = 0 — это край пола, а не низ
     // изделия. Иначе нижние ряды схлопывались бы на уровень пола в стопку
     // вырожденных треугольников.
-    const v = vFloor + (1 - vFloor) * (j / nv);
+    const v = vFloor + (vTop - vFloor) * (j / nv);
     const point = offsetPoint(radiusAt, heightMm, wallMm, v);
     // Три ограничения на высоту точки полости:
     //  — не ниже пола;
     //  — не ниже предыдущего ряда: офсет резкого плеча даёт локальный шаг
     //    вниз, и поверхность полости складывалась бы сама на себя;
-    //  — не выше венчика: у отогнутого края внешняя нормаль смотрит
+    //  — не выше среза стенки: у отогнутого края внешняя нормаль смотрит
     //    вниз-наружу, офсет внутрь уводит вверх, и изделие оказывалось бы
-    //    выше заданной высоты. Обрезка превращает это в плоскую кромку —
-    //    ровно то, как выглядит венчик настоящей посуды.
-    const z = Math.min(Math.max(point.z, floorZ, previousZ), heightMm);
+    //    выше заданной высоты.
+    const z = Math.min(Math.max(point.z, floorZ, previousZ), zTop);
     previousZ = z;
 
     // Офсет внутрь на wallMm всегда меньше исходного радиуса (нормаль
@@ -152,14 +233,18 @@ export function buildHollowVessel(p: BuildParams, hollow: HollowState): HollowRe
     for (let i = 0; i < nu; i++) {
       const k = (j * nu + i) * 3;
       const u = (2 * Math.PI * i) / nu;
-      inner[k] = r * Math.cos(u);
-      inner[k + 1] = r * Math.sin(u);
+      // Носик оттягивает наружу и внешнюю стенку, и полость: иначе слив
+      // получался бы налитым материалом, а не желобом. Смещение одинаковое,
+      // поэтому толщина стенки в носике не меняется.
+      const radius = r + surface.pullAt(u, z / heightMm);
+      inner[k] = radius * Math.cos(u);
+      inner[k + 1] = radius * Math.sin(u);
       inner[k + 2] = z;
       if (surface.depthAt(u, v) < depthFloorMm) pinched++;
     }
   }
 
-  const shell = assembleHollowMesh(outer, inner);
+  const shell = assembleHollowMesh(outer, inner, rimRings(outer, inner, nu, nv, rimR));
   const cavity = assembleMesh({ nu, nv, positions: inner }, 'both');
   return {
     mesh: { ...shell, normals: meshNormals(shell.positions, shell.indices) },

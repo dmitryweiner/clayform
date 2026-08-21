@@ -6,6 +6,7 @@
 
 import { buildHollowVessel, defaultHollow, sanitizeHollow } from '../src/geo/hollow';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
+import { sanitizeSpout, makeSpout } from '../src/geo/spout';
 import { validateMesh } from '../src/geo/validate';
 import {
   FAMILY_IDS, defaultFamilyParams, familyById, buildProfile, profileRadius,
@@ -38,10 +39,10 @@ describe('buildHollowVessel', () => {
   });
 
   it('материал плюс полость даёт ровно сплошное тело', () => {
-    // тождество держится только если венчик полости лежит в той же
-    // плоскости, что и венчик изделия, — это и защищаем
+    // Тождество держится только при плоском срезе венчика: заглаженный край
+    // по построению срезает часть материала, и сумма становится меньше.
     const p = params('cup');
-    const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 4 }));
+    const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 4, rimRadiusMm: 0 }));
     const solid = validateMesh(buildVessel(p)).volume;
     const material = validateMesh(hollow.mesh).volume;
     expect(material + hollow.capacityMl * 1000).toBeCloseTo(solid, 0);
@@ -111,7 +112,10 @@ describe('buildHollowVessel', () => {
     const p = params('vase');
     const solid = validateMesh(buildVessel(p)).extents;
     const hollow = validateMesh(buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 5 })).mesh).extents;
-    for (let i = 0; i < 3; i++) expect(hollow[i]).toBeCloseTo(solid[i], 4);
+    // Допуск в десятую долю миллиметра: под кромку сетка обрывается чуть
+    // ниже, отсчёты по высоте ложатся иначе, и вписанный многогранник ловит
+    // максимум тулова в слегка другой точке. Сама форма та же.
+    for (let i = 0; i < 3; i++) expect(hollow[i]).toBeCloseTo(solid[i], 1);
   });
 
   it('полость целиком лежит внутри силуэта — на своей высоте, а не на чужой', () => {
@@ -146,6 +150,86 @@ describe('buildHollowVessel', () => {
   it('гладкое изделие не сообщает о зажатой стенке', () => {
     const hollow = buildHollowVessel(params('cup'), sanitizeHollow({ wallMm: 3, baseMm: 4 }));
     expect(hollow.pinchedFraction).toBe(0);
+  });
+
+  it('заглаженный венчик не меняет высоту изделия', () => {
+    // Стенку под кромку обрезают ниже, но дуга добирает ровно этот радиус:
+    // высота остаётся заданной, иначе слайдер высоты врал бы.
+    const p = params('cup');
+    for (const rimRadiusMm of [0, 0.5, 1.5, 8]) {
+      const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 4, rimRadiusMm }));
+      const report = validateMesh(hollow.mesh);
+      expect(report.bbox.max[2], `r=${rimRadiusMm}`).toBeCloseTo(p.heightMm, 3);
+      expect(report.watertight, `r=${rimRadiusMm}`).toBe(true);
+      expect(report.degenerateTriangles, `r=${rimRadiusMm}`).toBe(0);
+    }
+  });
+
+  it('радиус кромки не может превысить половину стенки — иначе это поднутрение', () => {
+    const p = params('cup');
+    const wallMm = 3;
+    const huge = buildHollowVessel(p, sanitizeHollow({ wallMm, baseMm: 4, rimRadiusMm: 8 }));
+    const exact = buildHollowVessel(p, sanitizeHollow({ wallMm, baseMm: 4, rimRadiusMm: wallMm / 2 }));
+    expect(validateMesh(huge.mesh).volume).toBeCloseTo(validateMesh(exact.mesh).volume, 1);
+  });
+
+  it('скругление съедает материал у края и тем заметнее, чем больше радиус', () => {
+    const p = params('cup');
+    const at = (rimRadiusMm: number) =>
+      validateMesh(buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 4, rimRadiusMm })).mesh).volume;
+    const flat = at(0);
+    expect(at(0.5)).toBeLessThan(flat);
+    expect(at(1.5)).toBeLessThan(at(0.5));
+    // но срезается именно кромка, а не пол-изделия
+    expect(at(1.5)).toBeGreaterThan(flat * 0.9);
+  });
+
+  it('носик выходит полым: полость идёт за оттянутым краем', () => {
+    const pullMm = 20;
+    const p = params('bowl', {
+      spout: sanitizeSpout({ on: true, pullMm, widthDeg: 60, zone: 0.25 }),
+    });
+    const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 4 }));
+    const plain = buildHollowVessel(params('bowl'), sanitizeHollow({ wallMm: 3, baseMm: 4 }));
+    const inner = hollow.innerGrid;
+
+    // i = 0 — это u = 0, середина слива; верхний ряд полости
+    const j = inner.nv;
+    const rSpout = Math.hypot(inner.positions[j * inner.nu * 3], inner.positions[j * inner.nu * 3 + 1]);
+    const rPlain = Math.hypot(
+      plain.innerGrid.positions[j * plain.innerGrid.nu * 3],
+      plain.innerGrid.positions[j * plain.innerGrid.nu * 3 + 1],
+    );
+    expect(rSpout - rPlain).toBeCloseTo(pullMm, 0);
+
+    // и вместимость выросла: раньше носик был налит материалом
+    expect(hollow.capacityMl).toBeGreaterThan(plain.capacityMl);
+    expect(validateMesh(hollow.mesh).watertight).toBe(true);
+  });
+
+  it('в носике стенка остаётся заданной толщины', () => {
+    const p = params('cup', {
+      shape: { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, barrel: 0, rimFlare: 0 },
+      heightMm: 100,
+      spout: sanitizeSpout({ on: true, pullMm: 18, widthDeg: 70, zone: 0.3 }),
+    });
+    const wallMm = 3.5;
+    const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm, baseMm: 5 }));
+    const inner = hollow.innerGrid;
+    const pull = makeSpout(p.spout);
+
+    // Ряды полости и внешней сетки лежат на разных высотах, поэтому сверяем
+    // не с соседним узлом, а с формулой: у цилиндра стенка радиальна, значит
+    // радиус полости обязан быть ровно (40 − стенка) плюс тот же вытяг.
+    const j = Math.round(inner.nv * 0.9);
+    for (const i of [0, 3, 6]) {
+      const k = (j * inner.nu + i) * 3;
+      const rIn = Math.hypot(inner.positions[k], inner.positions[k + 1]);
+      const u = (2 * Math.PI * i) / inner.nu;
+      const expected = 40 - wallMm + pull(u, inner.positions[k + 2] / p.heightMm);
+      expect(rIn, `i=${i}`).toBeCloseTo(expected, 3);
+      expect(pull(u, inner.positions[k + 2] / p.heightMm), `i=${i}`).toBeGreaterThan(1);
+    }
   });
 
   it('нелепо толстая стенка не ломает меш', () => {

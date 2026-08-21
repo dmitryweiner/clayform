@@ -107,25 +107,37 @@ export function assembleTorusMesh(grid: Grid): Omit<SurfaceMesh, 'normals'> {
 
 /**
  * Полый сосуд с открытым верхом: внешняя оболочка (стенки + дно) + внутренняя
- * (стенки + дно полости) + кольцевой ободок сверху. В отличие от caps='bottom'
+ * (стенки + дно полости) + кромка сверху. В отличие от caps='bottom'
  * (нулевая толщина, vase-mode), это watertight-солид, печатаемый как обычная
- * модель. `inner` — позиции, смещённые внутрь вдоль нормали, той же раскладки
- * (nu*(nv+1)), что и outer.positions.
+ * модель. `inner` — позиции полости той же раскладки (nu*(nv+1)), что и
+ * outer.positions.
+ *
+ * `rimRings` — промежуточные кольца кромки между внешним и внутренним верхом.
+ * Пустой массив даёт плоский срез, как у сырого края; несколько колец по дуге
+ * дают заглаженный край, какой гончар делает пальцем.
  */
-export function assembleHollowMesh(outer: Grid, inner: Float32Array): Omit<SurfaceMesh, 'normals'> {
+export function assembleHollowMesh(
+  outer: Grid,
+  inner: Float32Array,
+  rimRings: Float32Array[] = [],
+): Omit<SurfaceMesh, 'normals'> {
   const { nu, nv } = outer;
   const nGrid = nu * (nv + 1);
-  const outPos = new Float32Array((2 * nGrid + 2) * 3);
+  const rimCount = rimRings.length;
+  const vertexCount = 2 * nGrid + rimCount * nu + 2;
+  const outPos = new Float32Array(vertexCount * 3);
   outPos.set(outer.positions, 0);
   outPos.set(inner, nGrid * 3);
   const oBase = 0;
   const iBase = nGrid;
-  const oCap = 2 * nGrid; // центроид внешнего дна
-  const iCap = 2 * nGrid + 1; // центроид дна полости
+  const rimBase = 2 * nGrid;
+  for (let m = 0; m < rimCount; m++) outPos.set(rimRings[m], (rimBase + m * nu) * 3);
+  const oCap = rimBase + rimCount * nu; // центроид внешнего дна
+  const iCap = oCap + 1; // центроид дна полости
 
   const wallTris = nu * nv * 2 * 2; // внешние + внутренние стенки
   const capTris = nu * 2; // внешнее дно + дно полости
-  const rimTris = nu * 2; // верхний ободок-кольцо
+  const rimTris = nu * 2 * (rimCount + 1); // полос кромки на одну больше, чем колец
   const indices = new Uint32Array((wallTris + capTris + rimTris) * 3);
   let k = 0;
 
@@ -177,13 +189,20 @@ export function assembleHollowMesh(outer: Grid, inner: Float32Array): Omit<Surfa
   for (let i = 0; i < nu; i++) {
     indices[k++] = iCap; indices[k++] = iBase + i; indices[k++] = iBase + ((i + 1) % nu);
   }
-  // верхний ободок: кольцо между внешним и внутренним верхними рядами (нормаль вверх)
+  // Кромка: полосы от внешнего верха через кольца дуги к внутреннему верху.
+  // Нормаль наружу-вверх, обход тот же, что у плоского кольца.
   const oTop = oBase + nv * nu;
   const iTop = iBase + nv * nu;
-  for (let i = 0; i < nu; i++) {
-    const i1 = (i + 1) % nu;
-    indices[k++] = oTop + i; indices[k++] = oTop + i1; indices[k++] = iTop + i1;
-    indices[k++] = oTop + i; indices[k++] = iTop + i1; indices[k++] = iTop + i;
+  const rimRow = (m: number): number =>
+    m < 0 ? oTop : m >= rimCount ? iTop : rimBase + m * nu;
+  for (let m = -1; m < rimCount; m++) {
+    const from = rimRow(m);
+    const to = rimRow(m + 1);
+    for (let i = 0; i < nu; i++) {
+      const i1 = (i + 1) % nu;
+      indices[k++] = from + i; indices[k++] = from + i1; indices[k++] = to + i1;
+      indices[k++] = from + i; indices[k++] = to + i1; indices[k++] = to + i;
+    }
   }
   return { positions: outPos, indices };
 }

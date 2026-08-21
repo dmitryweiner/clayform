@@ -31,6 +31,11 @@ const PATTERN_OPTIONS = [
   { value: 'lattice', label: 'сетка' },
 ];
 
+const MODE_OPTIONS = [
+  { value: 'weave', label: 'плетение (w₁ × w₂)' },
+  { value: 'modulate', label: 'модуляция (w₂ гнёт w₁)' },
+];
+
 const SPIRAL_HINT = 'работает при оси «по спирали»';
 
 const WAVE_CONTROLS: Control<ReliefState>[] = [
@@ -60,7 +65,7 @@ const WAVE_CONTROLS: Control<ReliefState>[] = [
     set: (s, v) => ({ ...s, wave: { ...s.wave, phase: v } }),
   },
   {
-    kind: 'range', key: 'spiralK', label: 'Шаг спирали', min: -SPIRAL_K_MAX, max: SPIRAL_K_MAX, step: 1,
+    kind: 'range', key: 'spiralK', label: 'Шаг спирали', min: -SPIRAL_K_MAX, max: SPIRAL_K_MAX, step: 0.05,
     hint: SPIRAL_HINT,
     get: (s) => s.wave.spiralK,
     set: (s, v) => ({ ...s, wave: { ...s.wave, spiralK: v } }),
@@ -85,6 +90,12 @@ const WAVE_CONTROLS: Control<ReliefState>[] = [
 
 const WAVE2_CONTROLS: Control<ReliefState>[] = [
   {
+    kind: 'select', key: 'mode', label: 'Как связаны', options: MODE_OPTIONS,
+    hint: 'плетение — простое произведение волн: корзинка, вафля',
+    get: (s) => s.wave2.mode,
+    set: (s, v) => ({ ...s, wave2: { ...s.wave2, mode: v === 'modulate' ? 'modulate' : 'weave' } }),
+  },
+  {
     kind: 'select', key: 'axis2', label: 'Куда бежит', options: AXIS_OPTIONS,
     get: (s) => s.wave2.axis,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, axis: axis(v) } }),
@@ -100,6 +111,21 @@ const WAVE2_CONTROLS: Control<ReliefState>[] = [
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, freq: v } }),
   },
   {
+    kind: 'range', key: 'phase2', label: 'Фаза', min: -1, max: 1, step: 0.01,
+    get: (s) => s.wave2.phase,
+    set: (s, v) => ({ ...s, wave2: { ...s.wave2, phase: v } }),
+  },
+  {
+    kind: 'range', key: 'spiralK2', label: 'Шаг спирали', min: -SPIRAL_K_MAX, max: SPIRAL_K_MAX, step: 0.05,
+    hint: SPIRAL_HINT,
+    get: (s) => s.wave2.spiralK,
+    set: (s, v) => ({ ...s, wave2: { ...s.wave2, spiralK: v } }),
+  },
+];
+
+/** Ползунки, которые работают только в режиме модуляции. */
+const MODULATE_CONTROLS: Control<ReliefState>[] = [
+  {
     kind: 'range', key: 'fm', label: 'Гнёт фазу', min: -1, max: 1, step: 0.01,
     hint: 'вторая волна сдвигает гребни первой',
     get: (s) => s.wave2.fm,
@@ -110,12 +136,6 @@ const WAVE2_CONTROLS: Control<ReliefState>[] = [
     hint: 'вторая волна то усиливает, то гасит первую',
     get: (s) => s.wave2.am,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, am: v } }),
-  },
-  {
-    kind: 'range', key: 'spiralK2', label: 'Шаг спирали', min: -SPIRAL_K_MAX, max: SPIRAL_K_MAX, step: 1,
-    hint: SPIRAL_HINT,
-    get: (s) => s.wave2.spiralK,
-    set: (s, v) => ({ ...s, wave2: { ...s.wave2, spiralK: v } }),
   },
 ];
 
@@ -205,11 +225,14 @@ export function renderReliefCards(
     id: 'wave2',
     title: 'Волна волны',
     tag: '2-й порядок',
-    desc: 'Вторая волна гнёт первую: сдвигает её гребни и меняет их глубину.',
+    desc: 'Плетение — произведение двух волн: корзинка, вафля. Модуляция — вторая волна гнёт первую.',
     enabled: readRelief().wave2.on,
     onToggle: (on) => onRelief({ ...readRelief(), wave2: { ...readRelief().wave2, on } }),
   });
   const wave2Rows = renderControls(wave2Card.body, WAVE2_CONTROLS, readRelief, onRelief, 'wave2');
+  const modulateHost = make('div');
+  wave2Card.body.append(modulateHost);
+  const modulateRows = renderControls(modulateHost, MODULATE_CONTROLS, readRelief, onRelief, 'wave2');
 
   const rouletteCard = createCard(container, {
     id: 'roulette',
@@ -229,6 +252,10 @@ export function renderReliefCards(
       rouletteCard.setEnabled(roulette.on);
       waveRows.sync(relief);
       wave2Rows.sync(relief);
+      // в режиме плетения эти два ползунка ни на что не влияют — прячем,
+      // чтобы не гадать, почему они не работают
+      modulateHost.hidden = relief.wave2.mode !== 'modulate';
+      modulateRows.sync(relief);
       rouletteRows.sync(roulette);
     },
     setRepeatsNote(text: string): void {

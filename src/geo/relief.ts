@@ -26,14 +26,30 @@ export interface WaveState {
   spiralK: number;
 }
 
+/**
+ * Как вторая волна связана с первой.
+ *
+ * `weave` — простое произведение: A·w₁(…)·w₂(…). Первая волна бежит вокруг
+ * оси, вторая по высоте — получается плетёнка, вафля, корзинка. Это то, что
+ * обычно и имеют в виду под «волной волны».
+ *
+ * `modulate` — вторая волна гнёт первую: сдвигает её гребни (fm) и меняет их
+ * глубину (am). Результат богаче и страннее, но управлять им сложнее.
+ */
+export const WAVE2_MODES = ['weave', 'modulate'] as const;
+export type Wave2Mode = (typeof WAVE2_MODES)[number];
+
 export interface Wave2State {
   on: boolean;
+  mode: Wave2Mode;
   axis: WaveAxis;
   shape: WaveShape;
   freq: number;
-  /** модуляция фазы несущей, в долях периода */
+  /** сдвиг второй волны в долях периода */
+  phase: number;
+  /** модуляция фазы несущей, в долях периода (режим modulate) */
   fm: number;
-  /** модуляция амплитуды несущей, 0…1 */
+  /** модуляция амплитуды несущей, 0…1 (режим modulate) */
   am: number;
   spiralK: number;
 }
@@ -114,17 +130,22 @@ export function reliefDepth(relief: ReliefState, u: number, v: number): number {
   const { wave, wave2 } = relief;
   if (!wave.on || wave.ampMm === 0) return 0;
 
+  const inner = wave2.on
+    ? waveform(wave2.shape, wave2.freq * axisCoord(wave2.axis, u, v, wave2.spiralK) + wave2.phase)
+    : 0;
+
   let phase = wave.phase;
   let amp = wave.ampMm;
-  if (wave2.on) {
-    const inner = waveform(wave2.shape, wave2.freq * axisCoord(wave2.axis, u, v, wave2.spiralK));
+  if (wave2.on && wave2.mode === 'modulate') {
     phase += wave2.fm * inner;
     // множитель не уходит в минус: иначе валики местами выворачивались бы
     // в канавки, а рисунок рвался бы на границе смены знака
     amp *= Math.max(0, 1 + wave2.am * inner);
   }
+
   const carrier = waveform(wave.shape, wave.freq * axisCoord(wave.axis, u, v, wave.spiralK) + phase);
-  return amp * carrier * zoneWeight(relief.zone, v);
+  const woven = wave2.on && wave2.mode === 'weave' ? carrier * inner : carrier;
+  return amp * woven * zoneWeight(relief.zone, v);
 }
 
 // --- дефолты и санация ---
@@ -132,7 +153,10 @@ export function reliefDepth(relief: ReliefState, u: number, v: number): number {
 export function defaultRelief(): ReliefState {
   return {
     wave: { on: false, axis: 'z', shape: 'rounded', freq: 12, ampMm: 2, phase: 0, spiralK: 1 },
-    wave2: { on: false, axis: 'theta', shape: 'sin', freq: 6, fm: 0.2, am: 0.5, spiralK: 1 },
+    wave2: {
+      on: false, mode: 'weave', axis: 'theta', shape: 'sin', freq: 8,
+      phase: 0, fm: 0.2, am: 0.5, spiralK: 1,
+    },
     zone: { from: 0.08, to: 0.95, fade: 0.06 },
   };
 }
@@ -160,6 +184,11 @@ function axisOf(x: unknown, fallback: WaveAxis): WaveAxis {
   return fallback;
 }
 
+function modeOf(x: unknown, fallback: Wave2Mode): Wave2Mode {
+  for (const mode of WAVE2_MODES) if (x === mode) return mode;
+  return fallback;
+}
+
 export const FREQ_MAX = 64;
 export const AMP_MAX_MM = 20;
 export const SPIRAL_K_MAX = 12;
@@ -173,34 +202,49 @@ function wrapSafeFreq(axis: WaveAxis, freq: number): number {
   return axis === 'z' ? bounded : Math.round(bounded);
 }
 
+/**
+ * Шаг спирали. За оборот аргумент волны прирастает на freq·spiralK, и шов
+ * сходится, когда это произведение целое. Целым обязан быть именно
+ * ПРОИЗВЕДЕНИЕ, а не сам шаг: при 16 гребнях допустимы шаги кратные 1/16,
+ * то есть почти непрерывная настройка наклона. Первая версия округляла шаг
+ * до целого и без нужды загрубляла ручку до пяти положений.
+ */
+function wrapSafeSpiralK(axis: WaveAxis, freq: number, spiralK: number): number {
+  const bounded = clamp(spiralK, -SPIRAL_K_MAX, SPIRAL_K_MAX);
+  if (axis !== 'spiral' || freq < 1) return bounded;
+  return Math.round(freq * bounded) / freq;
+}
+
 export function sanitizeRelief(raw: unknown): ReliefState {
   const source = asRecord(raw);
   const fallback = defaultRelief();
 
   const waveSrc = asRecord(source.wave);
   const waveAxis = axisOf(waveSrc.axis, fallback.wave.axis);
-  const waveSpiralK = Math.round(clamp(num(waveSrc.spiralK, fallback.wave.spiralK), -SPIRAL_K_MAX, SPIRAL_K_MAX));
+  const waveFreq = wrapSafeFreq(waveAxis, num(waveSrc.freq, fallback.wave.freq));
   const wave: WaveState = {
     on: bool(waveSrc.on, fallback.wave.on),
     axis: waveAxis,
     shape: shapeOf(waveSrc.shape, fallback.wave.shape),
-    freq: wrapSafeFreq(waveAxis, num(waveSrc.freq, fallback.wave.freq)),
+    freq: waveFreq,
     ampMm: clamp(num(waveSrc.ampMm, fallback.wave.ampMm), -AMP_MAX_MM, AMP_MAX_MM),
     phase: clamp(num(waveSrc.phase, fallback.wave.phase), -1, 1),
-    spiralK: waveSpiralK,
+    spiralK: wrapSafeSpiralK(waveAxis, waveFreq, num(waveSrc.spiralK, fallback.wave.spiralK)),
   };
 
   const wave2Src = asRecord(source.wave2);
   const wave2Axis = axisOf(wave2Src.axis, fallback.wave2.axis);
-  const wave2SpiralK = Math.round(clamp(num(wave2Src.spiralK, fallback.wave2.spiralK), -SPIRAL_K_MAX, SPIRAL_K_MAX));
+  const wave2Freq = wrapSafeFreq(wave2Axis, num(wave2Src.freq, fallback.wave2.freq));
   const wave2: Wave2State = {
     on: bool(wave2Src.on, fallback.wave2.on),
+    mode: modeOf(wave2Src.mode, fallback.wave2.mode),
     axis: wave2Axis,
     shape: shapeOf(wave2Src.shape, fallback.wave2.shape),
-    freq: wrapSafeFreq(wave2Axis, num(wave2Src.freq, fallback.wave2.freq)),
+    freq: wave2Freq,
+    phase: clamp(num(wave2Src.phase, fallback.wave2.phase), -1, 1),
     fm: clamp(num(wave2Src.fm, fallback.wave2.fm), -1, 1),
     am: clamp(num(wave2Src.am, fallback.wave2.am), 0, 1),
-    spiralK: wave2SpiralK,
+    spiralK: wrapSafeSpiralK(wave2Axis, wave2Freq, num(wave2Src.spiralK, fallback.wave2.spiralK)),
   };
 
   const zoneSrc = asRecord(source.zone);

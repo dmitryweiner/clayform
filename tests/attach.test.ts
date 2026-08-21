@@ -90,6 +90,39 @@ describe('buildHandles', () => {
     }
   });
 
+  it('углы задают наклон, под которым дуга отходит от стенки', () => {
+    // Касательная в начале смотрит на первую управляющую точку, поэтому угол
+    // читается прямо по началу дуги: берём точку чуть дальше крепления.
+    for (const topAngleDeg of [-45, 0, 45]) {
+      const [handle] = buildHandles(handleOn({ topAngleDeg, bottomAngleDeg: 0 }), profile, 95);
+      const top = validateMesh(handle).bbox.max[2];
+      const flat = validateMesh(buildHandles(handleOn(), profile, 95)[0]).bbox.max[2];
+      if (topAngleDeg > 0) expect(top, `${topAngleDeg}°`).toBeGreaterThan(flat + 3);
+      if (topAngleDeg < 0) expect(top, `${topAngleDeg}°`).toBeLessThanOrEqual(flat + 0.5);
+    }
+  });
+
+  it('угол нижнего крепления опускает низ дуги, не трогая верх', () => {
+    const flat = validateMesh(buildHandles(handleOn(), profile, 95)[0]).bbox;
+    const dropped = validateMesh(
+      buildHandles(handleOn({ bottomAngleDeg: -50 }), profile, 95)[0],
+    ).bbox;
+    expect(dropped.min[2]).toBeLessThan(flat.min[2] - 3);
+    expect(dropped.max[2]).toBeCloseTo(flat.max[2], 0);
+  });
+
+  it('при любых углах ручка остаётся в плоскости разъёма', () => {
+    for (const topAngleDeg of [-70, 0, 70]) {
+      for (const bottomAngleDeg of [-70, 0, 70]) {
+        const state = handleOn({ topAngleDeg, bottomAngleDeg });
+        const [handle] = buildHandles(state, profile, 95);
+        const { bbox } = validateMesh(handle);
+        const halfWidth = (state.thicknessMm * state.widthRatio) / 2;
+        expect(Math.abs(bbox.max[1]), `${topAngleDeg}/${bottomAngleDeg}`).toBeCloseTo(halfWidth, 3);
+      }
+    }
+  });
+
   it('нижнее крепление не может оказаться выше верхнего', () => {
     const state = sanitizeHandle({ on: true, topAt: 0.4, bottomAt: 0.9 });
     expect(state.bottomAt).toBeLessThan(state.topAt);

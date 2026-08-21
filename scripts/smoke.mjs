@@ -28,6 +28,13 @@ async function auditVerdict(page) {
 const app = await openApp({ preview: flags.has('preview') });
 const { page, errors, label } = app;
 
+// иконка должна реально отдаваться, а не 404 — вкладку по ней и находят
+label('favicon');
+const faviconStatus = await page.evaluate(
+  () => fetch('./favicon.svg').then((r) => r.status, () => 0),
+);
+if (faviconStatus !== 200) errors.push(`[favicon] favicon.svg отдаёт ${faviconStatus}`);
+
 label('boot');
 await page.waitForFunction(
   () => (document.querySelector('#status')?.textContent ?? '').length > 0,
@@ -103,10 +110,28 @@ for (const shape of await page.$$eval('#wave_shape option', (o) => o.map((x) => 
 
 label('wave2');
 await page.check('#on_wave2');
-await page.waitForTimeout(150);
-if (!(await auditVerdict(page)).includes('замкнуто ✓')) {
-  errors.push('[wave2] меш перестал быть замкнутым');
+for (const mode of await page.$$eval('#wave2_mode option', (o) => o.map((x) => x.value))) {
+  await page.selectOption('#wave2_mode', mode);
+  await page.waitForTimeout(120);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[wave2:${mode}] audit="${verdict}"`);
+  // в режиме плетения ползунки модуляции скрыты — иначе непонятно, почему
+  // они ничего не делают
+  const fmVisible = await page.locator('#wave2_fm').isVisible();
+  if (fmVisible !== (mode === 'modulate')) {
+    errors.push(`[wave2:${mode}] ползунки модуляции видимы: ${fmVisible}`);
+  }
 }
+
+// дробный шаг спирали: шов обязан сходиться при любом положении ползунка
+label('spiral');
+await page.selectOption('#wave_axis', 'spiral');
+for (const k of ['-2.35', '0.15', '0.7', '3.85']) {
+  await page.fill('#wave_spiralK', k);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[spiral k=${k}] audit="${verdict}"`);
+}
+await page.selectOption('#wave_axis', 'z');
 
 label('roulette');
 await page.check('#on_roulette');
@@ -191,6 +216,8 @@ await page.check('#on_spout');
 for (const [id, value] of [['handle_reach', '3'], ['handle_reach', '120'], ['handle_reach', '28'],
                            ['handle_thickness', '3'], ['handle_thickness', '40'], ['handle_thickness', '11'],
                            ['handle_count', '2'], ['handle_count', '1'],
+                           ['handle_topAngle', '-75'], ['handle_topAngle', '75'], ['handle_topAngle', '0'],
+                           ['handle_bottomAngle', '-75'], ['handle_bottomAngle', '75'], ['handle_bottomAngle', '0'],
                            ['spout_pull', '60'], ['spout_width', '180'], ['spout_pull', '14'],
                            ['spout_width', '60']]) {
   const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
@@ -204,7 +231,8 @@ if (shotsDir) await page.screenshot({ path: `${shotsDir}/attachments.png` });
 // стенка и дно: крайние значения не должны рвать полость
 label('hollow');
 for (const [id, value] of [['print_wall', '0.8'], ['print_wall', '60'], ['print_wall', '3'],
-                           ['print_base', '1'], ['print_base', '60'], ['print_base', '4']]) {
+                           ['print_base', '1'], ['print_base', '60'], ['print_base', '4'],
+                           ['print_rim', '0'], ['print_rim', '8'], ['print_rim', '1.5']]) {
   await page.fill(`#${id}`, value);
   const verdict = await auditVerdict(page);
   if (!verdict.includes('замкнуто ✓')) errors.push(`[hollow:${id}=${value}] audit="${verdict}"`);

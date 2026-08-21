@@ -5,7 +5,7 @@
 //   Ванночки — печатные опалубки под заливку силикона, по одной на часть.
 
 import type { HollowState } from '../geo/hollow';
-import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM } from '../geo/hollow';
+import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM, RIM_MAX_MM } from '../geo/hollow';
 import type { MoldState } from '../geo/mold';
 import { SHRINK_MAX_PCT, PLASTER_MAX_MM, SPARE_MAX_MM } from '../geo/mold';
 import type { ExportMode } from '../state/schema';
@@ -24,6 +24,12 @@ const HOLLOW_CONTROLS: Control<HollowState>[] = [
     kind: 'range', key: 'base', label: 'Дно', min: BASE_MIN_MM, max: BASE_MAX_MM, step: 0.5, unit: 'мм',
     get: (s) => s.baseMm,
     set: (s, v) => ({ ...s, baseMm: v }),
+  },
+  {
+    kind: 'range', key: 'rim', label: 'Радиус края', min: 0, max: RIM_MAX_MM, step: 0.1, unit: 'мм',
+    hint: '0 — плоский срез; больше половины стенки не бывает — это уже поднутрение',
+    get: (s) => s.rimRadiusMm,
+    set: (s, v) => ({ ...s, rimRadiusMm: v }),
   },
 ];
 

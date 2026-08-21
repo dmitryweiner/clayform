@@ -18,6 +18,7 @@
 //   --wait <ms>           доп. пауза перед съёмкой
 //   --width / --height    размер окна
 //   --preview             прод-сборка вместо dev-сервера
+//   --url <path>          снять произвольный путь сервера (иконку, ассет)
 
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -25,7 +26,7 @@ import { parseArgs, openApp } from './lib/harness.mjs';
 
 const flags = parseArgs(
   process.argv.slice(2),
-  ['out', 'family', 'wait', 'width', 'height'],
+  ['out', 'family', 'wait', 'width', 'height', 'url'],
   ['set', 'check', 'uncheck', 'click'],
 );
 
@@ -44,6 +45,18 @@ const app = await openApp({
   height: Number(flags.get('height') ?? 860),
 });
 const { page, errors, label } = app;
+
+const rawUrl = flags.get('url');
+if (rawUrl) {
+  // Статический ассет: приложение не поднимаем, просто открываем путь.
+  label(`url:${rawUrl}`);
+  await page.goto(new URL(rawUrl, page.url()).href);
+  await page.waitForTimeout(Number(flags.get('wait') ?? 300));
+  await page.screenshot({ path: out });
+  await app.close();
+  console.log(`snap → ${out}`);
+  process.exit(errors.length ? 1 : 0);
+}
 
 label('boot');
 await page.waitForFunction(

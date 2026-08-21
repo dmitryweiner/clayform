@@ -104,24 +104,40 @@ export function vesselSurface(p: BuildParams): VesselSurface {
   };
 }
 
+export interface GridOptions {
+  /**
+   * Нижняя граница смещения внутрь. Полому изделию этого хватает, чтобы
+   * гарантировать стенку: полость — эквидистанта силуэта на wallMm, а рельеф
+   * уводит поверхность внутрь ровно на |depth|, поэтому остаток стенки равен
+   * wallMm + depth и не зависит от того, как соотносятся ряды сеток.
+   */
+  minDepthMm?: number;
+  /**
+   * Доля высоты, на которой сетка обрывается. Нужна скруглённой кромке: под
+   * неё стенку обрезают чуть ниже венчика, а остаток добирает дуга. Силуэт и
+   * рельеф считаются по НАСТОЯЩЕЙ доле высоты, поэтому узор не съезжает —
+   * изделие просто короче на радиус кромки.
+   */
+  vMax?: number;
+}
+
 /**
  * Сетка тела вращения. Ось — z, дно в z = 0, обход u против часовой стрелки
  * (нормали наружу). Рельеф и накатка смещают узлы вдоль нормали силуэта.
- *
- * `minDepthMm` ограничивает смещение внутрь. Полому изделию этого хватает,
- * чтобы гарантировать стенку: полость — эквидистанта силуэта на wallMm, а
- * рельеф уводит поверхность внутрь ровно на |depth|, поэтому остаток стенки
- * равен wallMm + depth и не зависит от того, как соотносятся ряды сеток.
  */
-export function vesselGrid(p: BuildParams, minDepthMm = -Infinity): Grid {
+export function vesselGrid(p: BuildParams, options: GridOptions = {}): Grid {
   const surface = vesselSurface(p);
   const { nu, nv, profile, heightMm } = surface;
+  const minDepthMm = options.minDepthMm ?? -Infinity;
+  const vMax = clampUnit(options.vMax ?? 1);
+  const vAt = (j: number): number => (j / nv) * vMax;
 
   const grid = sampleGrid(nu, nv, (u, v, out) => {
-    const r = Math.max(MIN_RADIUS_MM, profileRadius(profile, v));
+    const height = v * vMax;
+    const r = Math.max(MIN_RADIUS_MM, profileRadius(profile, height));
     out[0] = r * Math.cos(u);
     out[1] = r * Math.sin(u);
-    out[2] = v * heightMm;
+    out[2] = height * heightMm;
   });
 
   // Смещаем по нормалям исходного силуэта, а не пересчитываем их по ходу:
@@ -129,7 +145,7 @@ export function vesselGrid(p: BuildParams, minDepthMm = -Infinity): Grid {
   const normals = gridNormals(grid);
   const positions = grid.positions;
   for (let j = 0; j <= nv; j++) {
-    const v = j / nv;
+    const v = vAt(j);
     for (let i = 0; i < nu; i++) {
       const u = (TAU * i) / nu;
       const depth = Math.max(surface.depthAt(u, v), minDepthMm);
@@ -166,6 +182,10 @@ export function vesselGrid(p: BuildParams, minDepthMm = -Infinity): Grid {
 function smoothstep(x: number): number {
   const q = Math.min(1, Math.max(0, x));
   return q * q * (3 - 2 * q);
+}
+
+function clampUnit(x: number): number {
+  return Number.isFinite(x) ? Math.min(1, Math.max(0.05, x)) : 1;
 }
 
 /** Замкнутый солид изделия: боковая поверхность + дно + верх. */

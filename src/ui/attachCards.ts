@@ -1,7 +1,7 @@
 // Карточки приставных деталей: ручка и носик-слив.
 
 import type { HandleState } from '../geo/handle';
-import { REACH_MAX_MM, THICKNESS_MAX_MM } from '../geo/handle';
+import { REACH_MAX_MM, THICKNESS_MAX_MM, ANGLE_MAX_DEG } from '../geo/handle';
 import type { SpoutState } from '../geo/spout';
 import { PULL_MAX_MM } from '../geo/spout';
 import type { Control } from './controls';
@@ -42,6 +42,18 @@ const HANDLE_CONTROLS: Control<HandleState>[] = [
     hint: 'ширина сечения в долях толщины',
     get: (s) => s.widthRatio,
     set: (s, v) => ({ ...s, widthRatio: v }),
+  },
+  {
+    kind: 'range', key: 'topAngle', label: 'Угол вверху', min: -ANGLE_MAX_DEG, max: ANGLE_MAX_DEG, step: 1, unit: '°',
+    hint: 'под каким наклоном дуга отходит от стенки; 0 — под прямым углом',
+    get: (s) => s.topAngleDeg,
+    set: (s, v) => ({ ...s, topAngleDeg: v }),
+  },
+  {
+    kind: 'range', key: 'bottomAngle', label: 'Угол внизу', min: -ANGLE_MAX_DEG, max: ANGLE_MAX_DEG, step: 1, unit: '°',
+    hint: 'отрицательный уводит нижний конец дуги вниз',
+    get: (s) => s.bottomAngleDeg,
+    set: (s, v) => ({ ...s, bottomAngleDeg: v }),
   },
 ];
 

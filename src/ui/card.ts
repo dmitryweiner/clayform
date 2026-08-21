@@ -15,7 +15,11 @@ export interface CardOptions {
 }
 
 export interface CardHandle {
-  /** контейнер под контролы */
+  /**
+   * Контейнер под контролы. Отдельный от описания: renderControls очищает
+   * свой контейнер, и общий на двоих означал бы, что пояснение к карточке
+   * стирается при первой же отрисовке.
+   */
   body: HTMLElement;
   setEnabled(on: boolean): void;
 }
@@ -37,6 +41,8 @@ export function createCard(container: HTMLElement, options: CardOptions): CardHa
 
   const body = make('div', 'fcard-body');
   if (options.desc) body.append(make('p', 'fcard-desc', options.desc));
+  const controls = make('div');
+  body.append(controls);
 
   function setCollapsed(collapsed: boolean): void {
     card.classList.toggle('collapsed', collapsed);
@@ -56,7 +62,7 @@ export function createCard(container: HTMLElement, options: CardOptions): CardHa
 
   let lastEnabled = options.enabled;
   return {
-    body,
+    body: controls,
     setEnabled(on: boolean): void {
       toggle.checked = on;
       // Сворачиваем только на смене тумблера. Иначе карточка, раскрытая
