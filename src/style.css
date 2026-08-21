@@ -355,6 +355,33 @@ input[type='number'] {
   background: rgba(217, 139, 95, 0.12);
 }
 
+/* --- Полосы накатки: каждая в своей рамке --- */
+
+.band-box {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 8px;
+  margin: 6px 0;
+}
+
+.band-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.band-del {
+  margin-left: auto;
+}
+
+.band-del:hover {
+  color: var(--bad);
+  border-color: var(--bad);
+}
+
 /* --- Отчёт анализатора разъёма и список деталей оснастки --- */
 
 .scheme-note {

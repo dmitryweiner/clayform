@@ -85,10 +85,11 @@ export function vesselSurface(p: BuildParams): VesselSurface {
   const roulette = p.roulette ?? defaultRoulette();
   const roll = makeRoulette(roulette, {
     heightMm,
-    // шаг накатки колесо «видит» на той окружности, по которой катится
-    bandRadiusMm: profileRadius(profile, roulette.bandCenter),
+    // шаг накатки колесо «видит» на той окружности, по которой катится,
+    // и у каждой полосы она своя
+    radiusAt: (v) => profileRadius(profile, v),
   });
-  const flat = !relief.wave.on && !roulette.on;
+  const flat = !relief.wave.on && !roulette.bands.some((band) => band.on);
   const pull = makeSpout(p.spout ?? defaultSpout());
 
   return {

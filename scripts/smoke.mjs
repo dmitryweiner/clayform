@@ -135,17 +135,45 @@ await page.selectOption('#wave_axis', 'z');
 
 label('roulette');
 await page.check('#on_roulette');
-await page.fill('#roul_bandWidth', '40');
-await page.fill('#roul_depth', '2');
+await page.fill('#roul0_bandWidth', '40');
+await page.fill('#roul0_depth', '2');
 await page.waitForTimeout(150);
-for (const pattern of await page.$$eval('#roul_pattern option', (o) => o.map((x) => x.value))) {
+for (const pattern of await page.$$eval('#roul0_pattern option', (o) => o.map((x) => x.value))) {
   label(`roulette:${pattern}`);
-  await page.selectOption('#roul_pattern', pattern);
+  await page.selectOption('#roul0_pattern', pattern);
   await page.waitForTimeout(120);
   const verdict = await auditVerdict(page);
   if (!verdict.includes('замкнуто ✓')) errors.push(`[roulette:${pattern}] audit="${verdict}"`);
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-${pattern}.png` });
 }
+
+// просвет между оттисками и несколько полос сразу
+label('roulette-bands');
+await page.fill('#roul0_gap', '8');
+if (!(await auditVerdict(page)).includes('замкнуто ✓')) errors.push('[gap] меш разошёлся');
+
+const addBand = page.locator('#card_roulette .fcard-body button', { hasText: 'Полоса' });
+for (let i = 1; i < 4; i++) {
+  await addBand.click();
+  await page.waitForTimeout(120);
+  const boxes = await page.locator('#card_roulette .band-box').count();
+  if (boxes !== i + 1) errors.push(`[bands] полос ${boxes}, ожидалось ${i + 1}`);
+  await page.selectOption(`#roul${i}_pattern`, i === 1 ? 'meander' : 'band');
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[bands:${i + 1}] audit="${verdict}"`);
+}
+// на пределе кнопку добавления прячем
+if (await addBand.isVisible()) errors.push('[bands] кнопка добавления видна на пределе');
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/roulette-bands.png` });
+
+// удаление возвращает список к одной полосе
+for (let i = 3; i >= 1; i--) {
+  await page.locator('#card_roulette .band-del').last().click();
+  await page.waitForTimeout(100);
+}
+const left = await page.locator('#card_roulette .band-box').count();
+if (left !== 1) errors.push(`[bands] после удаления осталось ${left}, ожидалась 1`);
+await page.fill('#roul0_gap', '0');
 
 // каждый встроенный пресет открывается и строится
 label('presets');

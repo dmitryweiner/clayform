@@ -10,6 +10,7 @@
 // Флаги:
 //   --out <path>          куда сохранить (обязателен)
 //   --family <id>         pot | bowl | cup | vase
+//   --preset <name>       встроенный пресет по имени
 //   --set <id>=<value>    любой input/select по id элемента (повторяемый)
 //   --check <id>          включить чекбокс (повторяемый)
 //   --uncheck <id>        выключить чекбокс (повторяемый)
@@ -26,7 +27,7 @@ import { parseArgs, openApp } from './lib/harness.mjs';
 
 const flags = parseArgs(
   process.argv.slice(2),
-  ['out', 'family', 'wait', 'width', 'height', 'url'],
+  ['out', 'family', 'preset', 'wait', 'width', 'height', 'url'],
   ['set', 'check', 'uncheck', 'click'],
 );
 
@@ -74,6 +75,13 @@ if (family) {
   label(`family:${family}`);
   await page.locator('#familyGrid .family-btn').nth(index).click();
   await page.waitForTimeout(200);
+}
+
+const preset = flags.get('preset');
+if (preset) {
+  label(`preset:${preset}`);
+  await page.selectOption('#presetSel', `b:${preset}`);
+  await page.waitForTimeout(300);
 }
 
 for (const id of flags.get('check') ?? []) {

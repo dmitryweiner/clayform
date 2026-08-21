@@ -187,12 +187,16 @@ const VASE: FamilyDef = {
     { key: 'bellyAt', label: 'Высота тулова', min: 0.2, max: 0.7, step: 0.01, default: 0.4, unit: 'x' },
     { key: 'neckAt', label: 'Высота горла', min: 0.5, max: 0.95, step: 0.01, default: 0.79, unit: 'x' },
     { key: 'footH', label: 'Ножка', min: 0, max: 90, step: 1, default: 12, unit: 'mm' },
+    { key: 'rimFlare', label: 'Отгиб венчика', min: -0.2, max: 0.8, step: 0.01, default: 0, unit: 'x',
+      hint: 'раструб сверх диаметра устья' },
   ],
   points(p, heightMm) {
     const rFoot = p.dFoot / 2;
     const rBelly = p.dBelly / 2;
     const rNeck = p.dNeck / 2;
-    const rRim = p.dRim / 2;
+    // Устье задаётся диаметром, отгиб добавляется поверх — так же, как у
+    // горшка, где венчик отгибают от горла.
+    const rRim = (p.dRim / 2) * (1 + p.rimFlare);
     const bellyAt = clamp(p.bellyAt, 0.12, 0.72);
     const neckAt = clamp(p.neckAt, bellyAt + 0.12, 0.96);
     const tFoot = clamp(p.footH / Math.max(1, heightMm), 0, bellyAt - 0.06);

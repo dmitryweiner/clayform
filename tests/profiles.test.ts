@@ -182,6 +182,17 @@ describe('vase — ваза/амфора/бутылка', () => {
     const rs = samples('vase', { ...base, dBelly: 160, dNeck: 50, dRim: 74 }, 260);
     expect(maxOf(rs) * 2).toBeCloseTo(160, 6);
   });
+
+  it('отгиб венчика раскрывает устье сверх заданного диаметра', () => {
+    const params = { ...base, dBelly: 160, dNeck: 50, dRim: 74 };
+    expect(profileRadius(buildProfile('vase', { ...params, rimFlare: 0 }, 260), 1) * 2)
+      .toBeCloseTo(74, 6);
+    expect(profileRadius(buildProfile('vase', { ...params, rimFlare: 0.5 }, 260), 1) * 2)
+      .toBeCloseTo(111, 6);
+    // отрицательный подбирает край внутрь
+    expect(profileRadius(buildProfile('vase', { ...params, rimFlare: -0.2 }, 260), 1) * 2)
+      .toBeCloseTo(59.2, 6);
+  });
 });
 
 describe('profileRadius', () => {

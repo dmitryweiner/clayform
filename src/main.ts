@@ -24,7 +24,7 @@ import type { MoldPartMesh } from './geo/mold';
 import { analyzeMold, buildMaster, buildBaths } from './geo/mold';
 import { buildHollowVessel } from './geo/hollow';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
-import { rouletteRepeats } from './geo/roulette';
+import { bandRepeats } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
 import type { AppState, ExportMode } from './state/schema';
@@ -177,12 +177,17 @@ function refresh(): void {
   const profile = buildProfile(state.family, state.shape, state.heightMm);
   drawProfileGraph(profileGraph, profile);
 
-  const bandRadiusMm = profileRadius(profile, state.roulette.bandCenter);
-  const repeats = rouletteRepeats(state.roulette, { heightMm: state.heightMm, bandRadiusMm });
-  const step = (2 * Math.PI * bandRadiusMm) / repeats;
-  reliefRows.setRepeatsNote(
-    `${repeats} оттисков за оборот, шаг ${step.toFixed(1)} мм по окружности ⌀${(bandRadiusMm * 2).toFixed(0)} мм.`,
-  );
+  reliefRows.setBandNote((band) => {
+    const radiusMm = profileRadius(profile, band.bandCenter);
+    const repeats = bandRepeats(band, {
+      heightMm: state.heightMm,
+      radiusAt: (v) => profileRadius(profile, v),
+    });
+    const step = (2 * Math.PI * radiusMm) / repeats;
+    const element = Math.max(0, step - band.gapMm);
+    return `${repeats} оттисков за оборот по ⌀${(radiusMm * 2).toFixed(0)} мм: `
+      + `шаг ${step.toFixed(1)} мм, элемент ${element.toFixed(1)} мм.`;
+  });
 
   const buildParams = toBuildParams(state, PREVIEW_SEGMENTS);
   const hollow = buildHollowVessel(buildParams, state.hollow);
@@ -323,7 +328,7 @@ function hasAngularRelief(): boolean {
   const angular = (axis: string): boolean => axis !== 'z';
   return (state.relief.wave.on && angular(state.relief.wave.axis))
     || (state.relief.wave2.on && angular(state.relief.wave2.axis))
-    || state.roulette.on;
+    || state.roulette.bands.some((band) => band.on);
 }
 
 function outerWidth(positions: Float32Array): number {

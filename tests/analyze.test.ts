@@ -15,7 +15,7 @@ import type { CsgApi } from '../src/geo/csg';
 import { defaultFamilyParams, familyById } from '../src/geo/profiles';
 import { sanitizeHandle } from '../src/geo/handle';
 import { sanitizeRelief } from '../src/geo/relief';
-import { sanitizeRoulette, defaultRoulette } from '../src/geo/roulette';
+import { sanitizeRoulette, defaultBand } from '../src/geo/roulette';
 import { revolveMesh } from './helpers';
 
 let csg: CsgApi;
@@ -148,18 +148,45 @@ describe('рельеф и поднутрения разъёма', () => {
   it('глубокая накатка режет по углу — у плоскости разъёма появляются зацепы', () => {
     const mesh = buildVessel(params('pot', {
       roulette: sanitizeRoulette({
-        ...defaultRoulette(), on: true, pattern: 'dots', depthMm: -6, bandWidthMm: 40, repeats: 24,
+        bands: [{ ...defaultBand(), on: true, pattern: 'dots', depthMm: -8, bandWidthMm: 14, repeats: 40 }],
       }),
     }));
     const report = analyzeMold(mesh, { hasHandle: false });
-    expect(report.halvesUndercut).toBeGreaterThan(0.005);
+    expect(report.halvesUndercut).toBeGreaterThan(0.02);
     expect(report.warnings.join(' ')).toMatch(/поднутрен/i);
+  });
+
+  const withPattern = (pattern: string, depthMm: number, bandWidthMm: number) =>
+    buildVessel(params('pot', {
+      roulette: sanitizeRoulette({
+        bands: [{ ...defaultBand(), on: true, pattern, depthMm, bandWidthMm }],
+      }),
+    }));
+
+  it('сплошная полоса — самый безобидный узор: по углу она не меняется вовсе', () => {
+    // На умеренной глубине зацепов ноль в точности.
+    for (const depthMm of [1, 3, -3]) {
+      expect(
+        analyzeMold(withPattern('band', depthMm, 20), { hasHandle: false }).halvesUndercut,
+        `d=${depthMm}`,
+      ).toBe(0);
+    }
+    // На той же глубине узор, меняющийся по углу, форму уже цепляет.
+    expect(analyzeMold(withPattern('lattice', 3, 26), { hasHandle: false }).halvesUndercut)
+      .toBeGreaterThan(0.01);
+  });
+
+  it('но и кольцевая полоса, задранная до отвесной, заворачивается по радиусу', () => {
+    // 8 мм высоты на 20 мм ширины — валик почти отвесный; ограничение
+    // общее для всякого рельефа, не только углового.
+    expect(analyzeMold(withPattern('band', 8, 20), { hasHandle: false }).halvesUndercut)
+      .toBeGreaterThan(0.01);
   });
 
   it('мелкий узор проходит без предупреждений', () => {
     const mesh = buildVessel(params('pot', {
       roulette: sanitizeRoulette({
-        ...defaultRoulette(), on: true, pattern: 'rope', depthMm: 0.8, bandWidthMm: 14,
+        bands: [{ ...defaultBand(), on: true, pattern: 'rope', depthMm: 0.8, bandWidthMm: 14 }],
       }),
     }));
     expect(analyzeMold(mesh, { hasHandle: false }).warnings).toHaveLength(0);

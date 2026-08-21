@@ -4,7 +4,7 @@
 import { buildVessel, vesselGrid, defaultBuildParams, gridRadiusAt } from '../src/geo/build';
 import { validateMesh } from '../src/geo/validate';
 import { defaultRelief, sanitizeRelief } from '../src/geo/relief';
-import { defaultRoulette, sanitizeRoulette } from '../src/geo/roulette';
+import { defaultRoulette, defaultBand, sanitizeRoulette } from '../src/geo/roulette';
 import { ROULETTE_PATTERNS } from '../src/geo/roulette';
 import { WAVE_SHAPES, WAVE_AXES } from '../src/geo/relief';
 
@@ -20,7 +20,7 @@ const withWave = (over: Record<string, unknown> = {}) => ({
 
 const withRoulette = (over: Record<string, unknown> = {}) => ({
   ...base(),
-  roulette: sanitizeRoulette({ ...defaultRoulette(), on: true, ...over }),
+  roulette: sanitizeRoulette({ bands: [{ ...defaultBand(), on: true, ...over }] }),
 });
 
 describe('рельеф на сетке', () => {
@@ -124,7 +124,7 @@ describe('рельеф на сетке', () => {
   it('рельеф и накатка складываются, а не подменяют друг друга', () => {
     const both = vesselGrid({
       ...withWave({ freq: 6, ampMm: 2 }),
-      roulette: sanitizeRoulette({ ...defaultRoulette(), on: true, depthMm: 2, bandWidthMm: 30 }),
+      roulette: sanitizeRoulette({ bands: [{ ...defaultBand(), on: true, depthMm: 2, bandWidthMm: 30 }] }),
     });
     const waveOnly = vesselGrid(withWave({ freq: 6, ampMm: 2 }));
     let differs = 0;

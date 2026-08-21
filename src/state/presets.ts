@@ -50,7 +50,11 @@ export const PRESETS: Preset[] = [
     { dBelly: 178, dNeck: 112, dFoot: 100, bellyAt: 0.5, shoulder: 0.5, neckH: 0.15, rimFlare: 0.2 },
     {
       heightMm: 160,
-      roulette: { on: true, pattern: 'lattice', bandCenter: 0.66, bandWidthMm: 26, depthMm: 1.5, repeats: 0, angle: 0 },
+      roulette: {
+        bands: [
+          { on: true, pattern: 'lattice', bandCenter: 0.66, bandWidthMm: 26, depthMm: 1.5, repeats: 0, gapMm: 0, angle: 0 },
+        ],
+      },
     }),
 
   make('Кувшин', 'носик-слив и ручка напротив', 'vase',
@@ -83,6 +87,19 @@ export const PRESETS: Preset[] = [
         wave: { on: true, axis: 'z', shape: 'rounded', freq: 18, ampMm: 1.4, phase: 0, spiralK: 0 },
         wave2: { on: false, axis: 'theta', shape: 'sin', freq: 6, fm: 0.2, am: 0.5, spiralK: 1 },
         zone: { from: 0.12, to: 0.72, fade: 0.08 },
+      },
+    }),
+
+  // Два пояска разом: греческий ключ по тулову и простой валик под ним.
+  make('Кратер с меандром', 'широкое устье, античный ключ по тулову', 'vase',
+    { dBelly: 190, dNeck: 150, dRim: 168, dFoot: 92, bellyAt: 0.55, neckAt: 0.82, footH: 22, rimFlare: 0.12 },
+    {
+      heightMm: 240,
+      roulette: {
+        bands: [
+          { on: true, pattern: 'meander', bandCenter: 0.6, bandWidthMm: 30, depthMm: 1.3, repeats: 0, gapMm: 0, angle: 0 },
+          { on: true, pattern: 'band', bandCenter: 0.36, bandWidthMm: 7, depthMm: 1.1, repeats: 0, gapMm: 0, angle: 0 },
+        ],
       },
     }),
 
