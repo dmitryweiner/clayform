@@ -1,4 +1,6 @@
-# ClayForm
+# [ClayForm](https://dmitryweiner.github.io/clayform/)
+
+<img width="764" height="806" alt="image" src="https://github.com/user-attachments/assets/7cbe3f8b-d9f2-4173-808c-dbaf40e35ade" />
 
 **Глиняная посуда и литейные формы к ней — из параметров в STL.**
 Веб-приложение: выбираете типовую форму, крутите размеры в миллиметрах,
