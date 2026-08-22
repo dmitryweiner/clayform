@@ -11,8 +11,7 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "check": "tsc --noEmit && eslint . && vitest run",
-    "smoke": "node scripts/smoke.mjs",
-    "shot": "node scripts/shot.mjs"
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "manifold-3d": "^3.0.1",

@@ -42,6 +42,18 @@ export const PRESETS: Preset[] = [
     { dBelly: 150, dNeck: 74, dFoot: 92, bellyAt: 0.42, shoulder: 0.7, neckH: 0.28, rimFlare: 0.35 },
     { heightMm: 195, spout: { on: true, pullMm: 12, widthDeg: 55, zone: 0.14 } }),
 
+  // Трубчатый носик и ручка напротив него: витрина приставных деталей.
+  make('Чайник', 'приземистый, с трубчатым носиком', 'pot',
+    { dBelly: 150, dNeck: 90, dFoot: 90, bellyAt: 0.5, shoulder: 0.5, neckH: 0.12, rimFlare: 0.1 },
+    {
+      heightMm: 120,
+      handle: { on: true, count: 1, topAt: 0.8, bottomAt: 0.3, reachMm: 30, thicknessMm: 12 },
+      spout: {
+        on: true, kind: 'applied', attachAt: 0.4, lengthMm: 70,
+        tipAt: 1, baseMm: 32, tipMm: 15, tipAngleDeg: 55,
+      },
+    }),
+
   make('Корчага', 'большая тарная посудина', 'pot',
     { dBelly: 300, dNeck: 200, dFoot: 160, bellyAt: 0.48, shoulder: 0.3, neckH: 0.1, rimFlare: 0.12 },
     { heightMm: 340 }),
@@ -129,6 +141,18 @@ export const PRESETS: Preset[] = [
   make('Стакан', 'прямой конус, форма из одной части', 'cup',
     { dRim: 78, dFoot: 58, barrel: 0, rimFlare: 0 },
     { heightMm: 110 }),
+
+  // У настоящего скифоса ручки горизонтальные; наши лежат в плоскости
+  // разъёма, иначе форма не разнялась бы. Осознанная стилизация.
+  make('Скифос', 'широкая чаша с двумя ручками', 'cup',
+    { dRim: 120, dFoot: 60, barrel: 0.12, rimFlare: 0.08 },
+    {
+      heightMm: 90,
+      handle: {
+        on: true, count: 2, topAt: 0.8, bottomAt: 0.55,
+        reachMm: 26, thicknessMm: 10, widthRatio: 1.2,
+      },
+    }),
 
   make('Канопка', 'бочкообразная кружка', 'cup',
     { dRim: 92, dFoot: 78, barrel: 0.28, rimFlare: 0.05 },

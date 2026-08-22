@@ -5,6 +5,13 @@
 
 import { make } from './dom';
 
+/**
+ * Когда контрол виден. Нужен там, где у карточки несколько взаимоисключающих
+ * режимов: показывать ползунок, который в текущем режиме ни на что не влияет,
+ * хуже, чем не показывать вовсе.
+ */
+type Visibility<T> = (state: T) => boolean;
+
 export interface RangeControl<T> {
   kind: 'range';
   key: string;
@@ -15,6 +22,7 @@ export interface RangeControl<T> {
   /** приписка к числу: 'мм', '°', … */
   unit?: string;
   hint?: string;
+  when?: Visibility<T>;
   get(state: T): number;
   set(state: T, value: number): T;
 }
@@ -25,6 +33,7 @@ export interface SelectControl<T> {
   label: string;
   options: readonly { value: string; label: string }[];
   hint?: string;
+  when?: Visibility<T>;
   get(state: T): string;
   set(state: T, value: string): T;
 }
@@ -109,6 +118,16 @@ export function renderControls<T>(
         readout.textContent = format(control, value);
       });
     }
+
+    const when = control.when;
+    if (when) {
+      const show = (state: T): void => {
+        row.hidden = !when(state);
+      };
+      show(read());
+      syncers.push(show);
+    }
+
     container.append(row);
   }
 

@@ -39,6 +39,20 @@ export interface CavityInfo {
 }
 
 /**
+ * Устье изделия: где у тела вращения венчик и какого он радиуса, в
+ * миллиметрах ДО усадки. На него ставится литейная горловина.
+ *
+ * Мешем это не измеряется. У чайника выше всего кончик носика, и горловина,
+ * поставленная «по самой верхней точке», накрыла бы изделие шляпкой во весь
+ * вынос носика — а при кончике выше венчика ещё и повисла бы над изделием
+ * отдельным куском. Знает ответ только тот, кто строил силуэт.
+ */
+export interface Mouth {
+  zMm: number;
+  radiusMm: number;
+}
+
+/**
  * Полость формы: изделие, увеличенное на усадку, плюс литейная горловина.
  *
  * Горловина нужна только разъёмной форме: в одночастную шликер льют прямо в
@@ -53,22 +67,30 @@ export function buildCavity(
   vessel: Manifold,
   scheme: MoldScheme,
   mold: MoldState,
+  mouth?: Mouth,
 ): CavityInfo {
-  const scaled = scope.keep(vessel.scale(1 + mold.shrinkPct / 100));
+  const shrink = 1 + mold.shrinkPct / 100;
+  const scaled = scope.keep(vessel.scale(shrink));
   const box = scaled.boundingBox();
   const maxRadius = Math.max(
     Math.abs(box.min[0]), Math.abs(box.max[0]),
     Math.abs(box.min[1]), Math.abs(box.max[1]),
   );
-  const rimRadius = topRadius(scaled, box.max[2]);
   const spareMm = scheme === 'dropout' ? 0 : mold.spareMm;
+  // блок обязан накрыть изделие целиком — в том числе носик, если его кончик
+  // торчит выше венчика
   const topZ = box.max[2] + spareMm;
 
+  // Без подсказки устье считаем по самому верху меша: для тела вращения это
+  // ровно венчик и есть.
+  const rimZ = Math.min(mouth ? mouth.zMm * shrink : box.max[2], box.max[2]);
+  const rimRadius = mouth ? mouth.radiusMm * shrink : topRadius(scaled, box.max[2]);
+
   // цилиндр от венчика вверх: горловина плюс выход за грань блока
-  const collarHeight = spareMm + BREAKTHROUGH_MM + 1;
+  const collarBottom = rimZ - 1;
   const collar = scope.keep(
-    csg.Manifold.cylinder(collarHeight, rimRadius, rimRadius, SEGMENTS, false)
-      .translate([0, 0, box.max[2] - 1]),
+    csg.Manifold.cylinder(topZ + BREAKTHROUGH_MM - collarBottom, rimRadius, rimRadius, SEGMENTS, false)
+      .translate([0, 0, collarBottom]),
   );
   return {
     solid: scope.keep(csg.Manifold.union([scaled, collar])),

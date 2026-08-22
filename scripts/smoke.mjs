@@ -5,6 +5,10 @@
 //   node scripts/smoke.mjs                    # dev-сервер
 //   node scripts/smoke.mjs --preview          # прод-сборка (vite preview :4173)
 //   node scripts/smoke.mjs --shots shots      # + скриншот на каждое семейство
+//   node scripts/smoke.mjs --res 384          # экспорт на предельной сетке
+//
+// Время каждой выгрузки печатается всегда — этим и меряется, во что обходится
+// экспорт на той или иной детализации.
 //
 // Любая ошибка консоли/страницы → ненулевой код выхода (годится для CI).
 
@@ -12,9 +16,10 @@ import { mkdirSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { parseArgs, openApp } from './lib/harness.mjs';
 
-const flags = parseArgs(process.argv.slice(2), ['shots']);
+const flags = parseArgs(process.argv.slice(2), ['shots', 'res']);
 const shotsDir = flags.get('shots');
 if (shotsDir) mkdirSync(shotsDir, { recursive: true });
+const resolution = flags.get('res');
 
 /** Аудит меша отложен, чтобы не тормозить превью — ждём его вердикт. */
 async function auditVerdict(page) {
@@ -256,6 +261,29 @@ for (const [id, value] of [['handle_reach', '3'], ['handle_reach', '120'], ['han
 }
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/attachments.png` });
 
+// трубчатый носик: переключение вида прячет чужие ползунки и строит трубку
+label('spout-applied');
+await page.selectOption('#spout_kind', 'applied');
+await page.waitForTimeout(150);
+if (await page.locator('#spout_pull').isVisible()) {
+  errors.push('[spout-applied] ползунки оттянутого края видны у трубчатого носика');
+}
+for (const [id, value] of [['spout_length', '15'], ['spout_length', '150'], ['spout_length', '70'],
+                           ['spout_attach', '0.2'], ['spout_attach', '0.85'], ['spout_attach', '0.4'],
+                           ['spout_tip', '0.5'], ['spout_tip', '1.3'], ['spout_tip', '1'],
+                           ['spout_base', '12'], ['spout_base', '80'], ['spout_base', '32'],
+                           ['spout_tipD', '6'], ['spout_tipD', '40'], ['spout_tipD', '15'],
+                           ['spout_angle', '20'], ['spout_angle', '85'], ['spout_angle', '55']]) {
+  await page.fill(`#${id}`, value);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[spout:${id}=${value}] audit="${verdict}"`);
+}
+await page.selectOption('#spout_kind', 'lip');
+await page.waitForTimeout(120);
+if (!(await page.locator('#spout_pull').isVisible())) {
+  errors.push('[spout-applied] вернулись к краю, а его ползунки не показались');
+}
+
 // стенка и дно: крайние значения не должны рвать полость
 label('hollow');
 for (const [id, value] of [['print_wall', '0.8'], ['print_wall', '60'], ['print_wall', '3'],
@@ -269,6 +297,13 @@ for (const [id, value] of [['print_wall', '0.8'], ['print_wall', '60'], ['print_
 // конечный продукт приложения — файл; проверяем, что он реально выгружается
 label('export');
 await expectDownloads(1, 'vessel');
+
+// чайник экспортируется целиком: тело, ручка и трубка носика с проходом
+// сквозь стенку — единственный STL, где сходится весь CSG изделия
+label('export-teapot');
+await page.selectOption('#presetSel', 'b:Чайник');
+await auditVerdict(page);
+await expectDownloads(1, 'teapot');
 
 // Литейная оснастка: у каждой схемы своё число деталей. Ручку и носик
 // снимаем — они расширяют габарит и через это меняют выбор схемы, а здесь
@@ -306,18 +341,44 @@ await page.waitForFunction(
   () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
   { timeout: 60000 },
 );
-await expectDownloads(3, 'mold');
+await expectDownloads(3, 'mold', true);
 
-async function expectDownloads(count, tag) {
+/**
+ * Клик по «Экспорт» → столько-то реальных файлов. `watchProgress` заодно
+ * следит, что полоса прогресса ожила: сборку считает воркер, и полоса —
+ * единственный признак, что вкладка не умерла, а работает.
+ */
+async function expectDownloads(count, tag, watchProgress = false) {
+  // Пресеты сбрасывают детализацию к своей, поэтому ставим её перед каждым
+  // экспортом, а не один раз на весь прогон.
+  if (resolution) {
+    await page.selectOption('#resolution', resolution);
+    await page.waitForTimeout(200);
+  }
   const seen = [];
   const collect = (download) => seen.push(download);
   page.on('download', collect);
+  const started = Date.now();
   await page.click('#exportBtn');
-  const deadline = Date.now() + 120000;
+  const deadline = started + 300000;
+  let progressSeen = false;
   while (seen.length < count && Date.now() < deadline) {
+    if (watchProgress && !progressSeen) {
+      progressSeen = await page.locator('#progressWrap').isVisible();
+    }
     await page.waitForTimeout(200);
   }
   page.off('download', collect);
+  console.log(`export ${tag}: ${seen.length} файл(ов) за ${Date.now() - started} мс`
+    + `${resolution ? `, детализация ${resolution}` : ''}`);
+  if (watchProgress && !progressSeen) errors.push(`[${tag}] полоса прогресса ни разу не показалась`);
+  // файлы уходят по одному с паузой, так что полоса гаснет чуть позже
+  // последней загрузки — ждём, а не проверяем мгновенно
+  try {
+    await page.waitForFunction(() => document.querySelector('#progressWrap')?.hidden, { timeout: 5000 });
+  } catch {
+    errors.push(`[${tag}] полоса прогресса осталась висеть после экспорта`);
+  }
   if (seen.length !== count) {
     errors.push(`[${tag}] файлов ${seen.length}, ожидалось ${count}`);
     return;

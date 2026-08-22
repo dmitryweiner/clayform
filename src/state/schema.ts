@@ -16,8 +16,10 @@ import type { HandleState } from '../geo/handle';
 import { defaultHandle, sanitizeHandle } from '../geo/handle';
 import type { SpoutState } from '../geo/spout';
 import { defaultSpout, sanitizeSpout } from '../geo/spout';
-import type { MoldState } from '../geo/mold';
-import { defaultMold, sanitizeMold } from '../geo/mold';
+// Из geo/mold/state, а не из фасада geo/mold: фасад тянет за собой csg.ts, а
+// схему состояния читает и главный поток, который про WASM знать не должен.
+import type { MoldState } from '../geo/mold/state';
+import { defaultMold, sanitizeMold } from '../geo/mold/state';
 
 export const STATE_VERSION = 1;
 

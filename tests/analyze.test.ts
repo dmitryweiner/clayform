@@ -14,6 +14,7 @@ import { initCSG } from '../src/geo/csg';
 import type { CsgApi } from '../src/geo/csg';
 import { defaultFamilyParams, familyById } from '../src/geo/profiles';
 import { sanitizeHandle } from '../src/geo/handle';
+import { defaultSpout } from '../src/geo/spout';
 import { sanitizeRelief } from '../src/geo/relief';
 import { sanitizeRoulette, defaultBand } from '../src/geo/roulette';
 import { revolveMesh } from './helpers';
@@ -96,7 +97,7 @@ describe('analyzeMold — выбор схемы', () => {
   });
 
   it('ручка отменяет одночастную форму, даже если силуэт позволяет', () => {
-    const mesh = buildSolidVessel(csg, params('cup'), sanitizeHandle({ on: true }));
+    const mesh = buildSolidVessel(csg, params('cup'), sanitizeHandle({ on: true }), defaultSpout());
     const report = analyzeMold(mesh, { hasHandle: true });
     expect(report.scheme).not.toBe('dropout');
     expect(report.reason).toMatch(/ручк/i);

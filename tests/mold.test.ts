@@ -14,8 +14,9 @@ import { analyzeMold } from '../src/geo/mold/analyze';
 import { buildSolidVessel } from '../src/geo/assemble';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
 import { validateMesh } from '../src/geo/validate';
-import { defaultFamilyParams, familyById } from '../src/geo/profiles';
+import { defaultFamilyParams, familyById, buildProfile, profileRadius } from '../src/geo/profiles';
 import { sanitizeHandle } from '../src/geo/handle';
+import { defaultSpout, sanitizeSpout } from '../src/geo/spout';
 
 let csg: CsgApi;
 beforeAll(async () => {
@@ -146,7 +147,7 @@ describe('гипсовые блоки', () => {
   });
 
   it('изделие с ручкой тоже одевается в форму', () => {
-    const vessel = buildSolidVessel(csg, params('cup'), sanitizeHandle({ on: true }));
+    const vessel = buildSolidVessel(csg, params('cup'), sanitizeHandle({ on: true }), defaultSpout());
     const report = analyzeMold(vessel, { hasHandle: true });
     const blocks = buildBlocks(csg, vessel, report, mold());
     expect(blocks.length).toBeGreaterThanOrEqual(2);
@@ -173,6 +174,47 @@ describe('мастер-позитив', () => {
     const grown = validateMesh(buildMaster(csg, vessel, reportOf('cup'), mold({ shrinkPct: 15, spareMm: 0 })).mesh);
     expect(grown.extents[0]).toBeCloseTo(plain.extents[0] * 1.15, 0);
     expect(grown.extents[2]).toBeCloseTo(plain.extents[2] * 1.15, 0);
+  });
+
+  it('горловина ставится на венчик, а не на самую высокую точку', () => {
+    // У чайника выше всего кончик носика. Горловина «по верхней точке» дала
+    // бы мастеру грибную шляпку во весь вынос носика, а при кончике выше
+    // венчика ещё и повисла бы над изделием отдельным куском.
+    const spout = sanitizeSpout({
+      on: true, kind: 'applied', attachAt: 0.4, lengthMm: 70,
+      tipAt: 1.25, baseMm: 32, tipMm: 15, tipAngleDeg: 55,
+    });
+    const heightMm = 120;
+    const teapot = params('pot', { heightMm });
+    const vessel = buildSolidVessel(csg, teapot, sanitizeHandle({ on: false }), spout);
+    const report = analyzeMold(vessel, { hasHandle: false, hasSpout: true });
+    const spareMm = 30;
+    const state = mold({ shrinkPct: 0, spareMm });
+    const mouth = {
+      zMm: heightMm,
+      radiusMm: profileRadius(buildProfile('pot', defaultFamilyParams('pot'), heightMm), 1),
+    };
+    const master = buildMaster(csg, vessel, report, state, { mouth });
+
+    // Прирост объёма — это цилиндр по венчику от венчика до верха мастера.
+    // Горловина «по кончику носика» была бы того же роста, но вчетверо шире,
+    // и прирост вышел бы на порядок больше.
+    const grew = validateMesh(master.mesh).volume - validateMesh(vessel).volume;
+    const collarHeight = validateMesh(master.mesh).bbox.max[2] - mouth.zMm + 1;
+    expect(grew).toBeGreaterThan(0);
+    expect(grew).toBeLessThan(Math.PI * mouth.radiusMm ** 2 * collarHeight * 1.05);
+
+    // и мастер остаётся одной связной деталью: горловина стоит на венчике,
+    // а не парит над ним
+    const scope = new CsgScope();
+    try {
+      expect(scope.keep(toManifold(csg, master.mesh)).decompose().map((solid) => {
+        scope.keep(solid);
+        return solid.volume();
+      })).toHaveLength(1);
+    } finally {
+      scope.dispose();
+    }
   });
 
   it('у миски горловина не нужна — льют прямо в открытую форму', () => {
@@ -242,6 +284,36 @@ describe('ванночки под силикон', () => {
     } finally {
       scope.dispose();
     }
+  });
+
+  it('чайник с трубчатым носиком тоже одевается в ванночки', () => {
+    // Габарит блока берётся из самого позитива, поэтому носик попадает туда
+    // сам — но проверить это стоит: он единственная деталь, торчащая вбок.
+    const spout = sanitizeSpout({
+      on: true, kind: 'applied', attachAt: 0.4, lengthMm: 70,
+      tipAt: 1, baseMm: 32, tipMm: 15, tipAngleDeg: 55,
+    });
+    const teapot = params('pot', { heightMm: 120 });
+    const handle = sanitizeHandle({ on: true, topAt: 0.8, bottomAt: 0.3 });
+    const vessel = buildSolidVessel(csg, teapot, handle, spout);
+    const report = analyzeMold(vessel, { hasHandle: true, hasSpout: true });
+    expect(report.scheme).not.toBe('dropout');
+
+    const baths = buildBaths(csg, vessel, report, mold());
+    expect(baths.length).toBeGreaterThanOrEqual(2);
+    for (const bath of baths) {
+      const check = validateMesh(bath.mesh);
+      expect(check.watertight, bath.id).toBe(true);
+      expect(check.volume, bath.id).toBeGreaterThan(0);
+      expect(check.bbox.min[2], bath.id).toBeCloseTo(0, 3);
+    }
+
+    const width = (parts: { mesh: Parameters<typeof validateMesh>[0] }[]) =>
+      Math.max(...parts.map((part) => validateMesh(part.mesh).extents[0]));
+    const plain = buildSolidVessel(csg, teapot, handle, defaultSpout());
+    const plainBlocks = buildBlocks(csg, plain, analyzeMold(plain, { hasHandle: true }), mold());
+    expect(width(buildBlocks(csg, vessel, report, mold())))
+      .toBeGreaterThan(width(plainBlocks));
   });
 
   it('у ванночки есть дно и борта — силикон никуда не вытечет', () => {

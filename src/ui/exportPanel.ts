@@ -6,8 +6,10 @@
 
 import type { HollowState } from '../geo/hollow';
 import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM, RIM_MAX_MM } from '../geo/hollow';
-import type { MoldState } from '../geo/mold';
-import { SHRINK_MAX_PCT, PLASTER_MAX_MM, SPARE_MAX_MM } from '../geo/mold';
+// Пределы ползунков — из geo/mold/state: фасад geo/mold тянет за собой
+// csg.ts с WASM, а панели он ни к чему (весь CSG считает воркер).
+import type { MoldState } from '../geo/mold/state';
+import { SHRINK_MAX_PCT, PLASTER_MAX_MM, SPARE_MAX_MM } from '../geo/mold/state';
 import type { ExportMode } from '../state/schema';
 import type { Control } from './controls';
 import { renderControls } from './controls';

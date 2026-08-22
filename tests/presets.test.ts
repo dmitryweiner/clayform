@@ -53,6 +53,9 @@ describe('встроенные пресеты', () => {
   it('заявленные особенности действительно включены', () => {
     expect(presetByName('Амфора')?.build().handle.count).toBe(2);
     expect(presetByName('Кувшин')?.build().spout.on).toBe(true);
+    expect(presetByName('Кувшин')?.build().spout.kind).toBe('lip');
+    expect(presetByName('Чайник')?.build().spout.kind).toBe('applied');
+    expect(presetByName('Скифос')?.build().handle.count).toBe(2);
     expect(presetByName('Горшок с накаткой')?.build().roulette.bands.some((b) => b.on)).toBe(true);
     expect(presetByName('Ваза с валиками')?.build().relief.wave.on).toBe(true);
     expect(presetByName('Стакан')?.build().handle.on).toBe(false);

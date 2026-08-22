@@ -18,6 +18,8 @@ import type { BuildParams } from './build';
 import { buildVessel, vesselSurface } from './build';
 import type { HandleState } from './handle';
 import { buildHandles } from './handle';
+import type { SpoutState } from './spout';
+import { buildAppliedSpout, appliedSpoutChannel } from './spout';
 import type { HollowState } from './hollow';
 import { buildHollowVessel } from './hollow';
 
@@ -42,24 +44,40 @@ export function buildSolidVessel(
   csg: CsgApi,
   p: BuildParams,
   handle: HandleState,
+  spout: SpoutState,
 ): SurfaceMesh {
   const body = buildVessel(p);
   const surface = vesselSurface(p);
-  const handles = buildHandles(handle, surface.profile, surface.heightMm);
-  return handles.length === 0 ? body : unionAll(csg, [body, ...handles]);
+  // Носик приклеивается сплошным: мастер и оснастка работают с позитивом, а
+  // в шликерном литье носик и так отливается полым — проход через стенку
+  // прорезают по сырому.
+  const parts = [
+    ...buildHandles(handle, surface.profile, surface.heightMm),
+    ...maybe(buildAppliedSpout(spout, surface.profile, surface.heightMm)),
+  ];
+  return parts.length === 0 ? body : unionAll(csg, [body, ...parts]);
 }
 
-/** Полое изделие для прямой печати, с ручками. */
+/**
+ * Полое изделие для прямой печати: с ручками и с настоящим, сквозным носиком.
+ *
+ *     (оболочка ∪ ручки ∪ трубка) − (полость ∪ канал)
+ */
 export function buildPrintableVessel(
   csg: CsgApi,
   p: BuildParams,
   hollow: HollowState,
   handle: HandleState,
+  spout: SpoutState,
 ): { mesh: SurfaceMesh; capacityMl: number; pinchedFraction: number } {
   const result = buildHollowVessel(p, hollow);
   const surface = vesselSurface(p);
   const handles = buildHandles(handle, surface.profile, surface.heightMm);
-  if (handles.length === 0) return result;
+  const tube = buildAppliedSpout(spout, surface.profile, surface.heightMm);
+  if (handles.length === 0 && !tube) return result;
+  // Стенка носика равна стенке тела: отдельного ползунка не завели, потому
+  // что печатают и то и другое одним и тем же соплом.
+  const channel = appliedSpoutChannel(spout, surface.profile, surface.heightMm, hollow.wallMm);
 
   const scope = new CsgScope();
   try {
@@ -68,16 +86,27 @@ export function buildPrintableVessel(
     // вскрывать полостью, а полость обрывается на радиус кромки ниже верха —
     // изделие оставалось бы запечатанным.
     const shell = scope.keep(toManifold(csg, result.mesh));
-    const withHandles = scope.keep(csg.Manifold.union([
+    const outside = scope.keep(csg.Manifold.union([
       shell,
-      ...handles.map((mesh) => scope.keep(toManifold(csg, mesh))),
+      ...[...handles, ...maybe(tube)].map((mesh) => scope.keep(toManifold(csg, mesh))),
     ]));
     // Утопленные в стенку торцы ручки торчат внутрь полости — срезаем их,
-    // чтобы внутри кружки не осталось бугра.
+    // чтобы внутри кружки не осталось бугра. Тем же вычитанием канал носика
+    // пробивает стенку и вскрывает устье трубки.
     const cavity = scope.keep(toManifold(csg, assembleMesh(result.innerGrid, 'both')));
-    const mesh = fromManifold(scope.keep(withHandles.subtract(cavity)));
+    const inside = channel
+      ? scope.keep(csg.Manifold.union([cavity, scope.keep(toManifold(csg, channel))]))
+      : cavity;
+    const mesh = fromManifold(scope.keep(outside.subtract(inside)));
+    // Вместимость считаем по полости тела: вклад канала — единицы миллилитров,
+    // и на выбор посуды он не влияет.
     return { mesh, capacityMl: result.capacityMl, pinchedFraction: result.pinchedFraction };
   } finally {
     scope.dispose();
   }
+}
+
+/** Необязательная деталь как список: удобно раскрывать в спред. */
+function maybe(mesh: SurfaceMesh | null): SurfaceMesh[] {
+  return mesh ? [mesh] : [];
 }

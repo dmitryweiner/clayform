@@ -1,9 +1,11 @@
 // Точка входа: состояние → ядро геометрии → рендер и UI.
 //
-// Два разных по цене конвейера. Изделие строится чисто параметрически за
-// десяток миллисекунд и пересобирается на каждое движение ползунка. Оснастка
-// требует булевых операций в WASM и стоит сотни миллисекунд, поэтому она
-// пересобирается с задержкой, когда пользователь остановился.
+// Два разных по цене конвейера. Изделие строится здесь же, чисто
+// параметрически, за десяток миллисекунд — и пересобирается на каждое
+// движение ползунка. Всё, что требует булевых операций (оснастка, экспортная
+// сборка изделия с ручкой и носиком), уходит в воркер: WASM-модуль manifold
+// в главный поток не грузится вовсе, и вкладка не замирает. Оснастка вдобавок
+// пересобирается с задержкой — когда пользователь остановился.
 
 import './style.css';
 import { el } from './ui/dom';
@@ -18,22 +20,25 @@ import { drawProfileGraph } from './ui/graph';
 import type { SurfaceMesh } from './geo/surface';
 import { buildVessel, vesselSurface } from './geo/build';
 import { buildHandles } from './geo/handle';
-import { buildSolidVessel, buildPrintableVessel } from './geo/assemble';
-import { initCSG } from './geo/csg';
-import type { MoldPartMesh } from './geo/mold';
-import { analyzeMold, buildMaster, buildBaths } from './geo/mold';
+import { buildAppliedSpout } from './geo/spout';
+// Прямо из подмодулей, минуя фасад geo/mold: тот тянет за собой csg.ts, а с
+// ним и WASM-обвязку manifold. Здесь она не нужна ни строчкой — весь CSG
+// живёт в воркере, и путь импорта это подтверждает.
+import { analyzeMold } from './geo/mold/analyze';
 import { buildHollowVessel } from './geo/hollow';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
 import { bandRepeats } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
-import type { AppState, ExportMode } from './state/schema';
+import type { AppState } from './state/schema';
 import { defaultState, stateForFamily, sanitizeState, toBuildParams, RESOLUTIONS } from './state/schema';
 import { PRESETS, presetByName } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
 import type { UserPreset } from './state/userPresets';
 import { loadUserPresets, saveUserPresets, nextPresetNumber } from './state/userPresets';
 import { History } from './state/history';
+import type { JobPart, JobProgress } from './worker/protocol';
+import { CsgClient } from './worker/client';
 
 /** Детализация превью изделия: ~10 мс на пересборку, незаметно при перетаскивании. */
 const PREVIEW_SEGMENTS = 192;
@@ -50,6 +55,11 @@ const EXPLODE_GAP_MM = 20;
  * от края до края — это одно действие пользователя, а не двести.
  */
 const HISTORY_DELAY_MS = 500;
+/**
+ * Ниже этой доли высоты кончик носика уже заметно ниже венчика: налить
+ * изделие доверху не выйдет — потечёт из носика.
+ */
+const SPOUT_BELOW_RIM = 0.92;
 
 const view = el('view', HTMLCanvasElement);
 const panel = el('panel', HTMLElement);
@@ -71,9 +81,12 @@ const saveBtn = el('saveBtn', HTMLButtonElement);
 const shareBtn = el('shareBtn', HTMLButtonElement);
 const undoBtn = el('undoBtn', HTMLButtonElement);
 const redoBtn = el('redoBtn', HTMLButtonElement);
+const progressWrap = el('progressWrap', HTMLDivElement);
+const progressFill = el('progressFill', HTMLDivElement);
+const progressLabel = el('progressLabel', HTMLSpanElement);
 
 const scene = createScene(view);
-const csgReady = initCSG();
+const csg = new CsgClient();
 const history = new History<AppState>(startingState());
 let state: AppState = history.value;
 
@@ -198,11 +211,17 @@ function refresh(): void {
   // CSG на каждое движение ползунка незачем.
   const scheme = analyzeMold(outer, {
     hasHandle: state.handle.on,
+    hasSpout: hasAppliedSpout(),
     angularRelief: hasAngularRelief(),
   });
   exportPanel.setSchemeNote(scheme.reason);
 
   const warnings: string[] = [...scheme.warnings];
+  if (hasAppliedSpout() && state.spout.tipAt < SPOUT_BELOW_RIM) {
+    warnings.push(
+      'Кончик носика ниже венчика: наполнить изделие выше носика не выйдет.',
+    );
+  }
   if (hollow.pinchedFraction > 0) {
     warnings.push(
       `Рельеф уходит внутрь глубже стенки на ${(hollow.pinchedFraction * 100).toFixed(1)} % поверхности — ` +
@@ -223,12 +242,18 @@ function refresh(): void {
   if (auditTimer) clearTimeout(auditTimer);
 
   if (state.exportMode === 'vessel') {
-    // Ручку показываем отдельным мешем, а не результатом объединения:
-    // непрозрачные пересекающиеся тела выглядят ровно как их union, а CSG
-    // на каждое движение ползунка стоил бы 300 мс вместо 10. В STL уходит
-    // уже настоящее объединение — там оно обязательно.
+    // Ручку и носик показываем отдельными мешами, а не результатом
+    // объединения: непрозрачные пересекающиеся тела выглядят ровно как их
+    // union, а CSG на каждое движение ползунка стоил бы 300 мс вместо 10.
+    // В STL уходит уже настоящее объединение — там оно обязательно, там же
+    // прорезается и проход носика сквозь стенку.
     const surface = vesselSurface(buildParams);
-    scene.setMeshes([hollow.mesh, ...buildHandles(state.handle, surface.profile, surface.heightMm)]);
+    const tube = buildAppliedSpout(state.spout, surface.profile, surface.heightMm);
+    scene.setMeshes([
+      hollow.mesh,
+      ...buildHandles(state.handle, surface.profile, surface.heightMm),
+      ...(tube ? [tube] : []),
+    ]);
     exportPanel.setParts([{ label: 'Изделие', note: `${(clayMl / 1000).toFixed(2)} л глины` }]);
     exportBtn.textContent = 'Экспорт STL';
     auditEl.textContent = 'проверка…';
@@ -243,17 +268,24 @@ function refresh(): void {
 
 async function showMold(stamp: number): Promise<void> {
   try {
-    const csg = await csgReady;
-    if (stamp !== generation) return;
-    const parts = buildMoldParts(csg, MOLD_PREVIEW_SEGMENTS);
-    if (stamp !== generation) return;
+    // Ход сборки — текстом рядом с проверкой меша: полоса на полсекунды
+    // только мельтешила бы. Полоса — для экспорта, там счёт на секунды.
+    const parts = await csg.run(
+      { kind: 'mold-preview', state, segments: MOLD_PREVIEW_SEGMENTS },
+      ({ step, total, label }) => {
+        // «собираю» в строке остаётся всё время сборки: по нему и человек, и
+        // смоук понимают, что ответа ещё нет.
+        if (stamp === generation) {
+          auditEl.textContent = `собираю: ${label} (${step + 1} из ${total})`;
+        }
+      },
+    );
+    // null — задачу вытеснила более свежая; stamp — её обогнал ответ.
+    if (!parts || stamp !== generation) return;
 
-    scene.setMeshes(explode(parts.map((part) => part.mesh)));
-    exportPanel.setParts(parts.map((part) => ({
-      label: part.label,
-      note: sizeNote(part.mesh),
-    })));
-    const triangles = parts.reduce((sum, part) => sum + part.mesh.indices.length / 3, 0);
+    scene.setMeshes(explode(parts.map(toMesh)));
+    exportPanel.setParts(parts.map((part) => ({ label: part.label, note: part.note })));
+    const triangles = parts.reduce((sum, part) => sum + part.indices.length / 3, 0);
     auditEl.textContent = `${parts.length} дет. · ${Math.round(triangles / 1000)} тыс. треугольников`;
     blockersEl.textContent = '';
     exportBtn.disabled = false;
@@ -265,14 +297,9 @@ async function showMold(stamp: number): Promise<void> {
   }
 }
 
-/** Детали оснастки для текущего режима и заданной детализации сетки. */
-function buildMoldParts(csg: Awaited<typeof csgReady>, segments: number): MoldPartMesh[] {
-  const params = toBuildParams(state, segments);
-  const solid = buildSolidVessel(csg, params, state.handle);
-  const report = analyzeMold(solid, { hasHandle: state.handle.on });
-  return state.exportMode === 'master'
-    ? [buildMaster(csg, solid, report, state.mold)]
-    : buildBaths(csg, solid, report, state.mold);
+/** Меш детали из ответа воркера — буферы пришли переносом, копий нет. */
+function toMesh(part: JobPart): SurfaceMesh {
+  return { positions: part.positions, indices: part.indices, normals: part.normals };
 }
 
 /** Расставляет детали в ряд, чтобы их было видно по отдельности. */
@@ -295,11 +322,6 @@ function explode(meshes: SurfaceMesh[]): SurfaceMesh[] {
   return placed;
 }
 
-function sizeNote(mesh: SurfaceMesh): string {
-  const { extents } = validateMesh({ ...mesh, normals: mesh.normals });
-  return `${extents.map((x) => Math.round(x)).join('×')} мм`;
-}
-
 function audit(mesh: SurfaceMesh): void {
   const report = validateMesh(mesh);
   const assessment = assessExport(report, true);
@@ -317,6 +339,14 @@ function audit(mesh: SurfaceMesh): void {
   warningsEl.textContent = [...existing, ...extra].join('\n');
   blockersEl.textContent = assessment.blocking.join('\n');
   exportBtn.disabled = assessment.blocking.length > 0;
+}
+
+/**
+ * Есть ли приставная трубка носика. Оттянутый край не в счёт: он оставляет
+ * изделие телом вращения, а вбок торчит только трубка.
+ */
+function hasAppliedSpout(): boolean {
+  return state.spout.on && state.spout.kind === 'applied';
 }
 
 /**
@@ -363,26 +393,21 @@ resolutionSel.addEventListener('change', () => {
 });
 
 exportBtn.addEventListener('click', () => {
-  void runExport(state.exportMode);
+  void runExport();
 });
 
-async function runExport(mode: ExportMode): Promise<void> {
+async function runExport(): Promise<void> {
   const label = exportBtn.textContent;
   exportBtn.disabled = true;
   exportBtn.textContent = 'Собираю…';
   try {
-    const csg = await csgReady;
-    const files = mode === 'vessel'
-      ? [{
-          id: state.family,
-          label: 'Изделие',
-          mesh: buildPrintableVessel(
-            csg, toBuildParams(state, state.resolution), state.hollow, state.handle,
-          ).mesh,
-        }]
-      : buildMoldParts(csg, state.resolution);
+    // Экспортная детализация — до 384 сегментов; в главном потоке это
+    // подвешивало вкладку на секунды, поэтому считает воркер, а полоса
+    // показывает, что он не умер.
+    const files = await csg.run({ kind: 'export', state }, showProgress);
+    if (!files) return;
 
-    const blocking = files.flatMap((file) => assessExport(validateMesh(file.mesh), true).blocking);
+    const blocking = files.flatMap((file) => file.blocking);
     if (blocking.length > 0) {
       blockersEl.textContent = blocking.join('\n');
       return;
@@ -390,16 +415,29 @@ async function runExport(mode: ExportMode): Promise<void> {
     blockersEl.textContent = '';
     for (const file of files) {
       const name = `clayform-${state.family}-${file.id}.stl`;
-      download(encodeSTL(file.mesh, { name: file.id }), name);
+      download(encodeSTL(toMesh(file), { name: file.id }), name);
       // браузер глотает пачку одновременных загрузок — разносим по времени
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   } catch (error) {
     blockersEl.textContent = `Сборка не удалась: ${message(error)}`;
   } finally {
+    hideProgress();
     exportBtn.textContent = label;
     exportBtn.disabled = false;
   }
+}
+
+function showProgress({ step, total, label }: JobProgress): void {
+  progressWrap.hidden = false;
+  progressFill.style.width = `${Math.round((step / Math.max(1, total)) * 100)}%`;
+  progressLabel.textContent = label;
+}
+
+function hideProgress(): void {
+  progressWrap.hidden = true;
+  progressFill.style.width = '0%';
+  progressLabel.textContent = '';
 }
 
 function download(buffer: ArrayBuffer, filename: string): void {

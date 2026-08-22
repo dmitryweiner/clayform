@@ -3,7 +3,7 @@
 import type { HandleState } from '../geo/handle';
 import { REACH_MAX_MM, THICKNESS_MAX_MM, ANGLE_MAX_DEG } from '../geo/handle';
 import type { SpoutState } from '../geo/spout';
-import { PULL_MAX_MM } from '../geo/spout';
+import { PULL_MAX_MM, SPOUT_LIMITS } from '../geo/spout';
 import type { Control } from './controls';
 import { renderControls } from './controls';
 import { createCard } from './card';
@@ -57,22 +57,85 @@ const HANDLE_CONTROLS: Control<HandleState>[] = [
   },
 ];
 
+const isLip = (s: SpoutState): boolean => s.kind === 'lip';
+const isApplied = (s: SpoutState): boolean => s.kind === 'applied';
+
 const SPOUT_CONTROLS: Control<SpoutState>[] = [
   {
+    kind: 'select', key: 'kind', label: 'Какой',
+    options: [
+      { value: 'lip', label: 'оттянутый край (крынка)' },
+      { value: 'applied', label: 'трубчатый (чайник)' },
+    ],
+    get: (s) => s.kind,
+    set: (s, v) => ({ ...s, kind: v === 'applied' ? 'applied' : 'lip' }),
+  },
+  // --- оттянутый край ---
+  {
     kind: 'range', key: 'pull', label: 'Вытяг', min: 0, max: PULL_MAX_MM, step: 0.5, unit: 'мм',
+    when: isLip,
     get: (s) => s.pullMm,
     set: (s, v) => ({ ...s, pullMm: v }),
   },
   {
     kind: 'range', key: 'width', label: 'Ширина', min: 15, max: 180, step: 1, unit: '°',
+    when: isLip,
     get: (s) => s.widthDeg,
     set: (s, v) => ({ ...s, widthDeg: v }),
   },
   {
     kind: 'range', key: 'zone', label: 'Высота', min: 0.03, max: 0.6, step: 0.01,
     hint: 'по какой доле высоты сверху идёт оттяжка',
+    when: isLip,
     get: (s) => s.zone,
     set: (s, v) => ({ ...s, zone: v }),
+  },
+  // --- трубчатый ---
+  {
+    kind: 'range', key: 'attach', label: 'Крепление',
+    min: SPOUT_LIMITS.attachAt.min, max: SPOUT_LIMITS.attachAt.max, step: 0.01,
+    hint: 'на какой доле высоты трубка выходит из стенки',
+    when: isApplied,
+    get: (s) => s.attachAt,
+    set: (s, v) => ({ ...s, attachAt: v }),
+  },
+  {
+    kind: 'range', key: 'length', label: 'Длина',
+    min: SPOUT_LIMITS.lengthMm.min, max: SPOUT_LIMITS.lengthMm.max, step: 1, unit: 'мм',
+    hint: 'вынос кончика от стенки по горизонтали',
+    when: isApplied,
+    get: (s) => s.lengthMm,
+    set: (s, v) => ({ ...s, lengthMm: v }),
+  },
+  {
+    kind: 'range', key: 'tip', label: 'Высота кончика',
+    min: SPOUT_LIMITS.tipAt.min, max: SPOUT_LIMITS.tipAt.max, step: 0.01,
+    hint: 'доля высоты изделия; ниже венчика — изделие не налить доверху',
+    when: isApplied,
+    get: (s) => s.tipAt,
+    set: (s, v) => ({ ...s, tipAt: v }),
+  },
+  {
+    kind: 'range', key: 'base', label: '⌀ основания',
+    min: SPOUT_LIMITS.baseMm.min, max: SPOUT_LIMITS.baseMm.max, step: 1, unit: 'мм',
+    when: isApplied,
+    get: (s) => s.baseMm,
+    set: (s, v) => ({ ...s, baseMm: v }),
+  },
+  {
+    kind: 'range', key: 'tipD', label: '⌀ кончика',
+    min: SPOUT_LIMITS.tipMm.min, max: SPOUT_LIMITS.tipMm.max, step: 1, unit: 'мм',
+    hint: 'толще основания не бывает — трубка сужается к устью',
+    when: isApplied,
+    get: (s) => s.tipMm,
+    set: (s, v) => ({ ...s, tipMm: v }),
+  },
+  {
+    kind: 'range', key: 'angle', label: 'Наклон кончика',
+    min: SPOUT_LIMITS.tipAngleDeg.min, max: SPOUT_LIMITS.tipAngleDeg.max, step: 1, unit: '°',
+    when: isApplied,
+    get: (s) => s.tipAngleDeg,
+    set: (s, v) => ({ ...s, tipAngleDeg: v }),
   },
 ];
 
@@ -101,7 +164,8 @@ export function renderAttachCards(
   const spoutCard = createCard(container, {
     id: 'spout',
     title: 'Носик',
-    desc: 'Оттянутый наружу край, как у крынки. Смотрит вперёд, напротив ручки.',
+    desc: 'Оттянутый наружу край, как у крынки, или приставная трубка, как у чайника. '
+      + 'Смотрит вперёд, напротив ручки.',
     enabled: readSpout().on,
     onToggle: (on) => onSpout({ ...readSpout(), on }),
   });

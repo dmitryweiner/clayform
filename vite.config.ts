@@ -11,6 +11,12 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['manifold-3d'],
   },
+  // CSG живёт в module worker'е. Формат по умолчанию (iife) для него не
+  // годится: обвязка manifold ищет свой .wasm через import.meta.url, а в
+  // iife его попросту нет.
+  worker: {
+    format: 'es',
+  },
   test: {
     globals: true,
     environment: 'node',

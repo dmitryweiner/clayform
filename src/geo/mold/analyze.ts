@@ -38,6 +38,13 @@ export interface AnalyzeOptions {
   /** ручка делает сквозное отверстие — одночастная форма исключена */
   hasHandle: boolean;
   /**
+   * Приставная трубка носика (не оттянутый край: тот остаётся телом
+   * вращения). Как и ручка, действует самим фактом своего существования,
+   * поэтому передаётся флагом: по превью-мешу, где трубки нет, анализатор
+   * её не увидел бы.
+   */
+  hasSpout?: boolean;
+  /**
    * Рельеф меняется по углу (волна вокруг оси или по спирали, накатка).
    * Такой узор пересекает плоскость разъёма под углом, и это единственная
    * причина, по которой у тела вращения вообще появляются зацепы при
@@ -179,6 +186,22 @@ const HALF_B: MoldPart = { id: 'half-B', label: 'Половина B' };
 const BOTTOM: MoldPart = { id: 'bottom', label: 'Донная плита' };
 const SINGLE: MoldPart = { id: 'single', label: 'Форма целиком' };
 
+/**
+ * Почему форму придётся разнимать вдоль оси. Причин три, и пользователю
+ * важна именно та, которая сработала: у ручки и носика это их собственная
+ * геометрия, а у голого силуэта — поднутрения, которые можно и убрать.
+ */
+function whyAlongAxis(options: AnalyzeOptions, dropoutFraction: number): string {
+  if (options.hasHandle) {
+    return 'Ручка делает в теле сквозное отверстие — вверх изделие не вынуть, нужен разъём вдоль оси.';
+  }
+  if (options.hasSpout) {
+    return 'Приставной носик торчит вбок — вверх изделие не вынуть, нужен разъём вдоль оси.';
+  }
+  return `Изделие где-то шире, чем выше (${(dropoutFraction * 100).toFixed(0)} % поверхности с зацепами) — `
+    + 'вверх не вынуть, нужен разъём вдоль оси.';
+}
+
 export function analyzeMold(
   mesh: Pick<SurfaceMesh, 'positions' | 'indices'>,
   options: AnalyzeOptions,
@@ -199,7 +222,7 @@ export function analyzeMold(
     );
   }
 
-  if (!options.hasHandle && dropout.fraction <= DROPOUT_TOLERANCE) {
+  if (!options.hasHandle && !options.hasSpout && dropout.fraction <= DROPOUT_TOLERANCE) {
     return {
       scheme: 'dropout',
       parts: [SINGLE],
@@ -210,10 +233,7 @@ export function analyzeMold(
     };
   }
 
-  const reason = options.hasHandle
-    ? 'Ручка делает в теле сквозное отверстие — вверх изделие не вынуть, нужен разъём вдоль оси.'
-    : `Изделие где-то шире, чем выше (${(dropout.fraction * 100).toFixed(0)} % поверхности с зацепами) — ` +
-      'вверх не вынуть, нужен разъём вдоль оси.';
+  const reason = whyAlongAxis(options, dropout.fraction);
 
   if (baseShare(mesh) >= WIDE_BASE_SHARE) {
     return {
