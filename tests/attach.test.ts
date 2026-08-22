@@ -16,7 +16,8 @@ import {
 } from '../src/geo/spout';
 import { analyzeMold } from '../src/geo/mold';
 import { buildVessel, defaultBuildParams, vesselGrid, gridRadiusAt } from '../src/geo/build';
-import { sanitizeHollow } from '../src/geo/hollow';
+import { sanitizeHollow, buildHollowVessel } from '../src/geo/hollow';
+import { assembleMesh } from '../src/geo/surface';
 import { validateMesh } from '../src/geo/validate';
 import { buildProfile, profileRadius, defaultFamilyParams, familyById } from '../src/geo/profiles';
 
@@ -126,6 +127,38 @@ describe('buildHandles', () => {
     }
   });
 
+  it('торцы утоплены в стенку целиком — стык идёт по контуру', () => {
+    // Тот же дефект, что был у носика: плоский срез не влезает в искривлённую
+    // стенку, кромка вылезает наружу серпом, и в STL это видно трещиной.
+    // При нулевых углах срез лежит в плоскости x = const, так что кромку в
+    // меше можно отобрать по координате, не пересчитывая геометрию заново.
+    for (const family of ['pot', 'bowl', 'cup', 'vase']) {
+      const heightMm = familyById(family).defaultHeightMm;
+      const shape = buildProfile(family, defaultFamilyParams(family), heightMm);
+      for (const thicknessMm of [4, 11, 24]) {
+        for (const [topAt, bottomAt] of [[0.82, 0.3], [0.95, 0.6], [0.5, 0.15]]) {
+          const state = handleOn({ topAt, bottomAt, thicknessMm, widthRatio: 1 });
+          const [handle] = buildHandles(state, shape, heightMm);
+          const tag = `${family}/${thicknessMm}/${topAt}`;
+          for (const cap of Object.values(capCentres(handle))) {
+            let checked = 0;
+            for (let i = 0; i < handle.positions.length; i += 3) {
+              const [x, y, z] = [
+                handle.positions[i], handle.positions[i + 1], handle.positions[i + 2],
+              ];
+              if (Math.abs(x - cap.x) > 1e-4) continue;
+              checked++;
+              expect(Math.hypot(x, y), tag).toBeLessThan(profileRadius(shape, z / heightMm));
+            }
+            // кромка из 24 точек плюс центр торца — если отобралось меньше,
+            // проверять было нечего и тест бы врал
+            expect(checked, tag).toBeGreaterThan(8);
+          }
+        }
+      }
+    }
+  });
+
   it('нижнее крепление не может оказаться выше верхнего', () => {
     const state = sanitizeHandle({ on: true, topAt: 0.4, bottomAt: 0.9 });
     expect(state.bottomAt).toBeLessThan(state.topAt);
@@ -185,6 +218,26 @@ describe('полая кружка с ручкой', () => {
     // а вот сквозное отверстие под пальцы — да
     expect(genusOf(result.mesh)).toBe(1);
     expect(result.capacityMl).toBeGreaterThan(100);
+  });
+
+  it('в полость не выступает ни миллиметра ручки', () => {
+    // Прямая проверка того, что раньше меряли объёмом: пересечение готового
+    // изделия с его же полостью обязано быть пустым. Утопленный торец ручки
+    // выступал бы внутрь бугром — печатать такое можно, но внутри кружки
+    // ему делать нечего.
+    const params = cup();
+    const hollow = sanitizeHollow({ wallMm: 3, baseMm: 4 });
+    const printable = buildPrintableVessel(csg, params, hollow, handleOn(), defaultSpout());
+    const inner = buildHollowVessel(params, hollow).innerGrid;
+    const scope = new CsgScope();
+    try {
+      const solid = scope.keep(toManifold(csg, printable.mesh));
+      const cavity = scope.keep(toManifold(csg, assembleMesh(inner, 'both')));
+      const inside = scope.keep(solid.intersect(cavity));
+      expect(inside.volume()).toBeLessThan(cavity.volume() * 1e-4);
+    } finally {
+      scope.dispose();
+    }
   });
 
   it('торец ручки срезан полостью — внутри кружки нет бугра', () => {
@@ -272,6 +325,22 @@ describe('носик-слив', () => {
 function tipDirection(tipAngleDeg: number): { x: number; z: number } {
   const angle = (tipAngleDeg * Math.PI) / 180;
   return { x: Math.cos(angle), z: Math.sin(angle) };
+}
+
+/**
+ * Центры торцов трубы. `sweepTube` кладёт их последними двумя вершинами:
+ * сначала центр начального торца, потом конечного.
+ */
+function capCentres(mesh: { positions: Float32Array }): {
+  start: { x: number; z: number };
+  end: { x: number; z: number };
+} {
+  const last = mesh.positions.length / 3 - 1;
+  const at = (index: number) => ({
+    x: mesh.positions[index * 3],
+    z: mesh.positions[index * 3 + 2],
+  });
+  return { start: at(last - 1), end: at(last) };
 }
 
 /**
@@ -404,6 +473,57 @@ describe('приставной носик', () => {
     // и за кончиком трубки), но и не символические крохи
     expect(removed).toBeGreaterThan(channelVolume * 0.5);
     expect(removed).toBeLessThan(channelVolume);
+  });
+
+  it('основание утоплено в стенку целиком — стык идёт по контуру', () => {
+    // Кромка плоского торца обязана уйти внутрь тела вся: вылезший наружу
+    // серп среза читается трещиной, а не вдавленным носиком. Проверяем на
+    // разных высотах крепления — стенка под торцом искривлена по-разному.
+    for (const attachAt of [0.2, 0.45, 0.7, 0.85]) {
+      for (const baseMm of [12, 34, 80]) {
+        const state = teapotSpout({ attachAt, baseMm });
+        const tube = tubeOf(state);
+        const start = capCentres(tube).start;
+        const radius = state.baseMm / 2;
+        for (let i = 0; i < 24; i++) {
+          const around = (2 * Math.PI * i) / 24;
+          const y = radius * Math.sin(around);
+          const z = start.z + radius * Math.cos(around);
+          const wall = profileRadius(profile, z / HEIGHT_MM);
+          expect(Math.hypot(start.x, y), `${attachAt}/${baseMm}/${i}`).toBeLessThan(wall);
+        }
+        // и при этом не продавливает изделие насквозь
+        expect(start.x, `${attachAt}/${baseMm}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('устье в готовом изделии открыто, а не заглушено', () => {
+    // Тут решается вопрос «носик полый или нет»: ставим маленький щуп внутрь
+    // трубки у самого кончика — материала в нём быть не должно.
+    const params = teapot();
+    const hollow = sanitizeHollow({ wallMm: 3, baseMm: 4 });
+    const spout = teapotSpout();
+    const printable = buildPrintableVessel(
+      csg, params, hollow, sanitizeHandle({ on: false }), spout,
+    );
+    const along = tipDirection(spout.tipAngleDeg);
+    const tip = capCentres(tubeOf(spout)).end;
+    const probeR = Math.min(3, Math.max(1, spout.tipMm / 2 - hollow.wallMm - 0.5));
+
+    const scope = new CsgScope();
+    try {
+      const solid = scope.keep(toManifold(csg, printable.mesh));
+      for (const back of [2, 6, 12]) {
+        const probe = scope.keep(csg.Manifold.sphere(probeR, 24).translate([
+          tip.x - along.x * back, 0, tip.z - along.z * back,
+        ]));
+        const filled = scope.keep(solid.intersect(probe)).volume() / probe.volume();
+        expect(filled, `в ${back} мм от кончика`).toBeLessThan(0.02);
+      }
+    } finally {
+      scope.dispose();
+    }
   });
 
   it('носик и ручка уживаются на одном изделии', () => {

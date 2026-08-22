@@ -44,10 +44,20 @@ import { CsgClient } from './worker/client';
 const PREVIEW_SEGMENTS = 192;
 /** Для оснастки сетку огрубляем: стоимость булевых операций растёт с числом граней. */
 const MOLD_PREVIEW_SEGMENTS = 96;
+/**
+ * Для точной сборки изделия — тоже огрубляем, по той же причине: на 192
+ * булевы операции стоят больше двух секунд, на 128 — около секунды. Показать
+ * надо срезанные торцы и сквозной носик, а не миллиметры силуэта: их и так
+ * рисует быстрое превью на полной сетке.
+ */
+const EXACT_SEGMENTS = 128;
 /** Полная проверка меша стоит ~70 мс — гоняем её, когда пользователь остановился. */
 const AUDIT_DELAY_MS = 220;
-/** Сборка оснастки стоит сотни миллисекунд — ждём паузы подольше. */
-const MOLD_DELAY_MS = 400;
+/**
+ * Всё, что считает воркер, — сотни миллисекунд: и оснастка, и точная сборка
+ * изделия с ручкой и носиком. Ждём паузы подольше, чем проверки меша.
+ */
+const CSG_DELAY_MS = 400;
 /** Зазор между деталями в «разнесённом» превью, мм. */
 const EXPLODE_GAP_MM = 20;
 /**
@@ -56,10 +66,11 @@ const EXPLODE_GAP_MM = 20;
  */
 const HISTORY_DELAY_MS = 500;
 /**
- * Ниже этой доли высоты кончик носика уже заметно ниже венчика: налить
- * изделие доверху не выйдет — потечёт из носика.
+ * Ниже этой доли высоты кончик носика уже мешает: изделие наполняется только
+ * до него, и пятая часть высоты пропадает впустую. Чуть ниже венчика кончик
+ * стоит и у настоящих чайников — на это ругаться незачем.
  */
-const SPOUT_BELOW_RIM = 0.92;
+const SPOUT_BELOW_RIM = 0.8;
 
 const view = el('view', HTMLCanvasElement);
 const panel = el('panel', HTMLElement);
@@ -178,8 +189,16 @@ function updateHistoryButtons(): void {
   redoBtn.disabled = !history.canRedo;
 }
 
+/**
+ * Предупреждения о самой форме — их считает refresh. Проверка меша дописывает
+ * к ним свои и может пройти дважды (по быстрому превью и по точной сборке),
+ * поэтому список хранится отдельно, а не вычитывается обратно из разметки.
+ */
+let baseWarnings: string[] = [];
+
 let auditTimer: ReturnType<typeof setTimeout> | null = null;
 let moldTimer: ReturnType<typeof setTimeout> | null = null;
+let exactTimer: ReturnType<typeof setTimeout> | null = null;
 /** Растёт на каждую пересборку: поздний ответ от старой сборки не должен перебить свежую. */
 let generation = 0;
 
@@ -216,19 +235,19 @@ function refresh(): void {
   });
   exportPanel.setSchemeNote(scheme.reason);
 
-  const warnings: string[] = [...scheme.warnings];
+  baseWarnings = [...scheme.warnings];
   if (hasAppliedSpout() && state.spout.tipAt < SPOUT_BELOW_RIM) {
-    warnings.push(
+    baseWarnings.push(
       'Кончик носика ниже венчика: наполнить изделие выше носика не выйдет.',
     );
   }
   if (hollow.pinchedFraction > 0) {
-    warnings.push(
+    baseWarnings.push(
       `Рельеф уходит внутрь глубже стенки на ${(hollow.pinchedFraction * 100).toFixed(1)} % поверхности — ` +
       'там стенка тоньше заданной. Уменьшите глубину волны или увеличьте стенку.',
     );
   }
-  warningsEl.textContent = warnings.join('\n');
+  warningsEl.textContent = baseWarnings.join('\n');
 
   const widthMm = outerWidth(outer.positions);
   const clayMl = signedVolume(hollow.mesh.positions, hollow.mesh.indices) / 1000;
@@ -240,13 +259,14 @@ function refresh(): void {
 
   if (moldTimer) clearTimeout(moldTimer);
   if (auditTimer) clearTimeout(auditTimer);
+  if (exactTimer) clearTimeout(exactTimer);
 
   if (state.exportMode === 'vessel') {
-    // Ручку и носик показываем отдельными мешами, а не результатом
-    // объединения: непрозрачные пересекающиеся тела выглядят ровно как их
-    // union, а CSG на каждое движение ползунка стоил бы 300 мс вместо 10.
-    // В STL уходит уже настоящее объединение — там оно обязательно, там же
-    // прорезается и проход носика сквозь стенку.
+    // Пока ползунок в движении, ручку и носик рисуем отдельными мешами: CSG
+    // на каждое движение стоил бы 300 мс вместо 10. Снаружи это выглядит
+    // ровно как объединение — а вот внутри полости торчат утопленные торцы,
+    // и носик стоит заглушенным. Поэтому по паузе картинку заменяет
+    // настоящая сборка из воркера (showExactVessel).
     const surface = vesselSurface(buildParams);
     const tube = buildAppliedSpout(state.spout, surface.profile, surface.heightMm);
     scene.setMeshes([
@@ -257,12 +277,41 @@ function refresh(): void {
     exportPanel.setParts([{ label: 'Изделие', note: `${(clayMl / 1000).toFixed(2)} л глины` }]);
     exportBtn.textContent = 'Экспорт STL';
     auditEl.textContent = 'проверка…';
+    // Быстрый вердикт — по оболочке: он приходит через четверть секунды и
+    // почти всегда окончательный. Если есть приставные детали, следом
+    // подъезжает точная сборка из воркера и перепроверяет уже её — то самое,
+    // что уйдёт в STL.
     auditTimer = setTimeout(() => audit(hollow.mesh), AUDIT_DELAY_MS);
+    if (state.handle.on || hasAppliedSpout()) {
+      exactTimer = setTimeout(() => void showExactVessel(stamp), CSG_DELAY_MS);
+    }
   } else {
     exportPanel.setParts(scheme.parts.map((part) => ({ label: part.label })));
     exportBtn.textContent = state.exportMode === 'master' ? 'Экспорт мастера' : 'Экспорт ванночек';
     auditEl.textContent = 'собираю оснастку…';
-    moldTimer = setTimeout(() => void showMold(stamp), MOLD_DELAY_MS);
+    moldTimer = setTimeout(() => void showMold(stamp), CSG_DELAY_MS);
+  }
+}
+
+/**
+ * Заменяет быстрое превью настоящей сборкой — той самой, что уходит в STL.
+ * Только на ней видно, что торцы ручки срезаны полостью, а носик сквозной:
+ * склеить это без булевых операций нельзя, поэтому считает воркер.
+ */
+async function showExactVessel(stamp: number): Promise<void> {
+  try {
+    const parts = await csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS });
+    if (!parts || stamp !== generation) return;
+    const mesh = toMesh(parts[0]);
+    scene.setMeshes([mesh]);
+    audit(mesh);
+  } catch (error) {
+    // Сборка не удалась — значит и экспорт не удастся: это тот же код.
+    // Молчать об этом нельзя, на экране осталось бы приблизительное превью.
+    if (stamp !== generation) return;
+    auditEl.textContent = '';
+    blockersEl.textContent = `Изделие собрать не удалось: ${message(error)}`;
+    exportBtn.disabled = true;
   }
 }
 
@@ -335,8 +384,7 @@ function audit(mesh: SurfaceMesh): void {
   if (overhang > 0.15) {
     extra.push(`Свесы круче 60° на ${(overhang * 100).toFixed(0)} % поверхности — печать глиной потребует опор.`);
   }
-  const existing = warningsEl.textContent ? [warningsEl.textContent] : [];
-  warningsEl.textContent = [...existing, ...extra].join('\n');
+  warningsEl.textContent = [...baseWarnings, ...extra].join('\n');
   blockersEl.textContent = assessment.blocking.join('\n');
   exportBtn.disabled = assessment.blocking.length > 0;
 }

@@ -48,20 +48,41 @@ async function handle(message: WorkerIn): Promise<void> {
 function run(csg: CsgApi, jobId: number, job: CsgJob): JobPart[] {
   // Граница воркера — такая же внешняя граница, как ссылка или UI.
   const state = sanitizeState(job.state);
-  if (job.kind === 'export' && state.exportMode === 'vessel') {
-    return [vesselPart(csg, jobId, state)];
+  if (job.kind === 'vessel-preview') {
+    return [vesselPart(csg, jobId, state, job.segments, false)];
   }
-  const forExport = job.kind === 'export';
-  return moldParts(csg, jobId, state, forExport ? state.resolution : job.segments, forExport);
+  if (job.kind === 'mold-preview') {
+    return moldParts(csg, jobId, state, job.segments, false);
+  }
+  if (job.kind === 'export') {
+    return state.exportMode === 'vessel'
+      ? [vesselPart(csg, jobId, state, state.resolution, true)]
+      : moldParts(csg, jobId, state, state.resolution, true);
+  }
+  throw new Error('воркер не знает такой задачи');
 }
 
-/** Полое изделие целиком: тело, ручки, трубка носика и проход сквозь стенку. */
-function vesselPart(csg: CsgApi, jobId: number, state: AppState): JobPart {
-  const progress = new Progress(jobId, 2);
+/**
+ * Полое изделие целиком: тело, ручки, трубка носика и проход сквозь стенку.
+ * Ровно это уходит в STL — и ровно это показывает превью, когда пользователь
+ * остановился. Проверяем меш только под экспорт: от вердикта зависит, выпускать
+ * ли файл. Превью проверит себя само в главном потоке — ему к вердикту нужны
+ * ещё и свесы с предупреждениями, а меш к тому времени уже там.
+ */
+function vesselPart(
+  csg: CsgApi,
+  jobId: number,
+  state: AppState,
+  segments: number,
+  validate: boolean,
+): JobPart {
+  const progress = new Progress(jobId, validate ? 2 : 1);
   progress.at(0, 'сборка изделия');
   const built = buildPrintableVessel(
-    csg, toBuildParams(state, state.resolution), state.hollow, state.handle, state.spout,
+    csg, toBuildParams(state, segments), state.hollow, state.handle, state.spout,
   );
+  if (!validate) return part(state.family, 'Изделие', '', built.mesh, []);
+
   progress.at(1, 'проверка меша');
   const blocking = assessExport(validateMesh(built.mesh), true).blocking;
   return part(state.family, 'Изделие', '', built.mesh, blocking);
@@ -194,9 +215,15 @@ function transferable(parts: JobPart[]): Transferable[] {
   return list;
 }
 
+/**
+ * Проверяем только форму сообщения, а не список видов задач: перечислять их
+ * здесь второй раз — значит однажды забыть дописать. Незнакомый вид разберёт
+ * `run` и ответит ошибкой; молчать в ответ нельзя ни на что — клиент ждёт
+ * ровно одного ответа на задачу и без него встанет навсегда.
+ */
 function isJobMessage(data: unknown): data is WorkerIn {
   if (typeof data !== 'object' || data === null) return false;
   if (!('jobId' in data) || typeof data.jobId !== 'number') return false;
   if (!('job' in data) || typeof data.job !== 'object' || data.job === null) return false;
-  return 'kind' in data.job && (data.job.kind === 'mold-preview' || data.job.kind === 'export');
+  return 'kind' in data.job && typeof data.job.kind === 'string';
 }

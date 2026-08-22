@@ -16,6 +16,8 @@
 //   --uncheck <id>        выключить чекбокс (повторяемый)
 //   --click <selector>    кликнуть по селектору (повторяемый)
 //   --view                снять только область просмотра, без панели
+//   --clip x,y,w,h        вырезать кусок кадра — разглядеть стык вблизи
+//   --orbit dx,dy         повернуть камеру мышью: заглянуть внутрь изделия
 //   --wait <ms>           доп. пауза перед съёмкой
 //   --width / --height    размер окна
 //   --preview             прод-сборка вместо dev-сервера
@@ -27,7 +29,7 @@ import { parseArgs, openApp } from './lib/harness.mjs';
 
 const flags = parseArgs(
   process.argv.slice(2),
-  ['out', 'family', 'preset', 'wait', 'width', 'height', 'url'],
+  ['out', 'family', 'preset', 'wait', 'width', 'height', 'url', 'clip', 'orbit'],
   ['set', 'check', 'uncheck', 'click'],
 );
 
@@ -112,18 +114,43 @@ for (const selector of flags.get('click') ?? []) {
   await page.waitForTimeout(120);
 }
 
+// Вращение — обычным перетаскиванием по канвасу, как это делает человек.
+const orbit = flags.get('orbit');
+if (orbit) {
+  const [dx, dy] = orbit.split(',').map(Number);
+  label(`orbit:${orbit}`);
+  const box = await page.locator('#view').boundingBox();
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y + dy, { steps: 12 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+}
+
 await page.waitForTimeout(Number(flags.get('wait') ?? 400));
 
-const target = flags.has('view') ? page.locator('#viewWrap') : page;
-await target.screenshot({ path: out });
+// Кадрирование — только у страницы целиком: у локатора свои координаты,
+// и «вырезать кусок канваса» проще, отсчитывая от левого верхнего угла окна.
+const clip = flags.get('clip');
+if (clip) {
+  const [x, y, width, height] = clip.split(',').map(Number);
+  await page.screenshot({ path: out, clip: { x, y, width, height } });
+} else {
+  const target = flags.has('view') ? page.locator('#viewWrap') : page;
+  await target.screenshot({ path: out });
+}
 
 const status = await page.locator('#status').textContent();
+const audit = (await page.locator('#audit').textContent()).trim();
 const warnings = (await page.locator('#warnings').textContent()).trim();
 const blockers = (await page.locator('#blockers').textContent()).trim();
 await app.close();
 
 console.log(`snap → ${out}`);
 console.log(`status: ${status}`);
+console.log(`audit: ${audit}`);
 if (warnings) console.log(`warnings: ${warnings}`);
 if (blockers) console.log(`blockers: ${blockers}`);
 if (errors.length) {

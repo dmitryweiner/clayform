@@ -47,10 +47,13 @@ export const PRESETS: Preset[] = [
     { dBelly: 150, dNeck: 90, dFoot: 90, bellyAt: 0.5, shoulder: 0.5, neckH: 0.12, rimFlare: 0.1 },
     {
       heightMm: 120,
-      handle: { on: true, count: 1, topAt: 0.8, bottomAt: 0.3, reachMm: 30, thicknessMm: 12 },
+      handle: {
+        on: true, count: 1, topAt: 0.77, bottomAt: 0.28, reachMm: 30,
+        thicknessMm: 12, widthRatio: 0.7, topAngleDeg: 26, bottomAngleDeg: 0,
+      },
       spout: {
-        on: true, kind: 'applied', attachAt: 0.4, lengthMm: 70,
-        tipAt: 1, baseMm: 32, tipMm: 15, tipAngleDeg: 55,
+        on: true, kind: 'applied', attachAt: 0.4, lengthMm: 43,
+        tipAt: 0.91, baseMm: 32, tipMm: 15, tipAngleDeg: 20,
       },
     }),
 

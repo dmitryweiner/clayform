@@ -20,6 +20,7 @@ import type { Vec3 } from './sweep';
 import { bezier, bezierTangent, sweepTube } from './sweep';
 import type { ProfileDef } from './profiles';
 import { profileRadius } from './profiles';
+import { embedDepth } from './attach';
 
 export type SpoutKind = 'lip' | 'applied';
 
@@ -159,8 +160,14 @@ export function makeSpout(state: SpoutState): (u: number, v: number) => number {
 
 // --- приставная трубка ---
 
-/** Насколько основание утоплено в стенку, чтобы объединение было надёжным. */
+/**
+ * Насколько основание утоплено в стенку СВЕРХ того, что нужно, чтобы кромка
+ * торца ушла внутрь тела. Это и есть та самая «вдавленность»: трубку
+ * приставляют к стенке и прижимают, а не приклеивают встык.
+ */
 const EMBED_MM = 2.5;
+/** Глубже этой доли радиуса стенки трубку не топим: продавит насквозь. */
+const MAX_EMBED_FRACTION = 0.6;
 /** Запас, на который канал уходит внутрь полости за стенку изделия, мм. */
 const PIERCE_MM = 3;
 /** Насколько канал выходит за кончик трубки, вскрывая устье, мм. */
@@ -200,7 +207,17 @@ interface SpoutCurve {
  */
 function spoutCurve(state: SpoutState, profile: ProfileDef, heightMm: number): SpoutCurve {
   const attachR = profileRadius(profile, state.attachAt);
-  const embed = Math.min(EMBED_MM, attachR * 0.4);
+  // Трубка выходит из стенки по горизонтали, сечение круглое.
+  const embed = embedDepth({
+    profile,
+    heightMm,
+    at: state.attachAt,
+    tangent: { radial: 1, up: 0 },
+    halfDepth: state.baseMm / 2,
+    halfWidth: state.baseMm / 2,
+    marginMm: EMBED_MM,
+    maxFraction: MAX_EMBED_FRACTION,
+  });
   const angle = (state.tipAngleDeg * Math.PI) / 180;
 
   const p0: Vec3 = { x: attachR - embed, y: 0, z: state.attachAt * heightMm };

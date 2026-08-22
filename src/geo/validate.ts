@@ -24,6 +24,13 @@ export interface ExportAssessment {
   warnings: string[];
 }
 
+/**
+ * Сколько вырожденных треугольников считается шумом булевой операции. Доля
+ * при этом продолжает работать: на мелком меше восемь штук — это уже проценты,
+ * и такой меш блокируется, сколько бы их ни было в штуках.
+ */
+const SLIVER_NOISE = 8;
+
 /** Central export gate shared by the UI and tests. */
 export function assessExport(report: MeshReport, shouldBeClosed: boolean): ExportAssessment {
   const blocking: string[] = [];
@@ -39,8 +46,11 @@ export function assessExport(report: MeshReport, shouldBeClosed: boolean): Expor
   if (report.degenerateTriangles > 0) {
     const ratio = report.triangleCount > 0 ? report.degenerateTriangles / report.triangleCount : 1;
     const message = `${report.degenerateTriangles} degenerate triangle(s) (${(ratio * 100).toFixed(2)}%).`;
+    // Единичные вырожденные треугольники оставляет любая булева операция: там,
+    // где поверхности пересекаются по касательной, слив-треугольник неизбежен.
+    // Печати они не мешают, а в предупреждениях приучают их не читать.
     if (ratio > 0.01) blocking.push(message);
-    else warnings.push(message);
+    else if (report.degenerateTriangles > SLIVER_NOISE) warnings.push(message);
   }
   return { blocking, warnings };
 }

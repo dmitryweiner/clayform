@@ -13,6 +13,8 @@ import type { Vec3 } from './sweep';
 import { bezier, bezierTangent, sweepTube, mirrorX } from './sweep';
 import type { ProfileDef } from './profiles';
 import { profileRadius } from './profiles';
+import type { AxialTangent } from './attach';
+import { embedDepth } from './attach';
 
 export interface HandleState {
   on: boolean;
@@ -43,8 +45,13 @@ export const REACH_MAX_MM = 120;
 export const THICKNESS_MAX_MM = 40;
 export const ANGLE_MAX_DEG = 75;
 
-/** Насколько концы дуги утоплены в стенку, чтобы объединение было надёжным. */
+/**
+ * Насколько концы дуги утоплены в стенку СВЕРХ того, что нужно, чтобы кромка
+ * торца ушла внутрь тела: припуск на прижим.
+ */
 const EMBED_MM = 2.5;
+/** Глубже этой доли радиуса стенки конец не топим: продавит насквозь. */
+const MAX_EMBED_FRACTION = 0.6;
 const SEGMENTS = 64;
 const RING = 24;
 
@@ -101,15 +108,34 @@ export function buildHandles(
 
   const rTop = profileRadius(profile, state.topAt);
   const rBottom = profileRadius(profile, state.bottomAt);
-  const embed = Math.min(EMBED_MM, rTop * 0.4, rBottom * 0.4);
-
-  const p0: Vec3 = { x: -(rTop - embed), y: 0, z: state.topAt * heightMm };
-  const p1: Vec3 = { x: -(rBottom - embed), y: 0, z: state.bottomAt * heightMm };
-  const push = solvePush(state, p0, p1, rTop, rBottom);
-  const [c0, c1] = controlPoints(state, p0, p1, rTop, rBottom, push);
-
   const halfDepth = state.thicknessMm / 2;
   const halfWidth = (state.thicknessMm * state.widthRatio) / 2;
+
+  // Каждый конец топим по своей стенке: наверху и внизу силуэт изогнут
+  // по-разному, а торцы у ручки толстые — общей глубины на двоих не хватает.
+  const embed = (at: number, angleDeg: number): number => embedDepth({
+    profile,
+    heightMm,
+    at,
+    tangent: tangentOf(angleDeg),
+    halfDepth,
+    halfWidth,
+    marginMm: EMBED_MM,
+    maxFraction: MAX_EMBED_FRACTION,
+  });
+
+  const p0: Vec3 = {
+    x: -(rTop - embed(state.topAt, state.topAngleDeg)),
+    y: 0,
+    z: state.topAt * heightMm,
+  };
+  const p1: Vec3 = {
+    x: -(rBottom - embed(state.bottomAt, state.bottomAngleDeg)),
+    y: 0,
+    z: state.bottomAt * heightMm,
+  };
+  const push = solvePush(state, p0, p1, rTop, rBottom);
+  const [c0, c1] = controlPoints(state, p0, p1, rTop, rBottom, push);
   const handle = sweepTube(
     (t) => bezier(p0, c0, c1, p1, t),
     (t) => bezierTangent(p0, c0, c1, p1, t),
@@ -119,6 +145,16 @@ export function buildHandles(
   );
 
   return state.count >= 2 ? [handle, mirrorX(handle)] : [handle];
+}
+
+/**
+ * Куда смотрит ось ручки в месте крепления. Угол задан от горизонтали, и на
+ * столько же наклонён плоский торец: по нему и считается, насколько глубоко
+ * его прятать в стенку.
+ */
+function tangentOf(angleDeg: number): AxialTangent {
+  const angle = (angleDeg * Math.PI) / 180;
+  return { radial: Math.cos(angle), up: Math.sin(angle) };
 }
 
 /**

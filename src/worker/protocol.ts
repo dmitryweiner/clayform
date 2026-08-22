@@ -10,10 +10,12 @@
 import type { AppState } from '../state/schema';
 
 /**
- * Задача воркеру. Обе — про булевы операции, ради которых он и заведён:
- * превью оснастки на огрублённой сетке и экспортная сборка на полной.
+ * Задача воркеру. Все три — про булевы операции, ради которых он и заведён:
+ * превью изделия и оснастки на огрублённой сетке и экспортная сборка на
+ * полной.
  */
 export type CsgJob =
+  | { kind: 'vessel-preview'; state: AppState; segments: number }
   | { kind: 'mold-preview'; state: AppState; segments: number }
   | { kind: 'export'; state: AppState };
 

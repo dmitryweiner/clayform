@@ -72,6 +72,24 @@ describe('export assessment', () => {
     expect(assessExport(report, true).blocking.some((s) => s.includes('indices'))).toBe(true);
   });
 
+  it('молчит про единичные слив-треугольники, но блокирует их россыпь', () => {
+    // Пара вырожденных треугольников — обычный след булевой операции там, где
+    // поверхности сошлись по касательной; сотни — это уже сломанный меш.
+    const base = validateMesh(withNormals(assembleMesh(revolve(() => 1), 'both')));
+    const withSlivers = (count: number, triangleCount = base.triangleCount) =>
+      ({ ...base, degenerateTriangles: count, triangleCount });
+    // пара штук на большом меше — молчим
+    expect(assessExport(withSlivers(2, 80000), true).warnings).toEqual([]);
+    expect(assessExport(withSlivers(2, 80000), true).blocking).toEqual([]);
+    // десятки — уже стоит сказать
+    expect(assessExport(withSlivers(40, 80000), true).warnings.some((s) => s.includes('degenerate')))
+      .toBe(true);
+    // проценты — меш сломан, выпускать нельзя, и на мелком меше это те же
+    // единицы штук
+    expect(assessExport(withSlivers(10), true).blocking
+      .some((s) => s.includes('degenerate'))).toBe(true);
+  });
+
   it('checks normals for non-finite values', () => {
     const mesh = withNormals(assembleMesh(revolve(() => 1), 'both'));
     mesh.normals[0] = NaN;

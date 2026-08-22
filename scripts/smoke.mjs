@@ -298,11 +298,30 @@ for (const [id, value] of [['print_wall', '0.8'], ['print_wall', '60'], ['print_
 label('export');
 await expectDownloads(1, 'vessel');
 
+// Точная сборка изделия: быстрое превью рисует ручку и носик отдельными
+// телами, а следом воркер присылает их настоящее объединение — с срезанными
+// полостью торцами и сквозным носиком. Отличить одно от другого можно по
+// числу треугольников в вердикте: оно обязано смениться.
+label('exact-preview');
+await page.selectOption('#presetSel', 'b:Чайник');
+const quickVerdict = await auditVerdict(page);
+const exactStarted = Date.now();
+try {
+  await page.waitForFunction(
+    (before) => (document.querySelector('#audit')?.textContent ?? '') !== before,
+    quickVerdict,
+    { timeout: 30000 },
+  );
+  console.log(`точная сборка изделия: ${Date.now() - exactStarted} мс после быстрого вердикта`);
+} catch {
+  errors.push(`[exact-preview] точная сборка не доехала: audit так и остался "${quickVerdict}"`);
+}
+const exactVerdict = await auditVerdict(page);
+if (!exactVerdict.includes('замкнуто ✓')) errors.push(`[exact-preview] audit="${exactVerdict}"`);
+
 // чайник экспортируется целиком: тело, ручка и трубка носика с проходом
 // сквозь стенку — единственный STL, где сходится весь CSG изделия
 label('export-teapot');
-await page.selectOption('#presetSel', 'b:Чайник');
-await auditVerdict(page);
 await expectDownloads(1, 'teapot');
 
 // Литейная оснастка: у каждой схемы своё число деталей. Ручку и носик
