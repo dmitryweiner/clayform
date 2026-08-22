@@ -26,12 +26,15 @@ import { buildAppliedSpout } from './geo/spout';
 // живёт в воркере, и путь импорта это подтверждает.
 import { analyzeMold } from './geo/mold/analyze';
 import { buildHollowVessel } from './geo/hollow';
+import { lidFit, lidSeat, buildLidMesh, lidHeightMm } from './geo/lid';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
 import { bandRepeats } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
 import type { AppState } from './state/schema';
-import { defaultState, stateForFamily, sanitizeState, toBuildParams, RESOLUTIONS } from './state/schema';
+import {
+  defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, RESOLUTIONS,
+} from './state/schema';
 import { PRESETS, presetByName } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
 import type { UserPreset } from './state/userPresets';
@@ -124,10 +127,16 @@ const reliefRows = renderReliefCards(
 
 const attachRows = renderAttachCards(
   attachCards,
-  () => state.handle,
-  () => state.spout,
-  (handle) => applyState({ ...state, handle }),
-  (spout) => applyState({ ...state, spout }),
+  {
+    handle: () => state.handle,
+    spout: () => state.spout,
+    lid: () => state.lid,
+  },
+  {
+    handle: (handle) => applyState({ ...state, handle }),
+    spout: (spout) => applyState({ ...state, spout }),
+    lid: (lid) => applyState({ ...state, lid }),
+  },
 );
 
 const exportPanel = renderExportPanel(
@@ -166,7 +175,7 @@ function applyState(next: AppState, record = true): void {
     paramRows.setValues(state.shape);
   }
   reliefRows.sync(state.relief, state.roulette);
-  attachRows.sync(state.handle, state.spout);
+  attachRows.sync(state.handle, state.spout, state.lid);
   exportPanel.sync(state.exportMode, state.hollow, state.mold);
   heightInput.value = String(Math.round(state.heightMm));
   resolutionSel.value = String(state.resolution);
@@ -222,8 +231,15 @@ function refresh(): void {
   });
 
   const buildParams = toBuildParams(state, PREVIEW_SEGMENTS);
-  const hollow = buildHollowVessel(buildParams, state.hollow);
+  // Посадку под крышку считаем от того же силуэта и той же стенки, из
+  // которых строится полость: крышка обязана входить именно в неё.
+  const fit = state.lid.on ? lidFit(profile, state.heightMm, state.hollow, state.lid) : null;
+  const hollow = buildHollowVessel(buildParams, state.hollow, fit ? lidSeat(fit) : undefined);
   const outer = buildVessel(buildParams);
+  // Крышке булевы операции не нужны — она тело вращения, — поэтому и в
+  // превью, и в экспорте её строит один и тот же параметрический код.
+  // Надетой её показываем сразу, без ожидания воркера.
+  const lidMeshes = fit ? [buildLidMesh(fit, state.lid, PREVIEW_SEGMENTS, { liftMm: fit.liftMm })] : [];
 
   // Схему разъёма считаем по телу без ручки: ручка влияет на выбор самим
   // фактом своего существования (сквозное отверстие), а гонять ради этого
@@ -247,10 +263,19 @@ function refresh(): void {
       'там стенка тоньше заданной. Уменьшите глубину волны или увеличьте стенку.',
     );
   }
+  if (fit?.tooNarrow) {
+    baseWarnings.push(
+      `Горловина узка для крышки: посадка вышла ⌀${(fit.seatMm * 2).toFixed(0)} мм. ` +
+      'Расширьте горло, уменьшите полочку или стенку.',
+    );
+  }
   warningsEl.textContent = baseWarnings.join('\n');
 
   const widthMm = outerWidth(outer.positions);
-  const clayMl = signedVolume(hollow.mesh.positions, hollow.mesh.indices) / 1000;
+  // Глина считается по всему, что придётся напечатать: крышка — такая же
+  // деталь изделия, как тело.
+  const clayMl = [hollow.mesh, ...lidMeshes]
+    .reduce((sum, mesh) => sum + signedVolume(mesh.positions, mesh.indices), 0) / 1000;
   statusEl.textContent = [
     `⌀${widthMm.toFixed(0)} × ${state.heightMm.toFixed(0)} мм`,
     `вместимость ${formatVolume(hollow.capacityMl)}`,
@@ -268,22 +293,29 @@ function refresh(): void {
     // и носик стоит заглушенным. Поэтому по паузе картинку заменяет
     // настоящая сборка из воркера (showExactVessel).
     const surface = vesselSurface(buildParams);
-    const tube = buildAppliedSpout(state.spout, surface.profile, surface.heightMm);
+    const tube = buildAppliedSpout(effectiveSpout(state), surface.profile, surface.heightMm);
     scene.setMeshes([
       hollow.mesh,
       ...buildHandles(state.handle, surface.profile, surface.heightMm),
       ...(tube ? [tube] : []),
+      ...lidMeshes,
     ]);
-    exportPanel.setParts([{ label: 'Изделие', note: `${(clayMl / 1000).toFixed(2)} л глины` }]);
+    exportPanel.setParts([
+      { label: 'Изделие', note: `${(clayMl / 1000).toFixed(2)} л глины` },
+      ...(fit ? [{
+        label: 'Крышка',
+        note: `⌀${(fit.fieldMm * 2).toFixed(0)} × ${lidHeightMm(fit, state.lid).toFixed(0)} мм`,
+      }] : []),
+    ]);
     exportBtn.textContent = 'Экспорт STL';
     auditEl.textContent = 'проверка…';
     // Быстрый вердикт — по оболочке: он приходит через четверть секунды и
     // почти всегда окончательный. Если есть приставные детали, следом
     // подъезжает точная сборка из воркера и перепроверяет уже её — то самое,
     // что уйдёт в STL.
-    auditTimer = setTimeout(() => audit(hollow.mesh), AUDIT_DELAY_MS);
+    auditTimer = setTimeout(() => audit([hollow.mesh, ...lidMeshes]), AUDIT_DELAY_MS);
     if (state.handle.on || hasAppliedSpout()) {
-      exactTimer = setTimeout(() => void showExactVessel(stamp), CSG_DELAY_MS);
+      exactTimer = setTimeout(() => void showExactVessel(stamp, lidMeshes), CSG_DELAY_MS);
     }
   } else {
     exportPanel.setParts(scheme.parts.map((part) => ({ label: part.label })));
@@ -298,13 +330,15 @@ function refresh(): void {
  * Только на ней видно, что торцы ручки срезаны полостью, а носик сквозной:
  * склеить это без булевых операций нельзя, поэтому считает воркер.
  */
-async function showExactVessel(stamp: number): Promise<void> {
+async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise<void> {
   try {
+    // Крышку воркер не считает вовсе: булевых операций ей не нужно, а
+    // построенная здесь она уже стоит в сцене — надетой и точной.
     const parts = await csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS });
     if (!parts || stamp !== generation) return;
     const mesh = toMesh(parts[0]);
-    scene.setMeshes([mesh]);
-    audit(mesh);
+    scene.setMeshes([mesh, ...lidMeshes]);
+    audit([mesh, ...lidMeshes]);
   } catch (error) {
     // Сборка не удалась — значит и экспорт не удастся: это тот же код.
     // Молчать об этом нельзя, на экране осталось бы приблизительное превью.
@@ -371,22 +405,30 @@ function explode(meshes: SurfaceMesh[]): SurfaceMesh[] {
   return placed;
 }
 
-function audit(mesh: SurfaceMesh): void {
-  const report = validateMesh(mesh);
-  const assessment = assessExport(report, true);
-  const overhang = overhangFraction(mesh, 60);
+/**
+ * Вердикт по всем деталям изделия разом: тело и, если она есть, крышка.
+ * Замкнутость и блокировки — по каждой, а свесы меряем только по телу: у
+ * крышки потолок купола нависает при любых параметрах, и это предупреждение
+ * стало бы вечным шумом, от которого отучаются читать и остальные.
+ */
+function audit(meshes: SurfaceMesh[]): void {
+  const reports = meshes.map((mesh) => validateMesh(mesh));
+  const assessments = reports.map((report) => assessExport(report, true));
+  const triangles = reports.reduce((sum, report) => sum + report.triangleCount, 0);
+  const blocking = assessments.flatMap((assessment) => assessment.blocking);
+  const overhang = overhangFraction(meshes[0], 60);
 
-  auditEl.textContent = report.watertight
-    ? `замкнуто ✓ · ${Math.round(report.triangleCount / 1000)} тыс. треугольников`
+  auditEl.textContent = reports.every((report) => report.watertight)
+    ? `замкнуто ✓ · ${Math.round(triangles / 1000)} тыс. треугольников`
     : 'меш не замкнут';
 
-  const extra = [...assessment.warnings];
+  const extra = assessments.flatMap((assessment) => assessment.warnings);
   if (overhang > 0.15) {
     extra.push(`Свесы круче 60° на ${(overhang * 100).toFixed(0)} % поверхности — печать глиной потребует опор.`);
   }
   warningsEl.textContent = [...baseWarnings, ...extra].join('\n');
-  blockersEl.textContent = assessment.blocking.join('\n');
-  exportBtn.disabled = assessment.blocking.length > 0;
+  blockersEl.textContent = blocking.join('\n');
+  exportBtn.disabled = blocking.length > 0;
 }
 
 /**

@@ -16,6 +16,8 @@ import type { HandleState } from '../geo/handle';
 import { defaultHandle, sanitizeHandle } from '../geo/handle';
 import type { SpoutState } from '../geo/spout';
 import { defaultSpout, sanitizeSpout } from '../geo/spout';
+import type { LidState } from '../geo/lid';
+import { defaultLid, sanitizeLid } from '../geo/lid';
 // Из geo/mold/state, а не из фасада geo/mold: фасад тянет за собой csg.ts, а
 // схему состояния читает и главный поток, который про WASM знать не должен.
 import type { MoldState } from '../geo/mold/state';
@@ -43,6 +45,7 @@ export interface AppState {
   roulette: RouletteState;
   handle: HandleState;
   spout: SpoutState;
+  lid: LidState;
   hollow: HollowState;
   mold: MoldState;
   exportMode: ExportMode;
@@ -65,6 +68,7 @@ export function defaultState(): AppState {
     roulette: defaultRoulette(),
     handle: defaultHandle(),
     spout: defaultSpout(),
+    lid: defaultLid(),
     hollow: defaultHollow(),
     mold: defaultMold(),
     exportMode: 'vessel',
@@ -126,6 +130,7 @@ export function sanitizeState(raw: unknown): AppState {
     roulette: sanitizeRoulette(source.roulette),
     handle: sanitizeHandle(source.handle),
     spout: sanitizeSpout(source.spout),
+    lid: sanitizeLid(source.lid),
     hollow: sanitizeHollow(source.hollow),
     mold: sanitizeMold(source.mold),
     exportMode: exportModeOf(source.exportMode),
@@ -138,6 +143,18 @@ function exportModeOf(raw: unknown): ExportMode {
   return 'vessel';
 }
 
+/**
+ * Носик с учётом крышки. Оттянутый край ломает круглый венчик, а крышке
+ * нужен именно круглый: садиться на волну слива ей не на что. Совместить их
+ * нельзя, поэтому при включённой крышке край молча гаснет — состояние при
+ * этом не меняется, и снятая крышка возвращает носик как был.
+ *
+ * Приставная трубка с крышкой уживается прекрасно: это и есть чайник.
+ */
+export function effectiveSpout(state: AppState): SpoutState {
+  return state.lid.on && state.spout.kind === 'lip' ? { ...state.spout, on: false } : state.spout;
+}
+
 /** Состояние + детализация → параметры сборки геометрии. */
 export function toBuildParams(state: AppState, segments: number): BuildParams {
   return {
@@ -148,6 +165,6 @@ export function toBuildParams(state: AppState, segments: number): BuildParams {
     nv: segments,
     relief: state.relief,
     roulette: state.roulette,
-    spout: state.spout,
+    spout: effectiveSpout(state),
   };
 }

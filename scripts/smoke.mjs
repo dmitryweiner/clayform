@@ -284,6 +284,54 @@ if (!(await page.locator('#spout_pull').isVisible())) {
   errors.push('[spout-applied] вернулись к краю, а его ползунки не показались');
 }
 
+// крышка: обе ручки, крайние положения ползунков, посадка на венчик и
+// утопленная. Крышка — отдельная деталь, поэтому её появление видно и в
+// списке деталей, и в числе выгружаемых файлов.
+label('lid');
+await page.check('#on_lid');
+await page.waitForTimeout(150);
+const withLidParts = await page.locator('#partList li').count();
+if (withLidParts !== 2) errors.push(`[lid] деталей ${withLidParts}, ожидалось 2 (изделие и крышка)`);
+
+for (const [id, value] of [['lid_dome', '1'], ['lid_dome', '80'], ['lid_dome', '16'],
+                           ['lid_curvature', '0'], ['lid_curvature', '1'], ['lid_curvature', '0.55'],
+                           ['lid_depth', '3'], ['lid_depth', '30'], ['lid_depth', '8'],
+                           ['lid_ledge', '0'], ['lid_ledge', '10'], ['lid_ledge', '0'],
+                           ['lid_clearance', '0.2'], ['lid_clearance', '2'], ['lid_clearance', '0.6'],
+                           ['lid_field', '0'], ['lid_field', '30'], ['lid_field', '6'],
+                           ['lid_recess', '20'], ['lid_recess', '0'],
+                           ['lid_knob', 'tee'], ['lid_capH', '1.5'], ['lid_capH', '15'],
+                           ['lid_knobD', '6'], ['lid_knobD', '50'], ['lid_stemD', '30'],
+                           ['lid_stemH', '0'], ['lid_stemH', '30'],
+                           ['lid_knob', 'ball'], ['lid_knobD', '18'], ['lid_stemD', '8'],
+                           ['lid_stemH', '6']]) {
+  const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
+  if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
+  else await page.fill(`#${id}`, value);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[lid:${id}=${value}] audit="${verdict}"`);
+}
+
+// толщина диска нужна только букве Т — у шара её ползунок ни на что не влияет
+if (await page.locator('#lid_capH').isVisible()) {
+  errors.push('[lid] ползунок толщины диска виден у ручки-шара');
+}
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid.png` });
+
+// оттянутый край с крышкой несовместим и гаснет молча: изделие остаётся
+// собранным, а не разваливается на предупреждения
+label('lid-vs-lip');
+await page.check('#on_spout');
+await page.selectOption('#spout_kind', 'lip');
+await page.fill('#spout_pull', '40');
+const lipVerdict = await auditVerdict(page);
+if (!lipVerdict.includes('замкнуто ✓')) errors.push(`[lid-vs-lip] audit="${lipVerdict}"`);
+await page.uncheck('#on_spout');
+await page.uncheck('#on_lid');
+await page.waitForTimeout(120);
+const noLidParts = await page.locator('#partList li').count();
+if (noLidParts !== 1) errors.push(`[lid] после выключения деталей ${noLidParts}, ожидалась 1`);
+
 // стенка и дно: крайние значения не должны рвать полость
 label('hollow');
 for (const [id, value] of [['print_wall', '0.8'], ['print_wall', '60'], ['print_wall', '3'],
@@ -319,10 +367,11 @@ try {
 const exactVerdict = await auditVerdict(page);
 if (!exactVerdict.includes('замкнуто ✓')) errors.push(`[exact-preview] audit="${exactVerdict}"`);
 
-// чайник экспортируется целиком: тело, ручка и трубка носика с проходом
-// сквозь стенку — единственный STL, где сходится весь CSG изделия
+// чайник экспортируется целиком: тело с ручкой и трубкой носика — тот самый
+// STL, где сходится весь CSG изделия, — и крышка отдельным файлом, как её и
+// печатают
 label('export-teapot');
-await expectDownloads(1, 'teapot');
+await expectDownloads(2, 'teapot');
 
 // Литейная оснастка: у каждой схемы своё число деталей. Ручку и носик
 // снимаем — они расширяют габарит и через это меняют выбор схемы, а здесь
@@ -330,6 +379,7 @@ await expectDownloads(1, 'teapot');
 label('mold');
 await page.uncheck('#on_handle');
 await page.uncheck('#on_spout');
+await page.uncheck('#on_lid');
 for (const [family, index, tab, expected] of [
   ['миска', 1, '#tabBath', 1],
   ['горшок', 0, '#tabBath', 3],
@@ -351,6 +401,24 @@ for (const [family, index, tab, expected] of [
   if (blockers) errors.push(`[mold:${family}${tab}] blockers="${blockers}"`);
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/mold-${family}-${tab.slice(4)}.png` });
 }
+
+// у крышки своя форма: к деталям формы тела добавляются её собственные
+label('mold-lid');
+await page.locator('#familyGrid .family-btn').nth(0).click();
+await page.check('#on_lid');
+await page.click('#tabBath');
+await page.waitForFunction(
+  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
+  { timeout: 60000 },
+);
+const lidMoldParts = await page.locator('#partList li').count();
+if (lidMoldParts !== 5) {
+  errors.push(`[mold-lid] деталей ${lidMoldParts}, ожидалось 5 (три у тела, две у крышки)`);
+}
+const lidMoldBlockers = (await page.locator('#blockers').textContent()).trim();
+if (lidMoldBlockers) errors.push(`[mold-lid] blockers="${lidMoldBlockers}"`);
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/mold-lid.png` });
+await page.uncheck('#on_lid');
 
 // экспорт оснастки: у горшка это три отдельных файла
 label('export-mold');

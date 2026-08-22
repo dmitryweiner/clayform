@@ -20,7 +20,7 @@ import type { HandleState } from './handle';
 import { buildHandles } from './handle';
 import type { SpoutState } from './spout';
 import { buildAppliedSpout, appliedSpoutChannel } from './spout';
-import type { HollowState } from './hollow';
+import type { HollowState, SeatFit } from './hollow';
 import { buildHollowVessel } from './hollow';
 
 /** Объединение нескольких замкнутых мешей в один. */
@@ -69,8 +69,9 @@ export function buildPrintableVessel(
   hollow: HollowState,
   handle: HandleState,
   spout: SpoutState,
+  seat?: SeatFit,
 ): { mesh: SurfaceMesh; capacityMl: number; pinchedFraction: number } {
-  const result = buildHollowVessel(p, hollow);
+  const result = buildHollowVessel(p, hollow, seat);
   const surface = vesselSurface(p);
   const handles = buildHandles(handle, surface.profile, surface.heightMm);
   const tube = buildAppliedSpout(spout, surface.profile, surface.heightMm);

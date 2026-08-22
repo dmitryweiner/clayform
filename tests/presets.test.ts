@@ -5,6 +5,8 @@ import { PRESETS, presetByName } from '../src/state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from '../src/state/share';
 import { defaultState, sanitizeState, toBuildParams } from '../src/state/schema';
 import { buildHollowVessel } from '../src/geo/hollow';
+import { lidFit, lidSeat, buildLidMesh } from '../src/geo/lid';
+import { buildProfile } from '../src/geo/profiles';
 import { buildVessel } from '../src/geo/build';
 import { validateMesh } from '../src/geo/validate';
 import { analyzeMold } from '../src/geo/mold';
@@ -32,6 +34,27 @@ describe('встроенные пресеты', () => {
       expect(report.volume, preset.name).toBeGreaterThan(0);
       expect(hollow.capacityMl, preset.name).toBeGreaterThan(10);
       expect(hollow.pinchedFraction, preset.name).toBe(0);
+    }
+  });
+
+  it('где обещана крышка, она строится и входит в горловину', () => {
+    const withLid = PRESETS.filter((preset) => preset.build().lid.on);
+    expect(withLid.length, 'ни один пресет не показывает крышку').toBeGreaterThan(0);
+    for (const preset of withLid) {
+      const state = preset.build();
+      const profile = buildProfile(state.family, state.shape, state.heightMm);
+      const fit = lidFit(profile, state.heightMm, state.hollow, state.lid);
+      // подогнанный пресет не должен упираться в предупреждение об узкой горловине
+      expect(fit.tooNarrow, preset.name).toBe(false);
+
+      const lid = validateMesh(buildLidMesh(fit, state.lid, 96));
+      expect(lid.watertight, preset.name).toBe(true);
+      expect(lid.volume, preset.name).toBeGreaterThan(0);
+
+      // и тело с фланцем остаётся печатным
+      const vessel = buildHollowVessel(toBuildParams(state, 96), state.hollow, lidSeat(fit));
+      expect(validateMesh(vessel.mesh).watertight, preset.name).toBe(true);
+      expect(vessel.capacityMl, preset.name).toBeGreaterThan(10);
     }
   });
 

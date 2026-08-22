@@ -42,8 +42,11 @@ export const PRESETS: Preset[] = [
     { dBelly: 150, dNeck: 74, dFoot: 92, bellyAt: 0.42, shoulder: 0.7, neckH: 0.28, rimFlare: 0.35 },
     { heightMm: 195, spout: { on: true, pullMm: 12, widthDeg: 55, zone: 0.14 } }),
 
-  // Трубчатый носик и ручка напротив него: витрина приставных деталей.
-  make('Чайник', 'приземистый, с трубчатым носиком', 'pot',
+  // Трубчатый носик, ручка напротив него и крышка: витрина всех приставных
+  // деталей разом. Крышка лежит полем на венчике, как у обычного чайника;
+  // полочки нет, поэтому горловина изнутри просто цилиндризуется, и отливка
+  // выходит из формы готовой.
+  make('Чайник', 'приземистый, с трубчатым носиком и крышкой', 'pot',
     { dBelly: 150, dNeck: 90, dFoot: 90, bellyAt: 0.5, shoulder: 0.5, neckH: 0.12, rimFlare: 0.1 },
     {
       heightMm: 120,
@@ -54,6 +57,10 @@ export const PRESETS: Preset[] = [
       spout: {
         on: true, kind: 'applied', attachAt: 0.4, lengthMm: 43,
         tipAt: 0.91, baseMm: 32, tipMm: 15, tipAngleDeg: 20,
+      },
+      lid: {
+        on: true, recessMm: 0, depthMm: 8, clearanceMm: 0.6, ledgeMm: 0, fieldMm: 8,
+        domeMm: 15, curvature: 0.6, knobKind: 'ball', knobDMm: 16, stemDMm: 7, stemHMm: 6,
       },
     }),
 

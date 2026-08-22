@@ -17,6 +17,8 @@ import { validateMesh } from '../src/geo/validate';
 import { defaultFamilyParams, familyById, buildProfile, profileRadius } from '../src/geo/profiles';
 import { sanitizeHandle } from '../src/geo/handle';
 import { defaultSpout, sanitizeSpout } from '../src/geo/spout';
+import { sanitizeLid, lidFit, lidHeightMm, buildLidSolid } from '../src/geo/lid';
+import { defaultHollow } from '../src/geo/hollow';
 
 let csg: CsgApi;
 beforeAll(async () => {
@@ -221,6 +223,60 @@ describe('мастер-позитив', () => {
     const vessel = vesselOf('bowl');
     const master = buildMaster(csg, vessel, reportOf('bowl'), mold({ spareMm: 40, shrinkPct: 0 }));
     expect(validateMesh(master.mesh).extents[2]).toBeCloseTo(validateMesh(vessel).extents[2], 0);
+  });
+});
+
+describe('оснастка крышки', () => {
+  // Крышку кладут в форму перевёрнутой: юбка смотрит вверх и её торец
+  // становится устьем. Ручка при этом торчит вниз, и её шейка — поднутрение,
+  // из-за которого одночастной формой не обойтись.
+  const lidState = sanitizeLid({ on: true });
+  const p = params('pot', { heightMm: 120 });
+  const fit = lidFit(buildProfile('pot', p.shape, p.heightMm), p.heightMm, defaultHollow(), lidState);
+  const upsideDown = () => buildLidSolid(fit, lidState, 64, { upsideDown: true });
+  const lidMouth = { zMm: lidHeightMm(fit, lidState), radiusMm: fit.plugMm - 1.5 };
+  const lidReport = () => analyzeMold(upsideDown(), { hasHandle: false, hasSpout: false });
+
+  it('перевёрнутая крышка требует разъёма вдоль оси: ручка не даёт вынуть вверх', () => {
+    expect(lidReport().scheme).not.toBe('dropout');
+    expect(lidReport().parts.length).toBeGreaterThan(1);
+  });
+
+  it('мастер крышки — связная деталь с горловиной поверх юбки', () => {
+    const lid = upsideDown();
+    const master = buildMaster(csg, lid, lidReport(), mold({ spareMm: 25, shrinkPct: 0 }), {
+      mouth: lidMouth,
+    });
+    const report = validateMesh(master.mesh);
+    expect(report.watertight).toBe(true);
+    expect(report.volume).toBeGreaterThan(validateMesh(lid).volume);
+    // горловина именно поверх юбки, а не сбоку от неё
+    expect(report.extents[2]).toBeCloseTo(validateMesh(lid).extents[2] + 25, 0);
+    // Совпадающие поверхности — худший вход для булевой операции, поэтому
+    // горловина уже юбки. Слив-треугольников от этого стыка быть не должно.
+    expect(report.degenerateTriangles).toBe(0);
+
+    const scope = new CsgScope();
+    try {
+      expect(scope.keep(toManifold(csg, master.mesh)).decompose().map((solid) => {
+        scope.keep(solid);
+        return solid.volume();
+      })).toHaveLength(1);
+    } finally {
+      scope.dispose();
+    }
+  });
+
+  it('у крышки свои ванночки, и каждая печатается', () => {
+    const lid = upsideDown();
+    const baths = buildBaths(csg, lid, lidReport(), mold(), { mouth: lidMouth });
+    expect(baths).toHaveLength(lidReport().parts.length);
+    for (const bath of baths) {
+      const report = validateMesh(bath.mesh);
+      expect(report.watertight, bath.id).toBe(true);
+      expect(report.volume, bath.id).toBeGreaterThan(0);
+      expect(report.bbox.min[2], bath.id).toBeCloseTo(0, 6);
+    }
   });
 });
 

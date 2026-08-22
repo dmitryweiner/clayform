@@ -32,6 +32,32 @@ export interface HollowState {
   rimRadiusMm: number;
 }
 
+/**
+ * Посадочный цилиндр под крышку внутри горловины. Считает его geo/lid.ts —
+ * там же, где выводятся все диаметры посадки, — а сюда передаётся готовым:
+ * полость про крышку знать не обязана, ей достаточно знать, где сузиться.
+ */
+export interface SeatFit {
+  /** радиус цилиндра, мм */
+  radiusMm: number;
+  /** верх посадки: выше него полость обычная */
+  topZMm: number;
+  /** низ посадки: ниже него полость расходится конусом обратно */
+  bottomZMm: number;
+}
+
+/**
+ * Радиус, которым посадка ограничивает полость на высоте z. Выше полочки не
+ * ограничивает вовсе, в самой посадке даёт цилиндр, ниже — расходится
+ * конусом под 45°, пока не встретится с обычной полостью. Одна формула на
+ * все три случая: полочка при нулевом утоплении вырождается в сам венчик, а
+ * нулевая полочка — в простую цилиндризацию горловины.
+ */
+function seatRadiusAt(seat: SeatFit, z: number): number {
+  if (z > seat.topZMm) return Infinity;
+  return seat.radiusMm + Math.max(0, seat.bottomZMm - z);
+}
+
 export interface HollowResult {
   mesh: SurfaceMesh;
   /** поверхность полости той же раскладки, что и внешняя сетка */
@@ -146,8 +172,13 @@ function rimRings(
   return rings;
 }
 
-/** Точка гладкого силуэта, отодвинутая внутрь на wallMm по нормали. */
-function offsetPoint(
+/**
+ * Точка гладкого силуэта, отодвинутая внутрь на wallMm по нормали, — то
+ * есть точка поверхности полости. Наружу отдаётся, потому что по ней же
+ * geo/lid.ts меряет горловину: крышка обязана входить в ту самую полость,
+ * которую строит этот модуль, а не в свою приблизительную копию.
+ */
+export function cavityPoint(
   radiusAt: (v: number) => number,
   heightMm: number,
   wallMm: number,
@@ -172,18 +203,22 @@ function floorParam(
   wallMm: number,
   floorZ: number,
 ): number {
-  if (offsetPoint(radiusAt, heightMm, wallMm, 0).z >= floorZ) return 0;
+  if (cavityPoint(radiusAt, heightMm, wallMm, 0).z >= floorZ) return 0;
   let lo = 0;
   let hi = 1;
   for (let i = 0; i < 48; i++) {
     const mid = (lo + hi) / 2;
-    if (offsetPoint(radiusAt, heightMm, wallMm, mid).z < floorZ) lo = mid;
+    if (cavityPoint(radiusAt, heightMm, wallMm, mid).z < floorZ) lo = mid;
     else hi = mid;
   }
   return hi;
 }
 
-export function buildHollowVessel(p: BuildParams, hollow: HollowState): HollowResult {
+export function buildHollowVessel(
+  p: BuildParams,
+  hollow: HollowState,
+  seat?: SeatFit,
+): HollowResult {
   const wallMm = clamp(hollow.wallMm, WALL_MIN_MM, WALL_MAX_MM);
   // Рельефу внутрь оставляем ровно столько, чтобы стенка не истончилась
   // ниже MIN_WALL_MM: остаток стенки = wallMm + depth, потому что полость —
@@ -213,7 +248,7 @@ export function buildHollowVessel(p: BuildParams, hollow: HollowState): HollowRe
     // изделия. Иначе нижние ряды схлопывались бы на уровень пола в стопку
     // вырожденных треугольников.
     const v = vFloor + (vTop - vFloor) * (j / nv);
-    const point = offsetPoint(radiusAt, heightMm, wallMm, v);
+    const point = cavityPoint(radiusAt, heightMm, wallMm, v);
     // Три ограничения на высоту точки полости:
     //  — не ниже пола;
     //  — не ниже предыдущего ряда: офсет резкого плеча даёт локальный шаг
@@ -228,6 +263,10 @@ export function buildHollowVessel(p: BuildParams, hollow: HollowState): HollowRe
     // силуэта смотрит наружу), так что полость не может вылезти наружу.
     // Уйти в минус она может только при нелепо толстой стенке.
     let r = point.r;
+    // Фланец под крышку: полость в горловине поджимается до посадочного
+    // цилиндра. Только внутрь и только сужением — снаружи изделие остаётся
+    // прежним, а стенка у устья становится толще, но никогда тоньше.
+    if (seat) r = Math.min(r, seatRadiusAt(seat, z));
     if (r < MIN_CAVITY_MM) r = Math.min(MIN_CAVITY_MM, radiusAt(v) * 0.5);
 
     for (let i = 0; i < nu; i++) {
