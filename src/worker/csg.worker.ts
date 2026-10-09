@@ -8,14 +8,17 @@
 import type { CsgApi } from '../geo/csg';
 import { initCSG } from '../geo/csg';
 import type { SurfaceMesh } from '../geo/surface';
+import { mergeMeshes } from '../geo/surface';
+import { placeInRow, LID_BESIDE_GAP_MM } from '../geo/layout';
 import type { VesselSurface } from '../geo/build';
-import { vesselSurface } from '../geo/build';
+import { vesselSurface, buildVessel } from '../geo/build';
+import { buildHump } from '../geo/press';
 import { buildProfile, profileRadius } from '../geo/profiles';
 import type { LidFit } from '../geo/lid';
 import { lidFit, lidSeat, lidHeightMm, buildLidMesh, buildLidSolid } from '../geo/lid';
 import { buildSolidVessel, buildPrintableVessel } from '../geo/assemble';
 import type { Mouth, MoldPartMesh } from '../geo/mold';
-import { analyzeMold, buildMaster, buildBaths } from '../geo/mold';
+import { analyzeMold, buildMaster, buildBaths, buildSlump } from '../geo/mold';
 import { validateMesh, assessExport } from '../geo/validate';
 import type { AppState } from '../state/schema';
 import { sanitizeState, toBuildParams, effectiveSpout } from '../state/schema';
@@ -26,9 +29,17 @@ import type { CsgJob, JobPart, WorkerIn, WorkerOut } from './protocol';
  * создаёт воркер лениво, но уже в этот момент понятно, что считать придётся.
  */
 const ready = initCSG();
+/**
+ * Догрузился ли модуль. Первая задача ждёт WASM (полмегабайта), и на слабой
+ * сети это заметная пауза — о ней говорим полосой, а не молчим.
+ */
+let loaded = false;
+void ready.then(() => {
+  loaded = true;
+});
 
-/** Больше трёх частей у формы не бывает — половины плюс донная плита. */
-const MAX_MOLD_PARTS = 3;
+/** Больше четырёх частей у формы не бывает — половины, донная плита и пробка. */
+const MAX_MOLD_PARTS = 4;
 /** По скольким углам обходится венчик, когда меряется устье. */
 const MOUTH_SAMPLES = 64;
 /**
@@ -48,6 +59,7 @@ addEventListener('message', (event) => {
 async function handle(message: WorkerIn): Promise<void> {
   const { jobId, job } = message;
   try {
+    if (!loaded) send({ type: 'progress', jobId, step: 0, total: 1, label: 'загружаю модуль булевых операций' });
     const parts = run(await ready, jobId, job);
     // Буферы переносим, а не копируем: на 384 сегментах это десятки мегабайт.
     send({ type: 'done', jobId, parts }, transferable(parts));
@@ -63,12 +75,20 @@ function run(csg: CsgApi, jobId: number, job: CsgJob): JobPart[] {
     return [vesselPart(csg, jobId, state, job.segments)];
   }
   if (job.kind === 'mold-preview') {
-    return moldParts(csg, jobId, state, job.segments, false);
+    return state.exportMode === 'slump'
+      ? pressParts(csg, jobId, state, job.segments, false)
+      : moldParts(csg, jobId, state, job.segments, false);
   }
   if (job.kind === 'export') {
-    return state.exportMode === 'vessel'
-      ? vesselParts(csg, jobId, state, state.resolution)
-      : moldParts(csg, jobId, state, state.resolution, true);
+    switch (state.exportMode) {
+      case 'vessel':
+        return vesselParts(csg, jobId, state, state.resolution);
+      case 'slump':
+      case 'hump':
+        return pressParts(csg, jobId, state, state.resolution, true);
+      default:
+        return moldParts(csg, jobId, state, state.resolution, true);
+    }
   }
   throw new Error('воркер не знает такой задачи');
 }
@@ -120,7 +140,18 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
   ];
   if (fit) {
     progress.next('сборка крышки');
-    meshes.push({ id: 'lid', label: 'Крышка', mesh: buildLidMesh(fit, state.lid, segments) });
+    const lid = buildLidMesh(fit, state.lid, segments);
+    if (state.lidBeside) {
+      // Один файл на двоих: печатают за один заход. Две замкнутые
+      // компоненты в одном меше — законный STL, проверка его принимает.
+      meshes[0] = {
+        id: state.family,
+        label: 'Изделие + крышка',
+        mesh: mergeMeshes(placeInRow([[meshes[0].mesh], [lid]], LID_BESIDE_GAP_MM).flat()),
+      };
+    } else {
+      meshes.push({ id: 'lid', label: 'Крышка', mesh: lid });
+    }
   }
 
   progress.next('проверка мешей');
@@ -128,6 +159,40 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
     item.id, item.label, sizeNote(item.mesh), item.mesh,
     assessExport(validateMesh(item.mesh), true).blocking,
   ));
+}
+
+/**
+ * Отминочная форма: углублённая (блок вокруг наружной поверхности, CSG) или
+ * горб (скорлупа по внутренней, чистая геометрия — здесь только ради общего
+ * пути экспорта с проверкой меша и прогрессом).
+ */
+function pressParts(
+  csg: CsgApi,
+  jobId: number,
+  state: AppState,
+  segments: number,
+  forExport: boolean,
+): JobPart[] {
+  const progress = new Progress(jobId, forExport ? 2 : 1);
+  const params = toBuildParams(state, segments);
+  let item: { id: string; label: string; mesh: SurfaceMesh };
+  if (state.exportMode === 'hump') {
+    progress.next('горб');
+    item = {
+      id: 'hump',
+      label: 'Горб',
+      mesh: buildHump(params, state.hollow, state.mold.bathWallMm, state.mold.shrinkPct).mesh,
+    };
+  } else {
+    progress.next('отминочная форма');
+    item = buildSlump(csg, buildVessel(params), state.mold);
+  }
+  if (!forExport) return [part(item.id, item.label, sizeNote(item.mesh), item.mesh, [])];
+  progress.next('проверка меша');
+  return [part(
+    item.id, item.label, sizeNote(item.mesh), item.mesh,
+    assessExport(validateMesh(item.mesh), true).blocking,
+  )];
 }
 
 /**
@@ -203,13 +268,14 @@ function moldParts(
     const report = analyzeMold(solid, {
       hasHandle: subject.hasHandle,
       hasSpout: subject.hasSpout,
+      hasPlug: Boolean(subject.mouth.plug),
     });
     progress.total -= planned - (master ? 1 : report.parts.length);
 
     const options = { mouth: subject.mouth };
     if (master) {
       progress.next('мастер-позитив');
-      built.push(prefixed(subject, buildMaster(csg, solid, report, state.mold, options)));
+      built.push(...buildMaster(csg, solid, report, state.mold, options).map((item) => prefixed(subject, item)));
     } else {
       progress.next('гипсовый блок');
       built.push(...buildBaths(csg, solid, report, state.mold, {
@@ -286,11 +352,14 @@ function sizeNote(mesh: SurfaceMesh): string {
  * добавили наружу рельеф и оттянутый слив. Носик сюда не входит намеренно —
  * он приставная деталь, и горловину ставят не на него.
  *
- * При крышке горловину сужаем до посадочного цилиндра. Гипс формирует
+ * При крышке литник сужаем до посадочного цилиндра. Гипс формирует
  * только наружную поверхность, а внутреннюю даёт слив шликера, поэтому
  * цилиндрическую посадку форма сама не отольёт — зато отливка выходит из неё
- * с утолщением у устья ровно по диаметру посадки, и довести полочку по
- * сырому остаётся делом ножа.
+ * с утолщением у устья ровно по диаметру посадки.
+ *
+ * Утопленной крышке нужна полочка ниже венчика, и туда гипс половинок не
+ * достаёт. Её отливает пробка горловины — отдельная деталь, входящая в устье
+ * сверху; ей нужен радиус галереи над полочкой и венчика снаружи.
  */
 function mouthOf(surface: VesselSurface, fit: LidFit | null): Mouth {
   let outward = 0;
@@ -298,9 +367,13 @@ function mouthOf(surface: VesselSurface, fit: LidFit | null): Mouth {
     const u = (2 * Math.PI * i) / MOUTH_SAMPLES;
     outward = Math.max(outward, surface.depthAt(u, 1) + surface.pullAt(u, 1));
   }
+  const rimMm = profileRadius(surface.profile, 1) + Math.max(0, outward);
   return {
     zMm: surface.heightMm,
-    radiusMm: fit ? fit.seatMm : profileRadius(surface.profile, 1) + Math.max(0, outward),
+    radiusMm: fit ? fit.seatMm : rimMm,
+    ...(fit && fit.recessMm > 0
+      ? { plug: { recessMm: fit.recessMm, galleryMm: fit.galleryMm, rimMm } }
+      : {}),
   };
 }
 

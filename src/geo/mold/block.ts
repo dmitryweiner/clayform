@@ -25,11 +25,42 @@ export interface BlockPart {
 
 /** Насколько горловина и пробойник выходят за габарит блока, чтобы срез был чистым. */
 const BREAKTHROUGH_MM = 2;
+/**
+ * Зазор между фланцем пробки и гнездом в половинках. Нужен и физически
+ * (пробку вынимают из гипса), и для булевой операции: совпадающие цилиндры —
+ * худший её вход.
+ */
+const PLUG_GAP_MM = 0.5;
+/** Тоньше этого фланец пробки ломается в руках. */
+const PLUG_FLANGE_MIN_MM = 8;
+/** Насколько фланец шире венчика — опора, чтобы пробка не провалилась в устье. */
+const PLUG_FLANGE_OVER_MM = 10;
+/** Уже этого кольцо пробки не отлить: гипс крошится. */
+const PLUG_RING_MIN_MM = 1;
+/** Не ближе этого фланец подходит к наружной грани блока. */
+const PLUG_EDGE_MM = 3;
 /** Сегментов на окружность у тел вращения оснастки. */
 const SEGMENTS = 96;
 
+/**
+ * Пробка горловины — отдельная деталь формы для утопленной крышки. Кольцо
+ * входит в устье до полочки, фланец сидит в гнезде половинок, сквозное
+ * отверстие — литник. Гипс половинок внутрь устья не пролезает, а пробка
+ * пролезает и выходит вертикально: только так и отливается полочка.
+ */
+export interface PlugInfo {
+  /** пробка вместе с ключами-выступами */
+  solid: Manifold;
+  /** впадины под её ключи — вычитаются из блока */
+  keys: Manifold | null;
+  /** радиус гнезда в половинках (фланец плюс зазор) */
+  socketMm: number;
+}
+
 export interface CavityInfo {
   solid: Manifold;
+  /** пробка горловины, если крышка утоплена; литник тогда в ней */
+  plug?: PlugInfo;
   /** верх полости вместе с горловиной (без пробойника) */
   topZ: number;
   /** наибольший радиус полости */
@@ -49,7 +80,20 @@ export interface CavityInfo {
  */
 export interface Mouth {
   zMm: number;
+  /** радиус литника */
   radiusMm: number;
+  /** утопленная крышка: горловину заменяет пробка (см. PlugInfo) */
+  plug?: PlugSpec;
+}
+
+/** Что пробке нужно знать об устье, в миллиметрах ДО усадки. */
+export interface PlugSpec {
+  /** на сколько полочка ниже венчика — до неё входит кольцо */
+  recessMm: number;
+  /** радиус полости над полочкой: по нему идёт наружная стенка кольца */
+  galleryMm: number;
+  /** наружный радиус венчика: фланец шире него */
+  rimMm: number;
 }
 
 /**
@@ -77,14 +121,35 @@ export function buildCavity(
     Math.abs(box.min[1]), Math.abs(box.max[1]),
   );
   const spareMm = scheme === 'dropout' ? 0 : mold.spareMm;
-  // блок обязан накрыть изделие целиком — в том числе носик, если его кончик
-  // торчит выше венчика
-  const topZ = box.max[2] + spareMm;
 
   // Без подсказки устье считаем по самому верху меша: для тела вращения это
   // ровно венчик и есть.
   const rimZ = Math.min(mouth ? mouth.zMm * shrink : box.max[2], box.max[2]);
   const rimRadius = mouth ? mouth.radiusMm * shrink : topRadius(scaled, box.max[2]);
+  const plugSpec = mouth?.plug ? plugGeometry(mouth.plug, rimRadius, shrink, maxRadius, mold) : null;
+
+  // блок обязан накрыть изделие целиком — в том числе носик, если его кончик
+  // торчит выше венчика; у пробки к тому же фланец не тоньше минимума
+  const topZ = plugSpec
+    ? Math.max(box.max[2] + spareMm, rimZ + PLUG_FLANGE_MIN_MM)
+    : box.max[2] + spareMm;
+
+  if (plugSpec) {
+    // Гнездо вместо горловины: цилиндр от венчика вверх и насквозь. Литника в
+    // половинках больше нет — он живёт в пробке.
+    const socketMm = plugSpec.flangeMm + PLUG_GAP_MM;
+    const socket = scope.keep(
+      csg.Manifold.cylinder(topZ + BREAKTHROUGH_MM - rimZ, socketMm, socketMm, SEGMENTS, false)
+        .translate([0, 0, rimZ]),
+    );
+    return {
+      solid: scope.keep(csg.Manifold.union([scaled, socket])),
+      plug: buildPlug(csg, scope, plugSpec, rimZ, topZ, mold.keyMm, socketMm),
+      topZ,
+      maxRadius,
+      bottomZ: box.min[2],
+    };
+  }
 
   // цилиндр от венчика вверх: горловина плюс выход за грань блока
   const collarBottom = rimZ - 1;
@@ -97,6 +162,83 @@ export function buildCavity(
     topZ,
     maxRadius,
     bottomZ: box.min[2],
+  };
+}
+
+/** Пробка в координатах формы (после усадки). */
+interface PlugGeometry {
+  /** радиус литника */
+  holeMm: number;
+  /** наружный радиус кольца */
+  galleryMm: number;
+  /** низ кольца — полочка */
+  ringBottomMm: number;
+  /** наружный радиус венчика */
+  rimMm: number;
+  /** наружный радиус фланца */
+  flangeMm: number;
+}
+
+/**
+ * Размеры пробки после усадки. null — пробку не сделать: кольцо выходит
+ * тоньше минимума (галерея почти совпала с посадкой) или фланцу некуда
+ * лечь внутри блока. Тогда форма остаётся прежней, с горловиной.
+ */
+function plugGeometry(
+  spec: PlugSpec,
+  holeMm: number,
+  shrink: number,
+  maxRadius: number,
+  mold: MoldState,
+): PlugGeometry | null {
+  if (spec.recessMm <= 0) return null;
+  const galleryMm = spec.galleryMm * shrink;
+  const rimMm = spec.rimMm * shrink;
+  if (galleryMm - holeMm < PLUG_RING_MIN_MM || rimMm <= galleryMm) return null;
+  const edge = maxRadius + mold.plasterMm - PLUG_EDGE_MM - PLUG_GAP_MM;
+  const flangeMm = Math.min(rimMm + Math.max(PLUG_FLANGE_OVER_MM, 3 * mold.keyMm), edge);
+  if (flangeMm <= rimMm + 1) return null;
+  return { holeMm, galleryMm, ringBottomMm: spec.recessMm * shrink, rimMm, flangeMm };
+}
+
+/**
+ * Пробка — тело вращения с отверстием: контур в осевом сечении
+ *
+ *     кольцо    r ∈ [hole, gallery]   z ∈ [rimZ − recess, rimZ]
+ *     фланец    r ∈ [hole, flange]    z ∈ [rimZ, topZ]
+ *
+ * Ключи — полусферы на нижней плоскости фланца, по паре на половинку и ни
+ * одной на шве y = 0: выступы на пробке, впадины в половинках.
+ */
+function buildPlug(
+  csg: CsgApi,
+  scope: CsgScope,
+  plug: PlugGeometry,
+  rimZ: number,
+  topZ: number,
+  keyMm: number,
+  socketMm: number,
+): PlugInfo {
+  const low = rimZ - plug.ringBottomMm;
+  const body = scope.keep(csg.Manifold.revolve([[
+    [plug.holeMm, low],
+    [plug.galleryMm, low],
+    [plug.galleryMm, rimZ],
+    [plug.flangeMm, rimZ],
+    [plug.flangeMm, topZ],
+    [plug.holeMm, topZ],
+  ]], SEGMENTS));
+  // ключи считаем от фланца, а не от гнезда: гнездо — это фланец плюс зазор
+  const keyRadius = Math.min(keyMm, (plug.flangeMm - plug.rimMm) / 2 - 0.5);
+  const ring = (plug.rimMm + plug.flangeMm) / 2;
+  const keys = sphereKeys(csg, scope, keyRadius, [45, 135, 225, 315].map((deg) => {
+    const a = (deg * Math.PI) / 180;
+    return [ring * Math.cos(a), ring * Math.sin(a), rimZ];
+  }));
+  return {
+    solid: keys ? scope.keep(csg.Manifold.union([body, keys])) : body,
+    keys,
+    socketMm,
   };
 }
 
@@ -131,10 +273,16 @@ export function buildBlockParts(
     csg.Manifold.cube([half * 2, half * 2, height], true)
       .translate([0, 0, bottom + height / 2]),
   );
-  const block = scope.keep(box.subtract(cavity.solid));
+  const hollowed = scope.keep(box.subtract(cavity.solid));
+  const block = cavity.plug?.keys ? scope.keep(hollowed.subtract(cavity.plug.keys)) : hollowed;
+  // Пробка снимается первой и вверх; изделие уходит от неё вниз — так её
+  // и кладёт ванночка: кольцом кверху.
+  const plugParts: BlockPart[] = cavity.plug
+    ? [{ id: 'plug', label: 'Пробка горловины', solid: cavity.plug.solid, pull: 'down' }]
+    : [];
 
   if (scheme === 'dropout') {
-    return [{ id: 'single', label: 'Форма целиком', solid: block, pull: 'up' }];
+    return [{ id: 'single', label: 'Форма целиком', solid: block, pull: 'up' }, ...plugParts];
   }
 
   let upper = block;
@@ -164,11 +312,17 @@ export function buildBlockParts(
   const split = splitAt(scope, upper, [0, 1, 0], 0);
   const margin = Math.max(mold.keyMm * 3, mold.plasterMm * 0.5);
   const inset = half * 0.78;
+  // Верхние ключи шва не должны попасть в гнездо пробки: ставим их между
+  // гнездом и краем блока, а если места там нет — обходимся нижними.
+  const topInset = cavity.plug ? (cavity.plug.socketMm + half) / 2 : inset;
+  const topFits = !cavity.plug || half - cavity.plug.socketMm > 2 * mold.keyMm + 2;
   const keys = sphereKeys(csg, scope, mold.keyMm, [
     [inset, 0, upperBottom + margin],
     [-inset, 0, upperBottom + margin],
-    [inset, 0, cavity.topZ - margin],
-    [-inset, 0, cavity.topZ - margin],
+    ...(topFits ? [
+      [topInset, 0, cavity.topZ - margin],
+      [-topInset, 0, cavity.topZ - margin],
+    ] satisfies [number, number, number][] : []),
   ]);
 
   parts.unshift(
@@ -185,7 +339,7 @@ export function buildBlockParts(
       pull: '-y',
     },
   );
-  return parts;
+  return [...parts, ...plugParts];
 }
 
 /**

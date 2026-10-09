@@ -1,8 +1,10 @@
-// Панель экспорта: три режима и свои параметры у каждого.
+// Панель экспорта: пять режимов и свои параметры у каждого.
 //
 //   Изделие  — полый сосуд, как его печатают глиной;
 //   Мастер   — позитив с литейной горловиной под ручную силиконовую форму;
-//   Ванночки — печатные опалубки под заливку силикона, по одной на часть.
+//   Ванночки — печатные опалубки под заливку силикона, по одной на часть;
+//   Отминка  — форма под пласт: углублённая («−») или горб («+»). Только
+//              для тела без ручки, носика и крышки.
 
 import type { HollowState } from '../geo/hollow';
 import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM, RIM_MAX_MM } from '../geo/hollow';
@@ -10,7 +12,8 @@ import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM, RIM_MAX_MM } from '
 // csg.ts с WASM, а панели он ни к чему (весь CSG считает воркер).
 import type { MoldState } from '../geo/mold/state';
 import { SHRINK_MAX_PCT, PLASTER_MAX_MM, SPARE_MAX_MM } from '../geo/mold/state';
-import type { ExportMode } from '../state/schema';
+import type { AppState, ExportMode } from '../state/schema';
+import { EXPORT_MODES, pressAllowed } from '../state/schema';
 import type { Control } from './controls';
 import { renderControls } from './controls';
 import { make } from './dom';
@@ -35,6 +38,17 @@ const HOLLOW_CONTROLS: Control<HollowState>[] = [
   },
 ];
 
+/** Над всем состоянием: флажок зависит от того, включена ли крышка. */
+const LID_BESIDE: Control<AppState>[] = [
+  {
+    kind: 'check', key: 'lidBeside', label: 'Крышка рядом',
+    hint: 'крышка юбкой вниз рядом с изделием и одним файлом — печатать за один заход',
+    when: (s) => s.lid.on,
+    get: (s) => s.lidBeside,
+    set: (s, v) => ({ ...s, lidBeside: v }),
+  },
+];
+
 const SHRINK: Control<MoldState> = {
   kind: 'range', key: 'shrink', label: 'Усадка', min: 0, max: SHRINK_MAX_PCT, step: 0.5, unit: '%',
   hint: 'шликер садится при сушке и обжиге — на столько увеличивается модель',
@@ -50,6 +64,36 @@ const SPARE: Control<MoldState> = {
 };
 
 const MASTER_CONTROLS: Control<MoldState>[] = [SHRINK, SPARE];
+
+const SLUMP_CONTROLS: Control<MoldState>[] = [
+  SHRINK,
+  {
+    kind: 'range', key: 'plaster', label: 'Борт', min: 5, max: PLASTER_MAX_MM, step: 1, unit: 'мм',
+    hint: 'толщина печатной формы вокруг полости',
+    get: (s) => s.plasterMm,
+    set: (s, v) => ({ ...s, plasterMm: v }),
+  },
+];
+
+/** Толщина пласта — это стенка изделия: горб строится по его внутренней поверхности. */
+const SLAB_CONTROLS: Control<HollowState>[] = [
+  {
+    kind: 'range', key: 'wall', label: 'Пласт', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1, unit: 'мм',
+    hint: 'толщина пласта — стенка изделия; горб меньше изделия ровно на неё',
+    get: (s) => s.wallMm,
+    set: (s, v) => ({ ...s, wallMm: v }),
+  },
+];
+
+const HUMP_CONTROLS: Control<MoldState>[] = [
+  SHRINK,
+  {
+    kind: 'range', key: 'bathWall', label: 'Борт', min: 1.2, max: 12, step: 0.2, unit: 'мм',
+    hint: 'толщина скорлупы горба: он полый, чтобы не тратить пластик',
+    get: (s) => s.bathWallMm,
+    set: (s, v) => ({ ...s, bathWallMm: v }),
+  },
+];
 
 const BATH_CONTROLS: Control<MoldState>[] = [
   SHRINK,
@@ -81,48 +125,68 @@ const BATH_CONTROLS: Control<MoldState>[] = [
 ];
 
 export interface ExportPanelHandle {
-  sync(mode: ExportMode, hollow: HollowState, mold: MoldState): void;
+  sync(state: AppState): void;
   setParts(parts: { label: string; note?: string }[]): void;
   setSchemeNote(text: string): void;
 }
 
 export function renderExportPanel(
   tabs: Record<ExportMode, HTMLButtonElement>,
+  pressRow: HTMLElement,
   paramsHost: HTMLElement,
   schemeNote: HTMLElement,
   partList: HTMLElement,
-  readHollow: () => HollowState,
-  readMold: () => MoldState,
-  onMode: (mode: ExportMode) => void,
-  onHollow: (hollow: HollowState) => void,
-  onMold: (mold: MoldState) => void,
+  read: () => AppState,
+  onChange: (state: AppState) => void,
 ): ExportPanelHandle {
-  for (const [mode, button] of Object.entries(tabs)) {
-    button.disabled = false;
-    button.addEventListener('click', () => {
-      if (mode === 'vessel' || mode === 'master' || mode === 'bath') onMode(mode);
-    });
+  const readHollow = (): HollowState => read().hollow;
+  const readMold = (): MoldState => read().mold;
+  const onMode = (exportMode: ExportMode): void => onChange({ ...read(), exportMode });
+  const onHollow = (hollow: HollowState): void => onChange({ ...read(), hollow });
+  const onMold = (mold: MoldState): void => onChange({ ...read(), mold });
+
+  for (const mode of EXPORT_MODES) {
+    tabs[mode].addEventListener('click', () => onMode(mode));
   }
 
   const hollowHost = make('div');
   const masterHost = make('div');
   const bathHost = make('div');
+  const slumpHost = make('div');
+  const humpHost = make('div');
   paramsHost.textContent = '';
-  paramsHost.append(hollowHost, masterHost, bathHost);
+  paramsHost.append(hollowHost, masterHost, bathHost, slumpHost, humpHost);
 
   const hollowRows = renderControls(hollowHost, HOLLOW_CONTROLS, readHollow, onHollow, 'print');
+  const besideHost = make('div');
+  hollowHost.append(besideHost);
+  const besideRows = renderControls(besideHost, LID_BESIDE, read, onChange, 'print');
   const masterRows = renderControls(masterHost, MASTER_CONTROLS, readMold, onMold, 'master');
   const bathRows = renderControls(bathHost, BATH_CONTROLS, readMold, onMold, 'bath');
+  const slumpRows = renderControls(slumpHost, SLUMP_CONTROLS, readMold, onMold, 'slump');
+  const slabHost = make('div');
+  const humpMoldHost = make('div');
+  humpHost.append(slabHost, humpMoldHost);
+  const slabRows = renderControls(slabHost, SLAB_CONTROLS, readHollow, onHollow, 'hump');
+  const humpRows = renderControls(humpMoldHost, HUMP_CONTROLS, readMold, onMold, 'hump');
 
   return {
-    sync(mode, hollow, mold): void {
+    sync(state): void {
+      const { exportMode: mode, hollow, mold } = state;
       for (const [key, button] of Object.entries(tabs)) {
         button.setAttribute('aria-selected', String(key === mode));
       }
       hollowHost.hidden = mode !== 'vessel';
       masterHost.hidden = mode !== 'master';
       bathHost.hidden = mode !== 'bath';
+      slumpHost.hidden = mode !== 'slump';
+      humpHost.hidden = mode !== 'hump';
+      pressRow.hidden = !pressAllowed(state);
+      slumpRows.sync(mold);
+      slabRows.sync(hollow);
+      humpRows.sync(mold);
       hollowRows.sync(hollow);
+      besideRows.sync(state);
       masterRows.sync(mold);
       bathRows.sync(mold);
     },

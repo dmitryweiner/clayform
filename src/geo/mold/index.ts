@@ -10,11 +10,12 @@ import { buildCavity, buildBlockParts } from './block';
 import { buildBath } from './bath';
 import type { MoldState } from './state';
 
-export type { Mouth } from './block';
+export type { Mouth, PlugSpec } from './block';
 export type { MoldState } from './state';
 export { defaultMold, sanitizeMold, SHRINK_MAX_PCT, PLASTER_MAX_MM, SPARE_MAX_MM } from './state';
 export type { MoldReport, MoldScheme, MoldPart } from './analyze';
 export { analyzeMold, pullUndercut } from './analyze';
+export { buildSlump } from './press';
 
 export interface MoldPartMesh {
   id: string;
@@ -40,6 +41,10 @@ export interface MoldOptions {
 /**
  * Мастер-позитив: изделие с усадкой плюс литейная горловина. С него вручную
  * снимают силиконовую форму по классической схеме с пластилиновой постелью.
+ *
+ * У утопленной крышки горловину заменяет гнездо под пробку, и деталей две:
+ * мастер изделия и сама пробка как есть — она сама себе позитив, с неё
+ * снимают силикон и льют гипсовую пробку.
  */
 export function buildMaster(
   csg: CsgApi,
@@ -47,7 +52,7 @@ export function buildMaster(
   report: MoldReport,
   mold: MoldState,
   options: MoldOptions = {},
-): MoldPartMesh {
+): MoldPartMesh[] {
   const scope = new CsgScope();
   try {
     const solid = scope.keep(toManifold(csg, vessel));
@@ -55,7 +60,12 @@ export function buildMaster(
     // у полости сверху есть пробойник — он нужен только блоку, мастер режем
     // по верху горловины
     const trimmed = scope.keep(cavity.solid.trimByPlane([0, 0, -1], -cavity.topZ));
-    return { id: 'master', label: 'Мастер-позитив', mesh: fromManifold(trimmed) };
+    return [
+      { id: 'master', label: 'Мастер-позитив', mesh: fromManifold(trimmed) },
+      ...(cavity.plug
+        ? [{ id: 'plug', label: 'Пробка горловины', mesh: fromManifold(cavity.plug.solid) }]
+        : []),
+    ];
   } finally {
     scope.dispose();
   }

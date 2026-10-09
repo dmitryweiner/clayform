@@ -4,6 +4,8 @@
 // ручки и параметров формы.
 
 import { make } from './dom';
+import type { RouletteImage } from '../geo/roulette';
+import { imageFromFile, drawOrnament } from './ornament';
 
 /**
  * Когда контрол виден. Нужен там, где у карточки несколько взаимоисключающих
@@ -38,7 +40,28 @@ export interface SelectControl<T> {
   set(state: T, value: string): T;
 }
 
-export type Control<T> = RangeControl<T> | SelectControl<T>;
+export interface CheckControl<T> {
+  kind: 'check';
+  key: string;
+  label: string;
+  hint?: string;
+  when?: Visibility<T>;
+  get(state: T): boolean;
+  set(state: T, value: boolean): T;
+}
+
+/** Картинка из файла: кнопка, скрытый <input type=file> и миниатюра. */
+export interface ImageControl<T> {
+  kind: 'image';
+  key: string;
+  label: string;
+  hint?: string;
+  when?: Visibility<T>;
+  get(state: T): RouletteImage | undefined;
+  set(state: T, image: RouletteImage): T;
+}
+
+export type Control<T> = RangeControl<T> | SelectControl<T> | CheckControl<T> | ImageControl<T>;
 
 export interface ControlsHandle<T> {
   /** обновляет отображаемые значения, не пересоздавая DOM */
@@ -72,7 +95,51 @@ export function renderControls<T>(
     if (control.hint) name.title = control.hint;
     row.append(name);
 
-    if (control.kind === 'select') {
+    if (control.kind === 'image') {
+      const input = make('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.id = `${idPrefix}_${control.key}`;
+      input.hidden = true;
+      const button = make('button', 'tb-btn', 'Файл…');
+      button.type = 'button';
+      button.addEventListener('click', () => input.click());
+      const thumb = make('canvas', 'ornament-thumb');
+      thumb.width = 48;
+      thumb.height = 48;
+      const note = make('span', 'ornament-note');
+      input.addEventListener('change', () => {
+        const file = input.files?.[0];
+        input.value = '';
+        if (!file) return;
+        imageFromFile(file).then(
+          (image) => onChange(control.set(read(), image)),
+          () => {
+            note.textContent = 'не картинка';
+          },
+        );
+      });
+      row.append(button, thumb, note, input);
+      const show = (state: T): void => {
+        const image = control.get(state);
+        drawOrnament(thumb, image);
+        thumb.hidden = !image;
+        note.textContent = image ? `${image.w}×${image.h}` : 'загрузите картинку';
+      };
+      show(read());
+      syncers.push(show);
+    } else if (control.kind === 'check') {
+      const box = make('input');
+      box.type = 'checkbox';
+      box.id = `${idPrefix}_${control.key}`;
+      box.checked = control.get(read());
+      box.addEventListener('change', () => onChange(control.set(read(), box.checked)));
+      row.classList.add('check-row');
+      row.prepend(box);
+      syncers.push((state) => {
+        box.checked = control.get(state);
+      });
+    } else if (control.kind === 'select') {
       const select = make('select');
       select.id = `${idPrefix}_${control.key}`;
       for (const option of control.options) {

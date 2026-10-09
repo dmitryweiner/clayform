@@ -106,7 +106,7 @@ describe('рельеф на сетке', () => {
   });
 
   it('узор ролика замыкается по окружности без стыка', () => {
-    const grid = vesselGrid(withRoulette({ pattern: 'lattice', depthMm: 2.5, bandWidthMm: 40, repeats: 0 }));
+    const grid = vesselGrid(withRoulette({ pattern: 'lattice', depthMm: 2.5, bandWidthMm: 40 }));
     const j = Math.round(grid.nv * 0.62);
     // шаг между соседними столбцами внутри пояска однороден: если бы узор
     // не сходился, на шве i = nu−1 → 0 был бы выброс

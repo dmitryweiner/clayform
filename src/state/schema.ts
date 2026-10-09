@@ -29,9 +29,11 @@ export const STATE_VERSION = 1;
  * Что уходит в STL:
  *  vessel — само изделие, полое, как его печатают глиной;
  *  master — мастер-позитив под ручную силиконовую форму;
- *  bath   — ванночки-опалубки под заливку силикона (по одной на часть).
+ *  bath   — ванночки-опалубки под заливку силикона (по одной на часть);
+ *  slump  — отминка в «−»: углублённая форма, пласт вдавливают внутрь;
+ *  hump   — отминка в «+»: горб, пласт кладут на него.
  */
-export const EXPORT_MODES = ['vessel', 'master', 'bath'] as const;
+export const EXPORT_MODES = ['vessel', 'master', 'bath', 'slump', 'hump'] as const;
 export type ExportMode = (typeof EXPORT_MODES)[number];
 
 export interface AppState {
@@ -49,6 +51,11 @@ export interface AppState {
   hollow: HollowState;
   mold: MoldState;
   exportMode: ExportMode;
+  /**
+   * Крышка рядом с изделием, юбкой вниз, — и в превью, и одним STL на двоих:
+   * печатать за один заход. Только в режиме «изделие» и только с крышкой.
+   */
+  lidBeside: boolean;
   /** сегментов сетки для экспортной сборки */
   resolution: number;
 }
@@ -72,6 +79,7 @@ export function defaultState(): AppState {
     hollow: defaultHollow(),
     mold: defaultMold(),
     exportMode: 'vessel',
+    lidBeside: false,
     resolution: 192,
   };
 }
@@ -121,7 +129,7 @@ export function sanitizeState(raw: unknown): AppState {
   );
   const wanted = num(source.resolution, fallback.resolution);
   const resolution = RESOLUTIONS.includes(wanted) ? wanted : fallback.resolution;
-  return {
+  const state: AppState = {
     version: STATE_VERSION,
     family,
     shape: clampFamilyParams(family, numericRecord(source.shape)),
@@ -134,8 +142,24 @@ export function sanitizeState(raw: unknown): AppState {
     hollow: sanitizeHollow(source.hollow),
     mold: sanitizeMold(source.mold),
     exportMode: exportModeOf(source.exportMode),
+    lidBeside: typeof source.lidBeside === 'boolean' ? source.lidBeside : false,
     resolution,
   };
+  // Отминка — только для тела без приставных деталей. Держим это здесь, в
+  // единственной точке, через которую проходит любое состояние: включил
+  // ручку — режим сам откатился к изделию.
+  if (isPressMode(state.exportMode) && !pressAllowed(state)) state.exportMode = 'vessel';
+  return state;
+}
+
+export const isPressMode = (mode: ExportMode): boolean => mode === 'slump' || mode === 'hump';
+
+/**
+ * Можно ли отминать: пласт ложится только на тело вращения (с рельефом) —
+ * без ручки, носика любого вида и крышки.
+ */
+export function pressAllowed(state: AppState): boolean {
+  return !state.handle.on && !effectiveSpout(state).on && !state.lid.on;
 }
 
 function exportModeOf(raw: unknown): ExportMode {

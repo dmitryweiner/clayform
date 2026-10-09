@@ -149,7 +149,7 @@ describe('рельеф и поднутрения разъёма', () => {
   it('глубокая накатка режет по углу — у плоскости разъёма появляются зацепы', () => {
     const mesh = buildVessel(params('pot', {
       roulette: sanitizeRoulette({
-        bands: [{ ...defaultBand(), on: true, pattern: 'dots', depthMm: -8, bandWidthMm: 14, repeats: 40 }],
+        bands: [{ ...defaultBand(), on: true, pattern: 'dots', depthMm: -8, bandWidthMm: 14 }],
       }),
     }));
     const report = analyzeMold(mesh, { hasHandle: false });

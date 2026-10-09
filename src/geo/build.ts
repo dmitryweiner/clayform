@@ -27,6 +27,12 @@ export interface BuildParams {
   relief: ReliefState;
   roulette: RouletteState;
   spout: SpoutState;
+  /**
+   * Готовый силуэт вместо построенного по семейству. Нужен горбу отминки:
+   * его поверхность — внутренняя поверхность изделия, силуэт, отодвинутый
+   * внутрь на стенку, и параметрами семейства он не описывается.
+   */
+  profile?: ProfileDef;
 }
 
 const NU_MIN = 8;
@@ -79,7 +85,7 @@ export function vesselSurface(p: BuildParams): VesselSurface {
   const nu = clampInt(p.nu, NU_MIN, NU_MAX);
   const nv = clampInt(p.nv, NV_MIN, NV_MAX);
   const heightMm = Number.isFinite(p.heightMm) ? Math.max(1, p.heightMm) : 100;
-  const profile = buildProfile(p.family, p.shape, heightMm);
+  const profile = p.profile ?? buildProfile(p.family, p.shape, heightMm);
 
   const relief = p.relief ?? defaultRelief();
   const roulette = p.roulette ?? defaultRoulette();

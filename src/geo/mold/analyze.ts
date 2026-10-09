@@ -51,6 +51,12 @@ export interface AnalyzeOptions {
    * разъёме на половины. Знание причины превращает число в совет.
    */
   angularRelief?: boolean;
+  /**
+   * Утопленная крышка: к частям формы добавляется пробка горловины. Сам
+   * анализ от неё не зависит — она нужна, чтобы список деталей в панели не
+   * расходился с тем, что соберёт воркер.
+   */
+  hasPlug?: boolean;
 }
 
 export interface UndercutResult {
@@ -185,6 +191,7 @@ const HALF_A: MoldPart = { id: 'half-A', label: 'Половина A' };
 const HALF_B: MoldPart = { id: 'half-B', label: 'Половина B' };
 const BOTTOM: MoldPart = { id: 'bottom', label: 'Донная плита' };
 const SINGLE: MoldPart = { id: 'single', label: 'Форма целиком' };
+const PLUG: MoldPart = { id: 'plug', label: 'Пробка горловины' };
 
 /**
  * Почему форму придётся разнимать вдоль оси. Причин три, и пользователю
@@ -209,6 +216,7 @@ export function analyzeMold(
   const dropout = pullUndercut(mesh, 'up');
   const halves = pullUndercut(mesh, 'sides');
   const warnings: string[] = [];
+  const plug = options.hasPlug ? [PLUG] : [];
 
   if (halves.fraction > HALVES_TOLERANCE) {
     const worstDeg = (Math.asin(Math.min(1, halves.worst)) * 180) / Math.PI;
@@ -225,7 +233,7 @@ export function analyzeMold(
   if (!options.hasHandle && !options.hasSpout && dropout.fraction <= DROPOUT_TOLERANCE) {
     return {
       scheme: 'dropout',
-      parts: [SINGLE],
+      parts: [SINGLE, ...plug],
       reason: 'Изделие нигде не шире, чем выше: вынимается вверх, форма нужна из одной части.',
       dropoutUndercut: dropout.fraction,
       halvesUndercut: halves.fraction,
@@ -238,7 +246,7 @@ export function analyzeMold(
   if (baseShare(mesh) >= WIDE_BASE_SHARE) {
     return {
       scheme: 'halves-bottom',
-      parts: [HALF_A, HALF_B, BOTTOM],
+      parts: [HALF_A, HALF_B, BOTTOM, ...plug],
       reason: `${reason} Дно широкое и плоское: шов через него зачищать труднее всего, поэтому дно отливается отдельной плитой.`,
       dropoutUndercut: dropout.fraction,
       halvesUndercut: halves.fraction,
@@ -248,10 +256,29 @@ export function analyzeMold(
 
   return {
     scheme: 'halves',
-    parts: [HALF_A, HALF_B],
+    parts: [HALF_A, HALF_B, ...plug],
     reason: `${reason} Дно узкое, отдельная плита не нужна.`,
     dropoutUndercut: dropout.fraction,
     halvesUndercut: halves.fraction,
     warnings,
   };
+}
+
+/**
+ * Зацепы отминки. Изделие уходит и из углублённой формы, и с горба в
+ * модельном −z относительно формы, и мешает в обоих случаях грань, смотрящая
+ * вверх, — поэтому критерий один, `pullUndercut(…, 'up')`: по наружной
+ * поверхности для углублённой формы, по внутренней — для горба. Это
+ * предупреждение, а не запрет: пласт гибкий, и мелкий зацеп он переживёт.
+ */
+export function pressWarning(
+  surface: Pick<SurfaceMesh, 'positions' | 'indices'>,
+  mode: 'slump' | 'hump',
+): string | null {
+  const { fraction, worst } = pullUndercut(surface, 'up');
+  if (fraction <= HALVES_TOLERANCE) return null;
+  const worstDeg = (Math.asin(Math.min(1, worst)) * 180) / Math.PI;
+  const subject = mode === 'slump' ? 'Изделие не выйдет из формы' : 'Пласт не снимется с горба';
+  return `${subject}: ${(fraction * 100).toFixed(1)} % поверхности с зацепами, самый крутой подрез ` +
+    `${worstDeg.toFixed(0)}° — возьмите открытую форму (миска, стакан) или уменьшите глубину рельефа.`;
 }

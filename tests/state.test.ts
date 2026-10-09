@@ -3,7 +3,7 @@
 
 import {
   defaultState, sanitizeState, stateForFamily, toBuildParams,
-  HEIGHT_MIN_MM, HEIGHT_MAX_MM, STATE_VERSION,
+  HEIGHT_MIN_MM, HEIGHT_MAX_MM, STATE_VERSION, pressAllowed,
 } from '../src/state/schema';
 import { defaultFamilyParams, familyById } from '../src/geo/profiles';
 import { buildVessel } from '../src/geo/build';
@@ -84,5 +84,37 @@ describe('toBuildParams', () => {
 
   it('детализация прокидывается в обе оси сетки', () => {
     expect(toBuildParams(defaultState(), 128)).toMatchObject({ nu: 128, nv: 128 });
+  });
+});
+
+describe('отминка', () => {
+  it('доступна только телу без ручки, носика и крышки', () => {
+    const plain = sanitizeState({ ...defaultState(), exportMode: 'hump' });
+    expect(plain.exportMode).toBe('hump');
+    expect(pressAllowed(plain)).toBe(true);
+    for (const extra of [
+      { handle: { on: true } },
+      { spout: { on: true, kind: 'lip' } },
+      { spout: { on: true, kind: 'applied' } },
+      { lid: { on: true } },
+    ]) {
+      for (const exportMode of ['slump', 'hump']) {
+        const state = sanitizeState({ ...defaultState(), ...extra, exportMode });
+        expect(state.exportMode, JSON.stringify(extra)).toBe('vessel');
+        expect(sanitizeState(state)).toEqual(state);
+      }
+    }
+  });
+
+  it('прочие режимы приставные детали не трогают', () => {
+    expect(sanitizeState({ ...defaultState(), handle: { on: true }, exportMode: 'bath' }).exportMode).toBe('bath');
+  });
+});
+
+describe('крышка рядом', () => {
+  it('булев флаг, по умолчанию выключен, мусор — false', () => {
+    expect(defaultState().lidBeside).toBe(false);
+    expect(sanitizeState({ lidBeside: true }).lidBeside).toBe(true);
+    expect(sanitizeState({ lidBeside: 'да' }).lidBeside).toBe(false);
   });
 });

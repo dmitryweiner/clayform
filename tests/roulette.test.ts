@@ -6,20 +6,28 @@
 // приходится замазывать вручную.
 
 import {
-  ROULETTE_PATTERNS, patternValue, bandRepeats, makeRoulette,
-  defaultRoulette, defaultBand, sanitizeRoulette, MAX_BANDS,
+  ROULETTE_PATTERNS, patternValue, bandRepeats, bandLayout, makeRoulette,
+  defaultRoulette, defaultBand, sanitizeRoulette, sanitizeBand, MAX_BANDS,
+  MEANDER_CLASSIC, gridPattern, isContinuous, decodeImage, tileAspect,
 } from '../src/geo/roulette';
-import type { RouletteBand, TileContext } from '../src/geo/roulette';
-import { MEANDER_PATH } from '../src/geo/roulette';
+import type { RouletteBand, RouletteImage, TileContext } from '../src/geo/roulette';
+import { encodeBase64 } from '../src/geo/bytes';
+
+/** Шахматка: белая клетка — полная глубина. Строки сверху вниз. */
+function checker(w: number, h: number, invert = false): RouletteImage {
+  const bytes = Uint8Array.from({ length: w * h }, (_, k) => ((k % w) + Math.floor(k / w)) % 2 ? 255 : 0);
+  return { w, h, data: encodeBase64(bytes), invert };
+}
+const CHECKER = checker(8, 8);
 
 const TAU = Math.PI * 2;
 const CTX = { heightMm: 150, radiusAt: () => 80 };
 
 const tile = (over: Partial<TileContext> = {}): TileContext =>
-  ({ elementMm: 20, bandMm: 20, depthMm: 1.5, ...over });
+  ({ elementMm: 20, bandMm: 20, depthMm: 1.5, image: decodeImage(CHECKER) ?? undefined, ...over });
 
 const band = (over: Partial<RouletteBand> = {}): RouletteBand =>
-  ({ ...defaultBand(), on: true, ...over });
+  ({ ...defaultBand(), on: true, image: CHECKER, ...over });
 
 const one = (over: Partial<RouletteBand> = {}) =>
   sanitizeRoulette({ bands: [band(over)] });
@@ -69,43 +77,55 @@ describe('полоса', () => {
 });
 
 describe('греческий меандр', () => {
-  const rail = MEANDER_PATH[0];
-  const riser = MEANDER_PATH[1];
-  const top = MEANDER_PATH[2];
+  const W = MEANDER_CLASSIC[0].length;
+  const H = MEANDER_CLASSIC.length;
+  // квадратный тайл и квадратные клетки: 7 мм на клетку
+  const square = tile({ elementMm: W * 7, bandMm: H * 7 });
+  /** центр клетки (ряд r сверху, столбец c) в координатах тайла */
+  const centre = (r: number, c: number): [number, number] => [(c + 0.5) / W, 1 - (r + 0.5) / H];
 
-  it('идёт непрерывной линией по низу пояска — соседние звенья связаны', () => {
-    for (const s of [0, 0.2, 0.5, 0.8, 0.99]) {
-      expect(patternValue('meander', s, rail[1], tile()), `s=${s}`).toBeGreaterThan(0.9);
+  it('линия поднята в каждой #-клетке и опущена в каждой .-клетке', () => {
+    // обходим сетку, а не перечисляем точки: тест переживёт смену рисунка
+    for (let r = 0; r < H; r++) {
+      for (let c = 0; c < W; c++) {
+        const value = patternValue('meander', ...centre(r, c), square);
+        if (MEANDER_CLASSIC[r][c] === '#') expect(value, `#(${r},${c})`).toBeGreaterThan(0.99);
+        else expect(value, `.(${r},${c})`).toBeLessThan(1e-9);
+      }
     }
   });
 
-  it('линия проходит и вертикально, и горизонтально — это ключ, а не волна', () => {
-    // на стояке и на верхней перекладине узор поднят
-    expect(patternValue('meander', riser[0], 0.5, tile())).toBeGreaterThan(0.9);
-    expect(patternValue('meander', 0.5, top[1], tile())).toBeGreaterThan(0.9);
+  it('рельс непрерывен — и внутри тайла, и через стык соседних', () => {
+    const rail = 1 - (H - 0.5) / H;
+    for (let i = 0; i <= 100; i++) {
+      expect(patternValue('meander', i / 100, rail, square), `s=${i / 100}`).toBeGreaterThan(0.99);
+    }
   });
 
-  it('в поле между линиями пусто', () => {
-    // карман между верхней перекладиной и внутренним завитком
-    expect(patternValue('meander', 0.5, 0.65, tile())).toBeLessThan(0.2);
+  it('соседние звенья разделены пустым столбцом над рельсом', () => {
+    for (let r = 0; r < H - 1; r++) {
+      expect(patternValue('meander', ...centre(r, W - 1), square), `r=${r}`).toBeLessThan(1e-9);
+    }
   });
 
-  it('ключ занимает почти весь тайл — иначе лента распадается на штампики', () => {
-    const xs = MEANDER_PATH.flatMap(([x0, , x1]) => [x0, x1]);
-    const ys = MEANDER_PATH.flatMap(([, y0, , y1]) => [y0, y1]);
-    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.9);
-    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.65);
+  it('прогоны склеены: отрезков столько, сколько прямых участков линии', () => {
+    // рельс, левый стояк, верх, правый стояк, низ спирали, её стояк и верх
+    expect(gridPattern(MEANDER_CLASSIC).segments).toHaveLength(7);
+  });
+
+  it('тайл меандра квадратный в клетках — сетка задаёт пропорции', () => {
+    const one = bandLayout(band({ pattern: 'meander', bandWidthMm: 20 }), CTX);
+    expect(one.stepMm).toBeCloseTo(20 * W / H, 0);
   });
 
   it('толщина линии одинакова по обеим осям, даже если тайл не квадратный', () => {
-    const wide = tile({ elementMm: 60, bandMm: 20 });
-    // отходим на 1 мм поперёк стояка и на тот же 1 мм поперёк перекладины
-    const acrossS = patternValue('meander', riser[0] + 1 / 60, 0.5, wide);
-    const acrossQ = patternValue('meander', 0.5, top[1] - 1 / 20, wide);
+    const wide = tile({ elementMm: 3 * W * 7, bandMm: H * 7 });
+    const [sx] = centre(2, 2);
+    const [, qy] = centre(0, 2);
+    // отходим на 1 мм поперёк стояка спирали и на тот же 1 мм поперёк верха
+    const acrossS = patternValue('meander', sx + 1 / wide.elementMm, centre(3, 2)[1], wide);
+    const acrossQ = patternValue('meander', centre(0, 3)[0], qy - 1 / wide.bandMm, wide);
     expect(acrossS).toBeGreaterThan(0.2);
-    expect(acrossQ).toBeGreaterThan(0.2);
-    // главное здесь — равенство: считай мы расстояние в долях тайла, а не в
-    // миллиметрах, стояки на растянутом тайле вышли бы втрое тоньше перекладин
     expect(acrossS).toBeCloseTo(acrossQ, 6);
   });
 });
@@ -147,79 +167,94 @@ describe('bandRepeats', () => {
   it('всегда целое и не меньше трёх', () => {
     for (const bandWidthMm of [2, 8, 25, 90]) {
       for (const radius of [8, 40, 160]) {
-        const n = bandRepeats(band({ bandWidthMm, repeats: 0 }), { ...CTX, radiusAt: () => radius });
+        const n = bandRepeats(band({ bandWidthMm }), { ...CTX, radiusAt: () => radius });
         expect(Number.isInteger(n), `w=${bandWidthMm} r=${radius}`).toBe(true);
         expect(n).toBeGreaterThanOrEqual(3);
       }
     }
   });
 
-  it('авто: узкий поясок — больше мелких оттисков, широкий — меньше крупных', () => {
-    expect(bandRepeats(band({ bandWidthMm: 6, repeats: 0 }), CTX))
-      .toBeGreaterThan(bandRepeats(band({ bandWidthMm: 30, repeats: 0 }), CTX));
+  it('узкий поясок — больше мелких оттисков, широкий — меньше крупных', () => {
+    expect(bandRepeats(band({ bandWidthMm: 6 }), CTX))
+      .toBeGreaterThan(bandRepeats(band({ bandWidthMm: 30 }), CTX));
   });
 
-  it('авто: на изделии вдвое толще укладывается примерно вдвое больше оттисков', () => {
-    const thin = bandRepeats(band({ bandWidthMm: 10, repeats: 0 }), { ...CTX, radiusAt: () => 40 });
-    const thick = bandRepeats(band({ bandWidthMm: 10, repeats: 0 }), { ...CTX, radiusAt: () => 80 });
+  it('на изделии вдвое толще укладывается примерно вдвое больше оттисков', () => {
+    const thin = bandRepeats(band({ bandWidthMm: 10 }), { ...CTX, radiusAt: () => 40 });
+    const thick = bandRepeats(band({ bandWidthMm: 10 }), { ...CTX, radiusAt: () => 80 });
     expect(thick / thin).toBeCloseTo(2, 0);
-  });
-
-  it('заданное вручную дробное число округляется до целого', () => {
-    expect(bandRepeats(band({ repeats: 17.6 }), CTX)).toBe(18);
   });
 });
 
-describe('просвет между элементами', () => {
-  it('без просвета элемент занимает весь шаг', () => {
+describe('просвет', () => {
+  it('у одиночного узора размер оттиска от просвета не зависит, а число убывает', () => {
+    const tight = bandLayout(band({ pattern: 'dots', bandWidthMm: 14, gapMm: 0 }), CTX);
+    const loose = bandLayout(band({ pattern: 'dots', bandWidthMm: 14, gapMm: 8 }), CTX);
+    expect(loose.elementMm).toBeCloseTo(14, 9);
+    // без просвета округление число оттисков может только поджать элемент
+    // до шага — на доли миллиметра
+    expect(tight.elementMm).toBeCloseTo(14, 1);
+    expect(loose.repeats).toBeLessThan(tight.repeats);
+    // округление достаётся просвету: шаг сходится с окружностью ровно
+    expect(loose.repeats * (loose.elementMm + loose.gapMm)).toBeCloseTo(TAU * 80, 6);
+    expect(loose.gapMm).toBeGreaterThan(6);
+  });
+
+  it('непрерывному узору просвет безразличен — смещение то же, что без него', () => {
+    for (const pattern of ROULETTE_PATTERNS.filter(isContinuous)) {
+      const plain = makeRoulette(one({ pattern, gapMm: 0, bandWidthMm: 30 }), CTX);
+      const gapped = makeRoulette(one({ pattern, gapMm: 12, bandWidthMm: 30 }), CTX);
+      for (const u of [0, 0.4, 1.7, 3.9]) {
+        for (const v of [0.55, 0.62, 0.7]) expect(gapped(u, v), pattern).toBe(plain(u, v));
+      }
+    }
+  });
+
+  it('без просвета полоса занимает весь шаг', () => {
     const solid = makeRoulette(one({ pattern: 'band', gapMm: 0, bandWidthMm: 30, depthMm: 2 }), CTX);
     for (const u of [0, 0.4, 1.7, 3.9]) {
       expect(Math.abs(solid(u, 0.62)), `u=${u}`).toBeGreaterThan(1.9);
     }
   });
 
-  it('просвет разрывает узор на отдельные оттиски', () => {
-    const dashed = makeRoulette(
-      one({ pattern: 'band', gapMm: 12, bandWidthMm: 30, depthMm: 2, repeats: 16 }),
-      CTX,
-    );
+  it('просвет разрывает одиночный узор на отдельные оттиски', () => {
+    const dashed = makeRoulette(one({ pattern: 'dashes', gapMm: 12, bandWidthMm: 20, depthMm: 2 }), CTX);
     let touched = 0;
     let clear = 0;
     for (let i = 0; i < 400; i++) {
       const value = Math.abs(dashed((i / 400) * TAU, 0.62));
-      if (value > 1.9) touched++;
+      if (value > 1.5) touched++;
       if (value < 1e-9) clear++;
     }
-    expect(touched).toBeGreaterThan(20);
-    expect(clear).toBeGreaterThan(20);
+    expect(touched).toBeGreaterThan(5);
+    expect(clear).toBeGreaterThan(100);
   });
 
-  it('просвет шире шага не съедает узор полностью', () => {
-    const squeezed = makeRoulette(
-      one({ pattern: 'dots', gapMm: 500, bandWidthMm: 20, depthMm: 2 }),
-      CTX,
-    );
+  it('предельный просвет оставляет редкие оттиски, а не съедает узор', () => {
+    const roll = one({ pattern: 'dots', gapMm: 500, bandWidthMm: 20, depthMm: 2 });
+    expect(bandRepeats(roll.bands[0], CTX)).toBeLessThanOrEqual(5);
+    const squeezed = makeRoulette(roll, CTX);
     let peak = 0;
     for (let i = 0; i < 2000; i++) {
       peak = Math.max(peak, Math.abs(squeezed((i / 2000) * TAU, 0.62)));
     }
-    expect(peak).toBeGreaterThan(0.5);
+    expect(peak).toBeGreaterThan(1.9);
   });
 });
 
 describe('шов θ = 0 / 2π', () => {
   it('узор смыкается для всех рисунков, наклонов и способов задать шаг', () => {
     for (const pattern of ROULETTE_PATTERNS) {
-      for (const repeats of [0, 12, 31]) {
+      for (const bandWidthMm of [9, 30, 47]) {
         for (const angle of [0, 0.4, -0.9]) {
           for (const gapMm of [0, 5]) {
             const roll = makeRoulette(
-              one({ pattern, repeats, angle, gapMm, bandWidthMm: 30 }), CTX,
+              one({ pattern, angle, gapMm, bandWidthMm }), CTX,
             );
             for (const v of [0.35, 0.5, 0.62]) {
               expect(
                 Math.abs(roll(TAU, v) - roll(0, v)),
-                `${pattern} n=${repeats} angle=${angle} gap=${gapMm} v=${v}`,
+                `${pattern} w=${bandWidthMm} angle=${angle} gap=${gapMm} v=${v}`,
               ).toBeLessThan(1e-6);
             }
           }
@@ -304,8 +339,8 @@ describe('несколько полос', () => {
 
   it('у каждой полосы свой шаг: он считается по её собственному радиусу', () => {
     const ctx = { heightMm: 150, radiusAt: (v: number) => (v < 0.5 ? 40 : 80) };
-    const low = bandRepeats(band({ bandCenter: 0.25, bandWidthMm: 10, repeats: 0 }), ctx);
-    const high = bandRepeats(band({ bandCenter: 0.75, bandWidthMm: 10, repeats: 0 }), ctx);
+    const low = bandRepeats(band({ bandCenter: 0.25, bandWidthMm: 10 }), ctx);
+    const high = bandRepeats(band({ bandCenter: 0.75, bandWidthMm: 10 }), ctx);
     expect(high / low).toBeCloseTo(2, 0);
   });
 });
@@ -336,9 +371,84 @@ describe('sanitizeRoulette', () => {
     expect(many.bands).toHaveLength(MAX_BANDS);
   });
 
+  it('старое поле repeats не бросает и отбрасывается', () => {
+    const legacy = sanitizeBand({ ...band(), repeats: 17 });
+    expect('repeats' in legacy).toBe(false);
+    expect(sanitizeBand(legacy)).toEqual(legacy);
+  });
+
   it('идемпотентен, и по умолчанию узора нет', () => {
-    const once = sanitizeRoulette({ bands: [band({ repeats: 9.4 })] });
+    const once = sanitizeRoulette({ bands: [band({ gapMm: 9.4, depthMm: 99 })] });
     expect(sanitizeRoulette(once)).toEqual(once);
     expect(defaultRoulette().bands.every((b) => !b.on)).toBe(true);
+  });
+});
+
+describe('орнамент картинкой', () => {
+  const at = (s: number, q: number, image = CHECKER) =>
+    patternValue('image', s, q, tile({ image: decodeImage(image) ?? undefined }));
+
+  it('в центрах клеток — 0 или 1, на границе соседних — половина', () => {
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const white = (row + col) % 2 === 1;
+        // строка 0 — верх картинки, а q растёт снизу вверх
+        expect(at((col + 0.5) / 8, 1 - (row + 0.5) / 8), `${row},${col}`).toBeCloseTo(white ? 1 : 0, 9);
+      }
+    }
+    expect(at(1 / 8, 1 - 0.5 / 8)).toBeCloseTo(0.5, 9);
+  });
+
+  it('инверсия меняет рисунок и фон местами', () => {
+    const inverted = checker(8, 8, true);
+    for (const [s, q] of [[0.0625, 0.9375], [0.3, 0.41], [0.77, 0.2]]) {
+      expect(at(s, q, inverted)).toBeCloseTo(1 - at(s, q), 9);
+    }
+  });
+
+  it('периодична по окружности, зажата поперёк пояска', () => {
+    for (const q of [0.1, 0.5, 0.93]) expect(at(0.999999, q)).toBeCloseTo(at(-0.000001, q), 4);
+    expect(at(0.3, 1.2)).toBe(at(0.3, 1));
+  });
+
+  it('тайл держит пропорции картинки: ширина пояска — её высота', () => {
+    expect(tileAspect({ pattern: 'image', image: checker(32, 8) })).toBe(4);
+    const wide = bandLayout(band({ pattern: 'image', image: checker(32, 8), bandWidthMm: 10, gapMm: 10 }), CTX);
+    expect(wide.elementMm).toBeCloseTo(40, 0);
+    expect(isContinuous('image')).toBe(false);
+  });
+
+  it('испорченная картинка отбрасывается, и узор откатывается', () => {
+    for (const image of [
+      { ...CHECKER, data: 'не base64' },
+      { ...CHECKER, data: encodeBase64(new Uint8Array(10)) },
+      { ...CHECKER, w: 2 },
+      { ...CHECKER, w: 65 },
+      { ...CHECKER, h: 8.5 },
+      'картинка',
+    ]) {
+      const sane = sanitizeBand({ ...band({ pattern: 'image' }), image });
+      expect(sane.pattern).toBe('rope');
+      expect(sane.image).toBeUndefined();
+      expect(sanitizeBand(sane)).toEqual(sane);
+    }
+  });
+
+  it('без картинки полоса-картинка ничего не делает, но узор не теряется', () => {
+    const empty = sanitizeBand({ ...band({ pattern: 'image' }), image: undefined });
+    expect(empty.pattern).toBe('image');
+    expect(makeRoulette({ bands: [empty] }, CTX)(1, 0.62)).toBe(0);
+  });
+
+  it('целая картинка переживает санацию и ложится на изделие', () => {
+    const sane = sanitizeBand(band({ pattern: 'image', depthMm: 2, bandWidthMm: 20 }));
+    expect(sane.image).toEqual(CHECKER);
+    expect(sanitizeBand(sane)).toEqual(sane);
+    const roll = makeRoulette({ bands: [sane] }, CTX);
+    let peak = 0;
+    // середина пояска — граница строк шахматки; берём центр строки
+    const v = 0.62 + (20 / 150) * (0.5 / 8);
+    for (let i = 0; i < 2000; i++) peak = Math.max(peak, roll((i / 2000) * TAU, v));
+    expect(peak).toBeGreaterThan(1.9);
   });
 });

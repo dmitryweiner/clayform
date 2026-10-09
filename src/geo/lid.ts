@@ -161,6 +161,14 @@ export function sanitizeLid(raw: unknown): LidState {
 export interface LidFit {
   /** самое узкое место полости в полосе посадки */
   cavityMm: number;
+  /**
+   * Самое узкое место полости над полочкой, от неё до венчика. Через него
+   * проходит поле утопленной крышки, по нему же идёт кольцо пробки
+   * горловины в литейной форме. Без утопления — равен cavityMm.
+   */
+  galleryMm: number;
+  /** на сколько крышка утоплена ниже венчика (после зажимов), мм */
+  recessMm: number;
   /** радиус посадочного цилиндра в теле */
   seatMm: number;
   /** наружный радиус юбки крышки */
@@ -235,14 +243,23 @@ export function lidFit(
   const seatMm = Math.max(cavityMm - ledgeMm, Math.min(cavityMm, MIN_SEAT_MM));
   const plugMm = Math.max(seatMm - lid.clearanceMm, MIN_CAVITY_MM);
 
-  // Куда позволено вынести поле. Утопленное — не шире устья, иначе крышку
+  // Галерея — полость над полочкой: через неё поле опускается на место.
+  const galleryMm = recessMm > 0
+    ? narrowestCavity(profile, heightMm, wallMm, restZMm, heightMm - rimR)
+    : cavityMm;
+
+  // Куда позволено вынести поле. Утопленное — не шире галереи, иначе крышку
   // не опустить; лежащее на венчике — не шире наружной стенки, иначе оно
   // свисало бы над изделием козырьком.
-  const fieldMax = recessMm > 0 ? cavityMm - lid.clearanceMm : profileRadius(profile, 1);
+  const fieldMax = recessMm > 0
+    ? Math.min(cavityMm, galleryMm) - lid.clearanceMm
+    : profileRadius(profile, 1);
   const fieldMm = Math.min(seatMm + lid.fieldMm, Math.max(fieldMax, seatMm + MIN_FIELD_MM));
 
   return {
     cavityMm,
+    galleryMm,
+    recessMm,
     seatMm,
     plugMm,
     fieldMm,

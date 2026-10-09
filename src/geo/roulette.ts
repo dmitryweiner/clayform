@@ -13,10 +13,20 @@
 // растянутым по тайлу эллипсоидом, а линия меандра — разной толщины вдоль
 // и поперёк.
 
+import { decodeBase64 } from './bytes';
+
 export const ROULETTE_PATTERNS = [
-  'rope', 'zigzag', 'dots', 'diamonds', 'dashes', 'lattice', 'meander', 'band',
+  'rope', 'zigzag', 'dots', 'diamonds', 'dashes', 'lattice', 'meander', 'band', 'image',
 ] as const;
 export type RoulettePattern = (typeof ROULETTE_PATTERNS)[number];
+
+/**
+ * Непрерывные узоры — лента без разрывов: просвета у них нет, тайлы
+ * стыкуются встык. Остальные — одиночные оттиски с гладкой стенкой между.
+ */
+export const CONTINUOUS: ReadonlySet<RoulettePattern> =
+  new Set<RoulettePattern>(['band', 'rope', 'zigzag', 'lattice', 'meander']);
+export const isContinuous = (p: RoulettePattern): boolean => CONTINUOUS.has(p);
 
 export interface RouletteBand {
   on: boolean;
@@ -27,13 +37,33 @@ export interface RouletteBand {
   bandWidthMm: number;
   /** глубина, мм; > 0 — выпуклый узор, < 0 — вдавленный */
   depthMm: number;
-  /** число оттисков за оборот; 0 — подобрать автоматически */
-  repeats: number;
-  /** просвет между соседними оттисками, мм */
+  /**
+   * просвет между соседними оттисками, мм; только у одиночных узоров —
+   * непрерывным он не нужен и ими игнорируется
+   */
   gapMm: number;
   /** наклон узора: сдвиг вдоль окружности на всю ширину пояска */
   angle: number;
+  /** орнамент-картинка для узора 'image'; пока её нет, полоса ничего не делает */
+  image?: RouletteImage;
 }
+
+/**
+ * Орнамент картинкой: оттенки серого, строка за строкой сверху вниз. Белое —
+ * на всю глубину, чёрное — гладкая стенка; инверсия меняет их местами. Это
+ * не знак глубины (его задаёт ползунок): знак решает, выпуклый узор или
+ * вдавленный, а инверсия — рисунок или фон занимает глубину.
+ */
+export interface RouletteImage {
+  w: number;
+  h: number;
+  /** base64, ровно w·h байт */
+  data: string;
+  invert: boolean;
+}
+
+export const IMAGE_MIN_PX = 4;
+export const IMAGE_MAX_PX = 64;
 
 export interface RouletteState {
   bands: RouletteBand[];
@@ -54,13 +84,48 @@ export interface TileContext {
   bandMm: number;
   /** глубина накатки по модулю, мм */
   depthMm: number;
+  /** декодированная картинка — один раз на полосу, а не на каждый узел */
+  image?: DecodedImage;
+}
+
+export interface DecodedImage {
+  w: number;
+  h: number;
+  pixels: Uint8Array;
+  invert: boolean;
+}
+
+/** Байты картинки или null, если данные не те (не base64, не та длина). */
+export function decodeImage(image: RouletteImage): DecodedImage | null {
+  const pixels = decodeBase64(image.data);
+  if (!pixels || pixels.length !== image.w * image.h) return null;
+  return { w: image.w, h: image.h, pixels, invert: image.invert };
+}
+
+/**
+ * Билинейная выборка картинки на тайле: по s с заворотом (тайлы стыкуются),
+ * по q с зажимом. Узлы — центры пикселей; q = 1 — верх пояска и верхняя
+ * строка картинки.
+ */
+function imageValue(image: DecodedImage, s: number, q: number): number {
+  const { w, h, pixels } = image;
+  const x = frac(s) * w - 0.5;
+  const y = clamp((1 - q) * h - 0.5, 0, h - 1);
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const tx = x - x0;
+  const ty = y - y0;
+  const y1 = Math.min(y0 + 1, h - 1);
+  const px = (i: number, j: number): number => pixels[j * w + (((i % w) + w) % w)];
+  const top = px(x0, y0) * (1 - tx) + px(x0 + 1, y0) * tx;
+  const bottom = px(x0, y1) * (1 - tx) + px(x0 + 1, y1) * tx;
+  const value = (top * (1 - ty) + bottom * ty) / 255;
+  return image.invert ? 1 - value : value;
 }
 
 const TAU = Math.PI * 2;
 /** доля пояска, на которой глубина набирается: колесо въезжает плавно */
 const EDGE = 0.12;
-/** толщина линии меандра в долях меньшей стороны тайла */
-const MEANDER_STROKE = 0.075;
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 const frac = (x: number): number => x - Math.floor(x);
@@ -82,20 +147,125 @@ function ridge(x: number, half = 0.5): number {
 }
 
 /**
- * Классический греческий ключ одной ломаной: рельс по низу, стояк, и от него
- * спираль в полтора оборота. Рельс проходит через весь тайл — им звенья и
- * связываются в непрерывную ленту, как на античных фризах.
+ * Меандр — линия шириной в клетку, идущая по сетке и повторяющаяся по
+ * горизонтали. Поэтому он задан не координатами отрезков, а ASCII-сеткой
+ * тайла: строка — ряд клеток сверху вниз, `#` — линия, `.` — пусто, ширина
+ * строки — период. Любой вариант с `references/meander-variants.png`
+ * добавляется ещё одной такой константой.
  *
- * Ключ занимает почти всю ширину тайла: иначе между звеньями зияет пустое
- * поле, и лента читается как редкие штампики, а не как меандр.
+ * Классический ключ: рельс, стояк, перекладина и спираль в полтора оборота.
+ * Соседние звенья разделены ровно одной пустой клеткой (правый столбец), а
+ * рельс идёт через весь тайл и связывает звенья в непрерывную ленту.
  */
-export const MEANDER_PATH: readonly [number, number, number, number][] = [
-  [0, 0.15, 1, 0.15],
-  [0.95, 0.15, 0.95, 0.85],
-  [0.95, 0.85, 0.15, 0.85],
-  [0.15, 0.85, 0.15, 0.45],
-  [0.15, 0.45, 0.55, 0.45],
+export const MEANDER_CLASSIC: readonly string[] = [
+  '######.',
+  '#....#.',
+  '#.##.#.',
+  '#.#..#.',
+  '#.####.',
+  '#......',
+  '#######',
 ];
+
+/** Отрезок в долях тайла: (x0, y0) → (x1, y1); y — доля пояска снизу вверх. */
+export type Segment = readonly [number, number, number, number];
+
+export interface GridPattern {
+  /** клеток по горизонтали и по вертикали */
+  width: number;
+  height: number;
+  /** осевые линии подряд идущих `#` по рядам и столбцам */
+  segments: readonly Segment[];
+}
+
+/**
+ * Сетка → отрезки по осевым линиям клеток. Отрезки строятся по ПРОГОНАМ
+ * подряд идущих `#`, а не по одиночным клеткам: иначе в каждом стыке
+ * сходились бы концы соседних отрезков, и всё равно бралось бы одно
+ * ближайшее расстояние — но прогон короче и честнее.
+ *
+ * Ряды периодичны: прогон, упёршийся в правый край, продолжается с левого
+ * (координаты тогда выходят за 1 — расстояние всё равно меряется со
+ * сдвигом на период). Столбцы — нет: поперёк пояска узор не повторяется.
+ */
+export function gridPattern(rows: readonly string[]): GridPattern {
+  const height = rows.length;
+  const width = rows[0]?.length ?? 0;
+  const cx = (k: number): number => (k + 0.5) / width;
+  // ряд 0 — верхний, а q растёт снизу вверх
+  const cy = (r: number): number => 1 - (r + 0.5) / height;
+  const filled = (r: number, c: number): boolean =>
+    rows[r]?.[((c % width) + width) % width] === '#';
+  const segments: Segment[] = [];
+  // клетки, которые ни в один прогон длиннее одной клетки не попали
+  const covered = new Set<string>();
+
+  for (let r = 0; r < height; r++) {
+    const y = cy(r);
+    if (width > 0 && rows[r].split('').every((ch) => ch === '#')) {
+      segments.push([0, y, 1, y]);
+      for (let c = 0; c < width; c++) covered.add(`${r},${c}`);
+      continue;
+    }
+    // начинаем обход с пустой клетки, чтобы прогон через шов не разрезать
+    const start = rows[r].indexOf('.');
+    for (let i = 0; i < width; i++) {
+      const c = start + i;
+      if (!filled(r, c) || filled(r, c - 1)) continue;
+      let end = c;
+      while (end + 1 < start + width && filled(r, end + 1)) end++;
+      if (end > c) {
+        segments.push([cx(c), y, cx(end), y]);
+        for (let k = c; k <= end; k++) covered.add(`${r},${k % width}`);
+      }
+    }
+  }
+  for (let c = 0; c < width; c++) {
+    for (let r = 0; r < height; r++) {
+      if (!filled(r, c) || filled(r - 1, c)) continue;
+      let end = r;
+      while (filled(end + 1, c)) end++;
+      if (end > r) {
+        segments.push([cx(c), cy(r), cx(c), cy(end)]);
+        for (let k = r; k <= end; k++) covered.add(`${k},${c}`);
+      }
+    }
+  }
+  // одиночная клетка — точка, отрезок нулевой длины
+  for (let r = 0; r < height; r++) {
+    for (let c = 0; c < width; c++) {
+      if (filled(r, c) && !covered.has(`${r},${c}`)) segments.push([cx(c), cy(r), cx(c), cy(r)]);
+    }
+  }
+  return { width, height, segments };
+}
+
+const MEANDER = gridPattern(MEANDER_CLASSIC);
+
+/**
+ * Отношение ширины тайла к ширине пояска. Тайл перестаёт быть квадратным,
+ * если сетка узора не квадратная: клетки должны остаться квадратными.
+ */
+export function tileAspect(band: Pick<RouletteBand, 'pattern' | 'image'>): number {
+  if (band.pattern === 'meander') return MEANDER.width / MEANDER.height;
+  // пропорции картинки сохраняются: ширина пояска задаёт её высоту
+  if (band.pattern === 'image' && band.image) return band.image.w / band.image.h;
+  return 1;
+}
+
+/** Расстояние в мм до линии сеточного узора с учётом соседних периодов. */
+function gridValue(grid: GridPattern, s: number, q: number, tile: TileContext): number {
+  // линия ровно в клетку: половина толщины — полклетки по меньшей стороне
+  const half = 0.5 * Math.min(tile.elementMm / grid.width, tile.bandMm / grid.height);
+  const x = frac(s);
+  let nearest = Infinity;
+  for (const [x0, y0, x1, y1] of grid.segments) {
+    for (const shift of [-1, 0, 1]) {
+      nearest = Math.min(nearest, segmentDistanceMm(x + shift, q, x0, y0, x1, y1, tile));
+    }
+  }
+  return bump(nearest, half);
+}
 
 /** Расстояние в миллиметрах от точки тайла до отрезка тайла. */
 function segmentDistanceMm(
@@ -141,20 +311,15 @@ export function patternValue(
     case 'lattice':
       // две встречные диагонали — классическая сетчатая накатка
       return Math.max(ridge(s - q, 0.22), ridge(s + q, 0.22));
-    case 'meander': {
+    case 'meander':
       // Толщину линии меряем в миллиметрах, а не в долях тайла: иначе на
       // вытянутом тайле вертикальные штрихи вышли бы тоньше горизонтальных.
-      const half = MEANDER_STROKE * Math.min(tile.elementMm, tile.bandMm);
-      let nearest = Infinity;
-      const x = frac(s);
-      for (const [x0, y0, x1, y1] of MEANDER_PATH) {
-        nearest = Math.min(nearest, segmentDistanceMm(x, q, x0, y0, x1, y1, tile));
-      }
-      return bump(nearest, half);
-    }
+      return gridValue(MEANDER, s, q, tile);
     case 'band':
       // сплошной полукруглый валик по всей окружности
       return Math.sqrt(Math.max(0, 1 - (2 * q - 1) * (2 * q - 1)));
+    case 'image':
+      return tile.image ? imageValue(tile.image, s, q) : 0;
   }
 }
 
@@ -180,12 +345,42 @@ function sphereImprint(s: number, q: number, tile: TileContext): number {
   return clamp(height / depth, 0, 1);
 }
 
-/** Число оттисков за оборот: заданное вручную либо подобранное под квадратный тайл. */
+/** Как полоса ложится на окружность: всё, что из этого следует, — здесь. */
+export interface BandLayout {
+  /** оттисков за оборот — всегда целое */
+  repeats: number;
+  /** шаг по окружности, мм */
+  stepMm: number;
+  /** ширина самого элемента, мм */
+  elementMm: number;
+  /** фактический просвет, мм; у непрерывных — 0 */
+  gapMm: number;
+  /** окружность пояска, мм */
+  circumferenceMm: number;
+}
+
+/**
+ * Раскладка полосы по окружности. Размер элемента задаёт ширина пояска (с
+ * пропорциями узора), а не просвет: у одиночных узоров шаг = элемент +
+ * просвет, и округление числа оттисков достаётся просвету — элемент не
+ * плющится в чёрточку оттого, что просвет вырос.
+ */
+export function bandLayout(band: RouletteBand, ctx: RouletteContext): BandLayout {
+  const circumferenceMm = TAU * Math.max(1, ctx.radiusAt(band.bandCenter));
+  const element = Math.max(1, band.bandWidthMm) * tileAspect(band);
+  const continuous = isContinuous(band.pattern);
+  const pitch = continuous ? element : element + band.gapMm;
+  const repeats = clamp(Math.round(circumferenceMm / pitch), 3, REPEATS_MAX);
+  const stepMm = circumferenceMm / repeats;
+  // при упоре в REPEATS_MAX шаг может выйти меньше элемента — тогда
+  // элемент занимает весь шаг
+  const elementMm = continuous ? stepMm : Math.min(element, stepMm);
+  return { repeats, stepMm, elementMm, gapMm: stepMm - elementMm, circumferenceMm };
+}
+
+/** Число оттисков за оборот. */
 export function bandRepeats(band: RouletteBand, ctx: RouletteContext): number {
-  if (band.repeats >= 3) return Math.round(band.repeats);
-  const circumference = TAU * Math.max(1, ctx.radiusAt(band.bandCenter));
-  // тайл делаем примерно квадратным: шаг по окружности ≈ ширина пояска
-  return clamp(Math.round(circumference / Math.max(1, band.bandWidthMm)), 3, REPEATS_MAX);
+  return bandLayout(band, ctx).repeats;
 }
 
 interface PreparedBand {
@@ -212,11 +407,11 @@ export function makeRoulette(
   const prepared: PreparedBand[] = [];
   for (const band of state.bands) {
     if (!band.on || band.depthMm === 0) continue;
-    const repeats = bandRepeats(band, ctx);
-    const stepMm = (TAU * Math.max(1, ctx.radiusAt(band.bandCenter))) / repeats;
-    // просвет шире шага съел бы узор совсем — оставляем элементу хотя бы
-    // шестую часть шага
-    const fill = clamp(1 - band.gapMm / stepMm, 0.15, 1);
+    const image = band.pattern === 'image' && band.image ? decodeImage(band.image) : null;
+    // узор-картинка без картинки — полоса выключена
+    if (band.pattern === 'image' && !image) continue;
+    const { repeats, stepMm, elementMm } = bandLayout(band, ctx);
+    const fill = elementMm / stepMm;
     const bandH = clamp(band.bandWidthMm / Math.max(1, ctx.heightMm), 1e-4, 1);
     prepared.push({
       pattern: band.pattern,
@@ -227,9 +422,10 @@ export function makeRoulette(
       depthMm: band.depthMm,
       angle: band.angle,
       tile: {
-        elementMm: stepMm * fill,
+        elementMm,
         bandMm: band.bandWidthMm,
         depthMm: Math.abs(band.depthMm),
+        ...(image ? { image } : {}),
       },
     });
   }
@@ -268,7 +464,6 @@ export function defaultBand(): RouletteBand {
     bandCenter: 0.62,
     bandWidthMm: 14,
     depthMm: 1.2,
-    repeats: 0,
     gapMm: 0,
     angle: 0,
   };
@@ -294,19 +489,34 @@ export function sanitizeBand(raw: unknown): RouletteBand {
   const fallback = defaultBand();
   let pattern = fallback.pattern;
   for (const candidate of ROULETTE_PATTERNS) if (source.pattern === candidate) pattern = candidate;
+  const image = source.image === undefined ? undefined : sanitizeImage(source.image);
+  // испорченная картинка — не орнамент: откатываемся к узору по умолчанию,
+  // а не оставляем пустую полосу, о которой человек не просил
+  if (image === null && pattern === 'image') pattern = fallback.pattern;
 
-  const repeats = num(source.repeats, fallback.repeats);
   return {
     on: typeof source.on === 'boolean' ? source.on : fallback.on,
     pattern,
     bandCenter: clamp(num(source.bandCenter, fallback.bandCenter), 0, 1),
     bandWidthMm: clamp(num(source.bandWidthMm, fallback.bandWidthMm), 1, BAND_MAX_MM),
     depthMm: clamp(num(source.depthMm, fallback.depthMm), -DEPTH_MAX_MM, DEPTH_MAX_MM),
-    // < 3 означает «подбирай сам»; иначе целое число оттисков
-    repeats: repeats < 3 ? 0 : clamp(Math.round(repeats), 3, REPEATS_MAX),
+    // `repeats` из старых ссылок и пресетов молча отбрасывается: число
+    // оттисков теперь всегда подбирается по размеру (bandLayout)
     gapMm: clamp(num(source.gapMm, fallback.gapMm), 0, GAP_MAX_MM),
     angle: clamp(num(source.angle, fallback.angle), -2, 2),
+    ...(image ? { image } : {}),
   };
+}
+
+/** Картинка или null, если хоть что-то в ней не так. */
+function sanitizeImage(raw: unknown): RouletteImage | null {
+  const source = asRecord(raw);
+  const { w, h, data } = source;
+  if (typeof w !== 'number' || typeof h !== 'number' || typeof data !== 'string') return null;
+  if (!Number.isInteger(w) || !Number.isInteger(h)) return null;
+  if (w < IMAGE_MIN_PX || w > IMAGE_MAX_PX || h < IMAGE_MIN_PX || h > IMAGE_MAX_PX) return null;
+  const image: RouletteImage = { w, h, data, invert: source.invert === true };
+  return decodeImage(image) ? image : null;
 }
 
 export function sanitizeRoulette(raw: unknown): RouletteState {

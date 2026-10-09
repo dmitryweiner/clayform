@@ -73,10 +73,14 @@ export async function ensureServer(preview) {
  */
 export async function openApp({ preview = false, width = 1280, height = 860 } = {}) {
   const { base, proc } = await ensureServer(preview);
-  const browser = await chromium.launch();
+  // В облачном контейнере Playwright ищет свою сборку chromium, а
+  // предустановлена другая — путь к ней даёт CLAYFORM_BROWSER. Пустая
+  // переменная — браузер Playwright по умолчанию.
+  const browser = await chromium.launch({ executablePath: process.env.CLAYFORM_BROWSER || undefined });
   const page = await browser.newPage({ viewport: { width, height }, acceptDownloads: true });
   const errors = [];
   let context = 'app';
+  let cdp = null;
   page.on('pageerror', (e) => errors.push(`[${context}] ${String(e)}`));
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(`[${context}] ${m.text()}`);
@@ -87,6 +91,14 @@ export async function openApp({ preview = false, width = 1280, height = 860 } = 
     errors,
     label: (text) => {
       context = text;
+    },
+    /**
+     * Замедляет CPU страницы в `rate` раз (1 — снять). На M1 многое
+     * успевает раньше, чем его можно увидеть, — например полоса прогресса.
+     */
+    async throttle(rate) {
+      cdp ??= await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate });
     },
     async close() {
       await browser.close();

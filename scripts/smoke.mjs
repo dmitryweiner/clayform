@@ -6,6 +6,7 @@
 //   node scripts/smoke.mjs --preview          # прод-сборка (vite preview :4173)
 //   node scripts/smoke.mjs --shots shots      # + скриншот на каждое семейство
 //   node scripts/smoke.mjs --res 384          # экспорт на предельной сетке
+//   node scripts/smoke.mjs --slow             # главный поток ×6 на шагах полосы прогресса
 //
 // Время каждой выгрузки печатается всегда — этим и меряется, во что обходится
 // экспорт на той или иной детализации.
@@ -152,6 +153,30 @@ for (const pattern of await page.$$eval('#roul0_pattern option', (o) => o.map((x
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-${pattern}.png` });
 }
 
+// орнамент картинкой: загрузили PNG — полоса ожила, инверсия появилась
+label('roulette-image');
+await page.selectOption('#roul0_pattern', 'image');
+await page.setInputFiles('#roul0_image', 'tests/fixtures/ornament.png');
+await page.waitForFunction(
+  () => (document.querySelector('#card_roulette .band-box .fcard-desc')?.textContent ?? '').includes('оттисков'),
+  { timeout: 5000 },
+).catch(() => errors.push('[image] картинка не легла на полосу'));
+const imageVerdict = await auditVerdict(page);
+if (!imageVerdict.includes('замкнуто ✓')) errors.push(`[image] audit="${imageVerdict}"`);
+if (!(await page.locator('#roul0_invert').isVisible())) errors.push('[image] нет флажка инверсии');
+await page.check('#roul0_invert');
+const invertedVerdict = await auditVerdict(page);
+if (!invertedVerdict.includes('замкнуто ✓')) errors.push(`[image:invert] audit="${invertedVerdict}"`);
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-image.png` });
+
+// просвет есть только у одиночных оттисков: непрерывной ленте он не нужен
+label('roulette-gap');
+await page.selectOption('#roul0_pattern', 'meander');
+if (await page.locator('#roul0_gap').isVisible()) errors.push('[gap] у меандра виден просвет');
+await page.selectOption('#roul0_pattern', 'dots');
+if (!(await page.locator('#roul0_gap').isVisible())) errors.push('[gap] у точек скрыт просвет');
+if (await page.locator('#roul0_repeats').count()) errors.push('[gap] ползунок «Оттисков» вернулся');
+
 // просвет между оттисками и несколько полос сразу
 label('roulette-bands');
 await page.fill('#roul0_gap', '8');
@@ -217,6 +242,29 @@ await auditVerdict(page);
 const afterShare = await page.locator('#status').textContent();
 if (afterShare !== beforeShare) {
   errors.push(`[share] состояние не восстановилось: "${beforeShare}" → "${afterShare}"`);
+}
+
+// пресет файлом: сохранили, сменили форму, открыли файл — состояние вернулось
+label('preset-file');
+await page.selectOption('#presetSel', presetValues[2]);
+await auditVerdict(page);
+const beforeFile = await page.locator('#status').textContent();
+page.once('dialog', (dialog) => dialog.accept(dialog.defaultValue()));
+const [presetDownload] = await Promise.all([
+  page.waitForEvent('download'),
+  page.click('#fileSaveBtn'),
+]);
+if (!/^clayform-.+\.json$/.test(presetDownload.suggestedFilename())) {
+  errors.push(`[preset-file] имя файла "${presetDownload.suggestedFilename()}"`);
+}
+await page.selectOption('#presetSel', presetValues[0]);
+await auditVerdict(page);
+await page.setInputFiles('#fileInput', await presetDownload.path());
+await page.waitForTimeout(200);
+await auditVerdict(page);
+const afterFile = await page.locator('#status').textContent();
+if (afterFile !== beforeFile) {
+  errors.push(`[preset-file] состояние не восстановилось: "${beforeFile}" → "${afterFile}"`);
 }
 
 // отмена возвращает к прежнему состоянию, повтор — обратно
@@ -367,11 +415,30 @@ try {
 const exactVerdict = await auditVerdict(page);
 if (!exactVerdict.includes('замкнуто ✓')) errors.push(`[exact-preview] audit="${exactVerdict}"`);
 
+// Полоса прогресса в превью: точная сборка идёт дольше задержки появления
+// полосы — та обязана показаться и потом спрятаться.
+label('preview-progress');
+await expectPreviewProgress('exact', async () => {
+  await page.fill('#handle_reach', '34');
+}, true);
+
 // чайник экспортируется целиком: тело с ручкой и трубкой носика — тот самый
 // STL, где сходится весь CSG изделия, — и крышка отдельным файлом, как её и
 // печатают
 label('export-teapot');
 await expectDownloads(2, 'teapot');
+
+// «крышка рядом»: тот же чайник уходит одним файлом — тело и крышка вместе
+label('lid-beside');
+await page.check('#print_lidBeside');
+await page.waitForTimeout(150);
+const besideParts = await page.locator('#partList li').count();
+if (besideParts !== 1) errors.push(`[lid-beside] деталей ${besideParts}, ожидалась 1`);
+const besideVerdict = await auditVerdict(page);
+if (!besideVerdict.includes('замкнуто ✓')) errors.push(`[lid-beside] audit="${besideVerdict}"`);
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-beside.png` });
+await expectDownloads(1, 'teapot-beside');
+await page.uncheck('#print_lidBeside');
 
 // Литейная оснастка: у каждой схемы своё число деталей. Ручку и носик
 // снимаем — они расширяют габарит и через это меняют выбор схемы, а здесь
@@ -403,7 +470,39 @@ for (const [family, index, tab, expected] of [
 }
 
 // у крышки своя форма: к деталям формы тела добавляются её собственные
+// Полоса прогресса оснастки — на чайнике: ручка, носик и крышка дают
+// самую тяжёлую сборку, она идёт дольше задержки появления полосы и на M1.
+// (CDP под --slow замедляет только главный поток, воркер считает как есть.)
+label('mold-progress');
+await page.selectOption('#presetSel', 'b:Чайник');
+await expectPreviewProgress('mold', () => page.click('#tabBath'), true);
+
+// утопленная крышка: форме нужна пробка горловины — на деталь больше
+label('mold-plug');
+const waitMold = () => page.waitForFunction(
+  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
+  { timeout: 60000 },
+);
+await waitMold();
+const teapotParts = await page.locator('#partList li').count();
+await page.fill('#lid_recess', '6');
+await page.waitForTimeout(100);
+await waitMold();
+const plugParts = await page.locator('#partList li').count();
+if (plugParts !== teapotParts + 1) {
+  errors.push(`[mold-plug] деталей ${plugParts}, ожидалось ${teapotParts + 1} (с пробкой)`);
+}
+if (!(await page.locator('#partList').textContent()).includes('пробка горловины')) {
+  errors.push('[mold-plug] в списке деталей нет пробки');
+}
+const plugBlockers = (await page.locator('#blockers').textContent()).trim();
+if (plugBlockers) errors.push(`[mold-plug] blockers="${plugBlockers}"`);
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/mold-plug.png` });
+await page.fill('#lid_recess', '0');
+
 label('mold-lid');
+await page.uncheck('#on_handle');
+await page.uncheck('#on_spout');
 await page.locator('#familyGrid .family-btn').nth(0).click();
 await page.check('#on_lid');
 await page.click('#tabBath');
@@ -420,6 +519,34 @@ if (lidMoldBlockers) errors.push(`[mold-lid] blockers="${lidMoldBlockers}"`);
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/mold-lid.png` });
 await page.uncheck('#on_lid');
 
+// отминка: табы есть у голого тела и исчезают с приставной деталью
+label('press');
+await page.locator('#familyGrid .family-btn').nth(1).click();
+await page.waitForTimeout(150);
+if (!(await page.locator('#pressTabs').isVisible())) errors.push('[press] у миски нет табов отминки');
+await page.click('#tabHump');
+const humpVerdict = await auditVerdict(page);
+if (!humpVerdict.includes('замкнуто ✓')) errors.push(`[press:hump] audit="${humpVerdict}"`);
+const pressWarnings = (await page.locator('#warnings').textContent()).trim();
+if (pressWarnings) errors.push(`[press:hump] у миски предупреждения: "${pressWarnings}"`);
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/press-hump.png` });
+await expectDownloads(1, 'hump');
+await page.click('#tabSlump');
+await page.waitForFunction(
+  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
+  { timeout: 60000 },
+);
+if ((await page.locator('#partList li').count()) !== 1) errors.push('[press:slump] деталей не одна');
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/press-slump.png` });
+await expectDownloads(1, 'slump');
+await page.check('#on_handle');
+await page.waitForTimeout(150);
+if (await page.locator('#pressTabs').isVisible()) errors.push('[press] табы отминки видны при ручке');
+if ((await page.locator('#tabVessel').getAttribute('aria-selected')) !== 'true') {
+  errors.push('[press] с ручкой режим не откатился к изделию');
+}
+await page.uncheck('#on_handle');
+
 // экспорт оснастки: у горшка это три отдельных файла
 label('export-mold');
 await page.locator('#familyGrid .family-btn').nth(0).click();
@@ -429,6 +556,33 @@ await page.waitForFunction(
   { timeout: 60000 },
 );
 await expectDownloads(3, 'mold', true);
+
+/**
+ * `action` запускает долгую сборку превью; полоса должна появиться и
+ * погаснуть. Без --slow отсутствие полосы — не ошибка там, где на быстрой
+ * машине задача успевает раньше задержки (`required = false`).
+ */
+async function expectPreviewProgress(tag, action, required) {
+  const slow = flags.has('slow');
+  if (slow) await app.throttle(6);
+  try {
+    await action();
+    try {
+      await page.waitForFunction(() => !document.querySelector('#progressWrap')?.hidden,
+        { timeout: slow ? 30000 : 5000, polling: 20 });
+    } catch {
+      if (required || slow) errors.push(`[progress:${tag}] полоса не показалась`);
+      return;
+    }
+    try {
+      await page.waitForFunction(() => document.querySelector('#progressWrap')?.hidden, { timeout: 60000 });
+    } catch {
+      errors.push(`[progress:${tag}] полоса не спряталась`);
+    }
+  } finally {
+    if (slow) await app.throttle(1);
+  }
+}
 
 /**
  * Клик по «Экспорт» → столько-то реальных файлов. `watchProgress` заодно
@@ -479,6 +633,24 @@ async function expectDownloads(count, tag, watchProgress = false) {
     if (size < 84 + 50 * 1000) errors.push(`[${tag}] подозрительно маленький STL: ${size} байт`);
   }
 }
+
+// мобильный режим: панель — нижний лист; тап по канвасу прячет её,
+// «Настройки» внизу возвращают
+label('mobile');
+await page.setViewportSize({ width: 390, height: 800 });
+await page.waitForTimeout(400);
+/** Виден ли лист: после закрытия он уезжает за нижний край окна. */
+const sheetUp = async () => ((await page.locator('#panel').boundingBox())?.y ?? 800) < 790;
+if (!(await sheetUp())) errors.push('[mobile] панель при загрузке не показана');
+if (await page.locator('#panelBtn').isVisible()) errors.push('[mobile] кнопка «Настройки» видна при открытой панели');
+await page.locator('#panelBackdrop').click({ position: { x: 195, y: 60 } });
+await page.waitForTimeout(400);
+if (await sheetUp()) errors.push('[mobile] тап по канвасу не спрятал панель');
+if (!(await page.locator('#panelBtn').isVisible())) errors.push('[mobile] кнопка «Настройки» не появилась');
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/mobile-closed.png` });
+await page.click('#panelBtn');
+await page.waitForTimeout(400);
+if (!(await sheetUp())) errors.push('[mobile] «Настройки» не вернули панель');
 
 await app.close();
 

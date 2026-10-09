@@ -4,21 +4,17 @@
 
 import type { AppState } from './schema';
 import { sanitizeState } from './schema';
+import { encodeBase64, decodeBase64 } from '../geo/bytes';
 
 export function b64urlEncode(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = '';
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return encodeBase64(new TextEncoder().encode(text), 'url');
 }
 
+/** Бросает на нечитаемом токене — decodeStateToken это и ловит. */
 export function b64urlDecode(token: string): string {
-  const base64 = token.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = base64.length % 4 ? '='.repeat(4 - (base64.length % 4)) : '';
-  const binary = atob(base64 + padding);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new TextDecoder().decode(bytes);
+  const bytes = decodeBase64(token, 'url');
+  if (!bytes) throw new Error('токен не base64url');
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 
 export function encodeStateToken(state: AppState): string {

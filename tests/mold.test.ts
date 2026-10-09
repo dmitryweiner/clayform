@@ -8,7 +8,7 @@
 import { initCSG, CsgScope, toManifold } from '../src/geo/csg';
 import type { CsgApi } from '../src/geo/csg';
 import {
-  buildBlocks, buildMaster, buildBaths, defaultMold, sanitizeMold,
+  buildBlocks, buildMaster, buildBaths, buildSlump, defaultMold, sanitizeMold,
 } from '../src/geo/mold';
 import { analyzeMold } from '../src/geo/mold/analyze';
 import { buildSolidVessel } from '../src/geo/assemble';
@@ -162,7 +162,7 @@ describe('гипсовые блоки', () => {
 describe('мастер-позитив', () => {
   it('это изделие с литейной горловиной поверх', () => {
     const vessel = vesselOf('pot');
-    const master = buildMaster(csg, vessel, reportOf('pot'), mold({ spareMm: 30, shrinkPct: 0 }));
+    const master = buildMaster(csg, vessel, reportOf('pot'), mold({ spareMm: 30, shrinkPct: 0 }))[0];
     const before = validateMesh(vessel);
     const after = validateMesh(master.mesh);
     expect(after.watertight).toBe(true);
@@ -172,8 +172,8 @@ describe('мастер-позитив', () => {
 
   it('усадка увеличивает мастер целиком', () => {
     const vessel = vesselOf('cup');
-    const plain = validateMesh(buildMaster(csg, vessel, reportOf('cup'), mold({ shrinkPct: 0, spareMm: 0 })).mesh);
-    const grown = validateMesh(buildMaster(csg, vessel, reportOf('cup'), mold({ shrinkPct: 15, spareMm: 0 })).mesh);
+    const plain = validateMesh(buildMaster(csg, vessel, reportOf('cup'), mold({ shrinkPct: 0, spareMm: 0 }))[0].mesh);
+    const grown = validateMesh(buildMaster(csg, vessel, reportOf('cup'), mold({ shrinkPct: 15, spareMm: 0 }))[0].mesh);
     expect(grown.extents[0]).toBeCloseTo(plain.extents[0] * 1.15, 0);
     expect(grown.extents[2]).toBeCloseTo(plain.extents[2] * 1.15, 0);
   });
@@ -196,7 +196,7 @@ describe('мастер-позитив', () => {
       zMm: heightMm,
       radiusMm: profileRadius(buildProfile('pot', defaultFamilyParams('pot'), heightMm), 1),
     };
-    const master = buildMaster(csg, vessel, report, state, { mouth });
+    const master = buildMaster(csg, vessel, report, state, { mouth })[0];
 
     // Прирост объёма — это цилиндр по венчику от венчика до верха мастера.
     // Горловина «по кончику носика» была бы того же роста, но вчетверо шире,
@@ -221,7 +221,7 @@ describe('мастер-позитив', () => {
 
   it('у миски горловина не нужна — льют прямо в открытую форму', () => {
     const vessel = vesselOf('bowl');
-    const master = buildMaster(csg, vessel, reportOf('bowl'), mold({ spareMm: 40, shrinkPct: 0 }));
+    const master = buildMaster(csg, vessel, reportOf('bowl'), mold({ spareMm: 40, shrinkPct: 0 }))[0];
     expect(validateMesh(master.mesh).extents[2]).toBeCloseTo(validateMesh(vessel).extents[2], 0);
   });
 });
@@ -246,7 +246,7 @@ describe('оснастка крышки', () => {
     const lid = upsideDown();
     const master = buildMaster(csg, lid, lidReport(), mold({ spareMm: 25, shrinkPct: 0 }), {
       mouth: lidMouth,
-    });
+    })[0];
     const report = validateMesh(master.mesh);
     expect(report.watertight).toBe(true);
     expect(report.volume).toBeGreaterThan(validateMesh(lid).volume);
@@ -400,5 +400,116 @@ describe('sanitizeMold', () => {
   it('идемпотентен', () => {
     const once = sanitizeMold({ shrinkPct: 9.5, plasterMm: 22 });
     expect(sanitizeMold(once)).toEqual(once);
+  });
+});
+
+describe('пробка горловины под утопленную крышку', () => {
+  // Полочка утопленной крышки лежит ниже венчика, куда гипс половинок не
+  // достаёт. Её отливает пробка — отдельная деталь, входящая в устье сверху.
+  const heightMm = familyById('pot').defaultHeightMm;
+  const p = params('pot', { heightMm });
+  const profile = buildProfile('pot', p.shape, heightMm);
+  const fitFor = (recessMm: number) =>
+    lidFit(profile, heightMm, defaultHollow(), sanitizeLid({ on: true, recessMm }));
+  const mouthFor = (recessMm: number) => {
+    const fit = fitFor(recessMm);
+    const rimMm = profileRadius(profile, 1);
+    return {
+      zMm: heightMm,
+      radiusMm: fit.seatMm,
+      ...(fit.recessMm > 0 ? { plug: { recessMm: fit.recessMm, galleryMm: fit.galleryMm, rimMm } } : {}),
+    };
+  };
+  const vessel = buildVessel(p);
+  const reportFor = (hasPlug: boolean) => analyzeMold(vessel, { hasHandle: false, hasPlug });
+
+  it('без утопления ничего не меняется: ни деталей, ни пробки', () => {
+    const plain = buildBlocks(csg, vessel, reportFor(false), mold(), { mouth: mouthFor(0) });
+    expect(plain.map((part) => part.id)).toEqual(reportFor(false).parts.map((part) => part.id));
+    expect(plain.some((part) => part.id === 'plug')).toBe(false);
+  });
+
+  it('при утоплении деталей на одну больше, и анализатор об этом знает', () => {
+    const blocks = buildBlocks(csg, vessel, reportFor(true), mold(), { mouth: mouthFor(6) });
+    const plain = buildBlocks(csg, vessel, reportFor(false), mold(), { mouth: mouthFor(0) });
+    expect(blocks).toHaveLength(plain.length + 1);
+    expect(blocks.map((part) => part.id)).toEqual(reportFor(true).parts.map((part) => part.id));
+  });
+
+  it('пробка замкнута, кольцо доходит до полочки, отверстие — по посадке', () => {
+    const shrink = 1.1;
+    const fit = fitFor(6);
+    const blocks = buildBlocks(csg, vessel, reportFor(true), mold({ shrinkPct: 10, keyMm: 0 }), {
+      mouth: mouthFor(6),
+    });
+    const plug = blocks.find((part) => part.id === 'plug');
+    if (!plug) throw new Error('нет пробки');
+    const report = validateMesh(plug.mesh);
+    expect(report.watertight).toBe(true);
+    expect(report.volume).toBeGreaterThan(0);
+    expect(report.bbox.min[2]).toBeCloseTo((heightMm - fit.recessMm) * shrink, 3);
+
+    let hole = Infinity;
+    const { positions } = plug.mesh;
+    for (let i = 0; i < positions.length; i += 3) hole = Math.min(hole, Math.hypot(positions[i], positions[i + 1]));
+    expect(hole).toBeCloseTo(fit.seatMm * shrink, 2);
+  });
+
+  it('пробка лежит внутри габарита блока, а половинки — без литника', () => {
+    const blocks = buildBlocks(csg, vessel, reportFor(true), mold(), { mouth: mouthFor(6) });
+    const plug = validateMesh(blocks.find((part) => part.id === 'plug')?.mesh ?? vessel);
+    const half = blocks.find((part) => part.id === 'half-A');
+    if (!half) throw new Error('нет половины');
+    const halfReport = validateMesh(half.mesh);
+    expect(halfReport.watertight).toBe(true);
+    expect(plug.bbox.max[2]).toBeCloseTo(halfReport.bbox.max[2], 3);
+    expect(plug.bbox.max[0]).toBeLessThan(halfReport.bbox.max[0]);
+
+    // На верхней грани половинки отверстие одно — гнездо пробки, оно шире
+    // венчика. Узкого литника по посадке там больше нет.
+    let opening = Infinity;
+    const { positions } = half.mesh;
+    for (let i = 0; i < positions.length; i += 3) {
+      if (positions[i + 2] < halfReport.bbox.max[2] - 1e-3) continue;
+      opening = Math.min(opening, Math.hypot(positions[i], positions[i + 1]));
+    }
+    expect(opening).toBeGreaterThan(profileRadius(profile, 1) * (1 + defaultMold().shrinkPct / 100));
+  });
+
+  it('гнездо шире фланца: совпадающих цилиндров нет, слив-треугольников тоже', () => {
+    const blocks = buildBlocks(csg, vessel, reportFor(true), mold(), { mouth: mouthFor(6) });
+    for (const part of blocks) {
+      expect(validateMesh(part.mesh).degenerateTriangles, part.id).toBe(0);
+    }
+  });
+
+  it('ванночка пробки стоит на столе, мастер отдаёт пробку второй деталью', () => {
+    const baths = buildBaths(csg, vessel, reportFor(true), mold(), { mouth: mouthFor(6) });
+    const plugBath = baths.find((bath) => bath.id === 'bath-plug');
+    if (!plugBath) throw new Error('нет ванночки пробки');
+    const report = validateMesh(plugBath.mesh);
+    expect(report.watertight).toBe(true);
+    expect(report.bbox.min[2]).toBeCloseTo(0, 3);
+
+    const master = buildMaster(csg, vessel, reportFor(true), mold(), { mouth: mouthFor(6) });
+    expect(master.map((part) => part.id)).toEqual(['master', 'plug']);
+    expect(validateMesh(master[0].mesh).watertight).toBe(true);
+  });
+});
+
+describe('отминка в «−»: углублённая форма', () => {
+  it('одна деталь, полость — изделие с усадкой', () => {
+    const vessel = vesselOf('bowl');
+    const state = mold({ shrinkPct: 10 });
+    const slump = buildSlump(csg, vessel, state);
+    expect(slump.id).toBe('slump');
+    const report = validateMesh(slump.mesh);
+    expect(report.watertight).toBe(true);
+    // блок без горловины: габарит ровно изделие с усадкой плюс борт
+    const vesselReport = validateMesh(vessel);
+    const shrink = 1.1;
+    expect(report.extents[2]).toBeCloseTo(vesselReport.extents[2] * shrink + state.plasterMm, 0);
+    const box = report.extents[0] * report.extents[1] * report.extents[2];
+    expect((box - report.volume) / (vesselReport.volume * shrink ** 3)).toBeCloseTo(1, 3);
   });
 });

@@ -74,7 +74,7 @@ export const PRESETS: Preset[] = [
       heightMm: 160,
       roulette: {
         bands: [
-          { on: true, pattern: 'lattice', bandCenter: 0.66, bandWidthMm: 26, depthMm: 1.5, repeats: 0, gapMm: 0, angle: 0 },
+          { on: true, pattern: 'lattice', bandCenter: 0.66, bandWidthMm: 26, depthMm: 1.5, gapMm: 0, angle: 0 },
         ],
       },
     }),
@@ -119,8 +119,8 @@ export const PRESETS: Preset[] = [
       heightMm: 240,
       roulette: {
         bands: [
-          { on: true, pattern: 'meander', bandCenter: 0.6, bandWidthMm: 30, depthMm: 1.3, repeats: 0, gapMm: 0, angle: 0 },
-          { on: true, pattern: 'band', bandCenter: 0.36, bandWidthMm: 7, depthMm: 1.1, repeats: 0, gapMm: 0, angle: 0 },
+          { on: true, pattern: 'meander', bandCenter: 0.6, bandWidthMm: 30, depthMm: 1.3, gapMm: 0, angle: 0 },
+          { on: true, pattern: 'band', bandCenter: 0.36, bandWidthMm: 7, depthMm: 1.1, gapMm: 0, angle: 0 },
         ],
       },
     }),

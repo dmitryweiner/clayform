@@ -17,30 +17,34 @@ import { renderAttachCards } from './ui/attachCards';
 import { renderExportPanel } from './ui/exportPanel';
 import { setupAdjustmentButtons } from './ui/adjust';
 import { drawProfileGraph } from './ui/graph';
+import { createProgress } from './ui/progress';
 import type { SurfaceMesh } from './geo/surface';
+import { placeInRow, LID_BESIDE_GAP_MM } from './geo/layout';
 import { buildVessel, vesselSurface } from './geo/build';
 import { buildHandles } from './geo/handle';
 import { buildAppliedSpout } from './geo/spout';
 // Прямо из подмодулей, минуя фасад geo/mold: тот тянет за собой csg.ts, а с
 // ним и WASM-обвязку manifold. Здесь она не нужна ни строчкой — весь CSG
 // живёт в воркере, и путь импорта это подтверждает.
-import { analyzeMold } from './geo/mold/analyze';
+import { analyzeMold, pressWarning } from './geo/mold/analyze';
+import { buildHump, humpSurface } from './geo/press';
 import { buildHollowVessel } from './geo/hollow';
 import { lidFit, lidSeat, buildLidMesh, lidHeightMm } from './geo/lid';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
-import { bandRepeats } from './geo/roulette';
+import { bandLayout, isContinuous } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
 import type { AppState } from './state/schema';
 import {
-  defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, RESOLUTIONS,
+  defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, isPressMode, RESOLUTIONS,
 } from './state/schema';
 import { PRESETS, presetByName } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
+import { encodePresetFile, decodePresetFile, presetFileName } from './state/presetFile';
 import type { UserPreset } from './state/userPresets';
 import { loadUserPresets, saveUserPresets, nextPresetNumber } from './state/userPresets';
 import { History } from './state/history';
-import type { JobPart, JobProgress } from './worker/protocol';
+import type { JobPart } from './worker/protocol';
 import { CsgClient } from './worker/client';
 
 /** Детализация превью изделия: ~10 мс на пересборку, незаметно при перетаскивании. */
@@ -61,8 +65,18 @@ const AUDIT_DELAY_MS = 220;
  * изделия с ручкой и носиком. Ждём паузы подольше, чем проверки меша.
  */
 const CSG_DELAY_MS = 400;
+/** Подписи под табами отминки — вместо схемы разъёма. */
+const PRESS_NOTES = {
+  slump: 'Углублённая форма: пласт вдавливают внутрь, рельеф ложится снаружи изделия, '
+    + 'наружные размеры — ровно заданные. Печатается сама форма.',
+  hump: 'Горб — внутренняя поверхность изделия: пласт кладут сверху, рельеф оказывается внутри. '
+    + 'Знак рельефа обратный: валик на горбе — канавка в изделии. Пласт — это стенка изделия.',
+} as const;
+
 /** Зазор между деталями в «разнесённом» превью, мм. */
 const EXPLODE_GAP_MM = 20;
+/** Зазор между изделием и крышкой рядом — тот же, что воркер кладёт в STL. */
+const BESIDE_GAP_MM = LID_BESIDE_GAP_MM;
 /**
  * Через сколько тишины изменение попадает в историю. Протаскивание ползунка
  * от края до края — это одно действие пользователя, а не двести.
@@ -92,12 +106,17 @@ const warningsEl = el('warnings', HTMLParagraphElement);
 const blockersEl = el('blockers', HTMLParagraphElement);
 const presetSel = el('presetSel', HTMLSelectElement);
 const saveBtn = el('saveBtn', HTMLButtonElement);
+const fileOpenBtn = el('fileOpenBtn', HTMLButtonElement);
+const fileSaveBtn = el('fileSaveBtn', HTMLButtonElement);
+const fileInput = el('fileInput', HTMLInputElement);
 const shareBtn = el('shareBtn', HTMLButtonElement);
 const undoBtn = el('undoBtn', HTMLButtonElement);
 const redoBtn = el('redoBtn', HTMLButtonElement);
-const progressWrap = el('progressWrap', HTMLDivElement);
-const progressFill = el('progressFill', HTMLDivElement);
-const progressLabel = el('progressLabel', HTMLSpanElement);
+const progress = createProgress({
+  wrap: el('progressWrap', HTMLDivElement),
+  fill: el('progressFill', HTMLDivElement),
+  label: el('progressLabel', HTMLSpanElement),
+});
 
 const scene = createScene(view);
 const csg = new CsgClient();
@@ -144,15 +163,15 @@ const exportPanel = renderExportPanel(
     vessel: el('tabVessel', HTMLButtonElement),
     master: el('tabMaster', HTMLButtonElement),
     bath: el('tabBath', HTMLButtonElement),
+    slump: el('tabSlump', HTMLButtonElement),
+    hump: el('tabHump', HTMLButtonElement),
   },
+  el('pressTabs', HTMLDivElement),
   exportParams,
   el('schemeNote', HTMLParagraphElement),
   el('partList', HTMLUListElement),
-  () => state.hollow,
-  () => state.mold,
-  (exportMode) => applyState({ ...state, exportMode }),
-  (hollow) => applyState({ ...state, hollow }),
-  (mold) => applyState({ ...state, mold }),
+  () => state,
+  (next) => applyState(next),
 );
 
 function renderShapeParams(): ReturnType<typeof renderParams> {
@@ -176,7 +195,7 @@ function applyState(next: AppState, record = true): void {
   }
   reliefRows.sync(state.relief, state.roulette);
   attachRows.sync(state.handle, state.spout, state.lid);
-  exportPanel.sync(state.exportMode, state.hollow, state.mold);
+  exportPanel.sync(state);
   heightInput.value = String(Math.round(state.heightMm));
   resolutionSel.value = String(state.resolution);
   updateHistoryButtons();
@@ -219,15 +238,14 @@ function refresh(): void {
   drawProfileGraph(profileGraph, profile);
 
   reliefRows.setBandNote((band) => {
-    const radiusMm = profileRadius(profile, band.bandCenter);
-    const repeats = bandRepeats(band, {
+    if (band.pattern === 'image' && !band.image) return 'Загрузите картинку: пока её нет, полоса не действует.';
+    const layout = bandLayout(band, {
       heightMm: state.heightMm,
       radiusAt: (v) => profileRadius(profile, v),
     });
-    const step = (2 * Math.PI * radiusMm) / repeats;
-    const element = Math.max(0, step - band.gapMm);
-    return `${repeats} оттисков за оборот по ⌀${(radiusMm * 2).toFixed(0)} мм: `
-      + `шаг ${step.toFixed(1)} мм, элемент ${element.toFixed(1)} мм.`;
+    const head = `${layout.repeats} оттисков по ⌀${(layout.circumferenceMm / Math.PI).toFixed(0)} мм: `
+      + `шаг ${layout.stepMm.toFixed(1)} мм`;
+    return isContinuous(band.pattern) ? `${head}.` : `${head}, просвет ${layout.gapMm.toFixed(1)} мм.`;
   });
 
   const buildParams = toBuildParams(state, PREVIEW_SEGMENTS);
@@ -239,7 +257,11 @@ function refresh(): void {
   // Крышке булевы операции не нужны — она тело вращения, — поэтому и в
   // превью, и в экспорте её строит один и тот же параметрический код.
   // Надетой её показываем сразу, без ожидания воркера.
-  const lidMeshes = fit ? [buildLidMesh(fit, state.lid, PREVIEW_SEGMENTS, { liftMm: fit.liftMm })] : [];
+  // «Крышка рядом» — в печатном положении, юбкой вниз; иначе — надетой.
+  const beside = Boolean(fit) && state.lidBeside && state.exportMode === 'vessel';
+  const lidMeshes = fit
+    ? [buildLidMesh(fit, state.lid, PREVIEW_SEGMENTS, beside ? {} : { liftMm: fit.liftMm })]
+    : [];
 
   // Схему разъёма считаем по телу без ручки: ручка влияет на выбор самим
   // фактом своего существования (сквозное отверстие), а гонять ради этого
@@ -248,16 +270,37 @@ function refresh(): void {
     hasHandle: state.handle.on,
     hasSpout: hasAppliedSpout(),
     angularRelief: hasAngularRelief(),
+    // утопленной крышке форма добавляет пробку горловины (см. mold/block.ts)
+    hasPlug: Boolean(fit && fit.recessMm > 0),
   });
-  exportPanel.setSchemeNote(scheme.reason);
+  const press = isPressMode(state.exportMode);
+  // Горб — чистая геометрия, строится здесь же, без воркера; заодно по его
+  // внутренней поверхности меряются зацепы.
+  const hump = state.exportMode === 'hump'
+    ? buildHump(buildParams, state.hollow, state.mold.bathWallMm, state.mold.shrinkPct)
+    : null;
+  exportPanel.setSchemeNote(press ? PRESS_NOTES[state.exportMode === 'hump' ? 'hump' : 'slump'] : scheme.reason);
 
-  baseWarnings = [...scheme.warnings];
+  if (press) {
+    const undercut = hump
+      ? pressWarning(humpSurface(buildParams, state.hollow), 'hump')
+      : pressWarning(outer, 'slump');
+    baseWarnings = undercut ? [undercut] : [];
+    if (hump && hump.pinchedFraction > 0) {
+      baseWarnings.push(
+        `Рельеф уходит в горб глубже борта на ${(hump.pinchedFraction * 100).toFixed(1)} % поверхности — ` +
+        'там рельеф поджат. Увеличьте борт или уменьшите глубину рельефа.',
+      );
+    }
+  } else {
+    baseWarnings = [...scheme.warnings];
+  }
   if (hasAppliedSpout() && state.spout.tipAt < SPOUT_BELOW_RIM) {
     baseWarnings.push(
       'Кончик носика ниже венчика: наполнить изделие выше носика не выйдет.',
     );
   }
-  if (hollow.pinchedFraction > 0) {
+  if (hollow.pinchedFraction > 0 && !press) {
     baseWarnings.push(
       `Рельеф уходит внутрь глубже стенки на ${(hollow.pinchedFraction * 100).toFixed(1)} % поверхности — ` +
       'там стенка тоньше заданной. Уменьшите глубину волны или увеличьте стенку.',
@@ -294,32 +337,48 @@ function refresh(): void {
     // настоящая сборка из воркера (showExactVessel).
     const surface = vesselSurface(buildParams);
     const tube = buildAppliedSpout(effectiveSpout(state), surface.profile, surface.heightMm);
-    scene.setMeshes([
+    const body = [
       hollow.mesh,
       ...buildHandles(state.handle, surface.profile, surface.heightMm),
       ...(tube ? [tube] : []),
-      ...lidMeshes,
-    ]);
-    exportPanel.setParts([
-      { label: 'Изделие', note: `${(clayMl / 1000).toFixed(2)} л глины` },
-      ...(fit ? [{
-        label: 'Крышка',
-        note: `⌀${(fit.fieldMm * 2).toFixed(0)} × ${lidHeightMm(fit, state.lid).toFixed(0)} мм`,
-      }] : []),
-    ]);
+    ];
+    // крышку ставим по габариту тела вместе с ручкой и носиком: точная
+    // сборка потом подменит только тело, а крышка останется где стояла
+    const lids = beside ? placeInRow([body, lidMeshes], BESIDE_GAP_MM)[1] : lidMeshes;
+    scene.setMeshes([...body, ...lids]);
+    const lidNote = fit
+      ? `⌀${(fit.fieldMm * 2).toFixed(0)} × ${lidHeightMm(fit, state.lid).toFixed(0)} мм`
+      : '';
+    exportPanel.setParts(beside
+      ? [{ label: 'Изделие + крышка', note: 'одним файлом' }]
+      : [
+        { label: 'Изделие', note: `${(clayMl / 1000).toFixed(2)} л глины` },
+        ...(fit ? [{ label: 'Крышка', note: lidNote }] : []),
+      ]);
     exportBtn.textContent = 'Экспорт STL';
     auditEl.textContent = 'проверка…';
     // Быстрый вердикт — по оболочке: он приходит через четверть секунды и
     // почти всегда окончательный. Если есть приставные детали, следом
     // подъезжает точная сборка из воркера и перепроверяет уже её — то самое,
     // что уйдёт в STL.
-    auditTimer = setTimeout(() => audit([hollow.mesh, ...lidMeshes]), AUDIT_DELAY_MS);
+    auditTimer = setTimeout(() => audit([hollow.mesh, ...lids]), AUDIT_DELAY_MS);
     if (state.handle.on || hasAppliedSpout()) {
-      exactTimer = setTimeout(() => void showExactVessel(stamp, lidMeshes), CSG_DELAY_MS);
+      exactTimer = setTimeout(() => void showExactVessel(stamp, lids), CSG_DELAY_MS);
     }
+  } else if (hump) {
+    // горб готов сразу — ни задержки, ни воркера
+    scene.setMeshes([hump.mesh]);
+    exportPanel.setParts([{ label: 'Горб', note: sizeNote(hump.mesh) }]);
+    exportBtn.textContent = 'Экспорт формы';
+    auditEl.textContent = 'проверка…';
+    auditTimer = setTimeout(() => audit([hump.mesh], false), AUDIT_DELAY_MS);
   } else {
-    exportPanel.setParts(scheme.parts.map((part) => ({ label: part.label })));
-    exportBtn.textContent = state.exportMode === 'master' ? 'Экспорт мастера' : 'Экспорт ванночек';
+    exportPanel.setParts(press
+      ? [{ label: 'Отминочная форма' }]
+      : scheme.parts.map((part) => ({ label: part.label })));
+    exportBtn.textContent = press
+      ? 'Экспорт формы'
+      : state.exportMode === 'master' ? 'Экспорт мастера' : 'Экспорт ванночек';
     auditEl.textContent = 'собираю оснастку…';
     moldTimer = setTimeout(() => void showMold(stamp), CSG_DELAY_MS);
   }
@@ -334,7 +393,10 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
   try {
     // Крышку воркер не считает вовсе: булевых операций ей не нужно, а
     // построенная здесь она уже стоит в сцене — надетой и точной.
-    const parts = await csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS });
+    const parts = await progress.track(
+      (onProgress) => csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS }, onProgress),
+      { label: 'точная сборка изделия…', indeterminate: true },
+    );
     if (!parts || stamp !== generation) return;
     const mesh = toMesh(parts[0]);
     scene.setMeshes([mesh, ...lidMeshes]);
@@ -351,22 +413,27 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
 
 async function showMold(stamp: number): Promise<void> {
   try {
-    // Ход сборки — текстом рядом с проверкой меша: полоса на полсекунды
-    // только мельтешила бы. Полоса — для экспорта, там счёт на секунды.
-    const parts = await csg.run(
-      { kind: 'mold-preview', state, segments: MOLD_PREVIEW_SEGMENTS },
-      ({ step, total, label }) => {
-        // «собираю» в строке остаётся всё время сборки: по нему и человек, и
-        // смоук понимают, что ответа ещё нет.
-        if (stamp === generation) {
-          auditEl.textContent = `собираю: ${label} (${step + 1} из ${total})`;
-        }
-      },
+    // Ход сборки — и текстом рядом с проверкой меша, и полосой на канвасе.
+    // Полоса появляется, только если сборка затянулась: на быстрой машине
+    // она на полсекунды лишь мельтешила бы.
+    const parts = await progress.track(
+      (onProgress) => csg.run(
+        { kind: 'mold-preview', state, segments: MOLD_PREVIEW_SEGMENTS },
+        (step) => {
+          onProgress(step);
+          // «собираю» в строке остаётся всё время сборки: по нему и человек, и
+          // смоук понимают, что ответа ещё нет.
+          if (stamp === generation) {
+            auditEl.textContent = `собираю: ${step.label} (${step.step + 1} из ${step.total})`;
+          }
+        },
+      ),
+      { label: 'сборка оснастки…' },
     );
     // null — задачу вытеснила более свежая; stamp — её обогнал ответ.
     if (!parts || stamp !== generation) return;
 
-    scene.setMeshes(explode(parts.map(toMesh)));
+    scene.setMeshes(placeInRow(parts.map((part) => [toMesh(part)]), EXPLODE_GAP_MM).flat());
     exportPanel.setParts(parts.map((part) => ({ label: part.label, note: part.note })));
     const triangles = parts.reduce((sum, part) => sum + part.indices.length / 3, 0);
     auditEl.textContent = `${parts.length} дет. · ${Math.round(triangles / 1000)} тыс. треугольников`;
@@ -385,45 +452,26 @@ function toMesh(part: JobPart): SurfaceMesh {
   return { positions: part.positions, indices: part.indices, normals: part.normals };
 }
 
-/** Расставляет детали в ряд, чтобы их было видно по отдельности. */
-function explode(meshes: SurfaceMesh[]): SurfaceMesh[] {
-  let cursor = 0;
-  const placed: SurfaceMesh[] = [];
-  for (const mesh of meshes) {
-    let min = Infinity;
-    let max = -Infinity;
-    for (let i = 0; i < mesh.positions.length; i += 3) {
-      if (mesh.positions[i] < min) min = mesh.positions[i];
-      if (mesh.positions[i] > max) max = mesh.positions[i];
-    }
-    const shift = cursor - min;
-    const positions = new Float32Array(mesh.positions);
-    for (let i = 0; i < positions.length; i += 3) positions[i] += shift;
-    placed.push({ ...mesh, positions });
-    cursor += max - min + EXPLODE_GAP_MM;
-  }
-  return placed;
-}
-
 /**
  * Вердикт по всем деталям изделия разом: тело и, если она есть, крышка.
  * Замкнутость и блокировки — по каждой, а свесы меряем только по телу: у
  * крышки потолок купола нависает при любых параметрах, и это предупреждение
  * стало бы вечным шумом, от которого отучаются читать и остальные.
  */
-function audit(meshes: SurfaceMesh[]): void {
+function audit(meshes: SurfaceMesh[], printedInClay = true): void {
   const reports = meshes.map((mesh) => validateMesh(mesh));
   const assessments = reports.map((report) => assessExport(report, true));
   const triangles = reports.reduce((sum, report) => sum + report.triangleCount, 0);
   const blocking = assessments.flatMap((assessment) => assessment.blocking);
-  const overhang = overhangFraction(meshes[0], 60);
+  // свесы важны только тому, что печатают глиной; форму печатают пластиком
+  const overhang = printedInClay ? overhangFraction(meshes[0], 60) : 0;
 
   auditEl.textContent = reports.every((report) => report.watertight)
     ? `замкнуто ✓ · ${Math.round(triangles / 1000)} тыс. треугольников`
     : 'меш не замкнут';
 
   const extra = assessments.flatMap((assessment) => assessment.warnings);
-  if (overhang > 0.15) {
+  if (printedInClay && overhang > 0.15) {
     extra.push(`Свесы круче 60° на ${(overhang * 100).toFixed(0)} % поверхности — печать глиной потребует опор.`);
   }
   warningsEl.textContent = [...baseWarnings, ...extra].join('\n');
@@ -449,6 +497,19 @@ function hasAngularRelief(): boolean {
   return (state.relief.wave.on && angular(state.relief.wave.axis))
     || (state.relief.wave2.on && angular(state.relief.wave2.axis))
     || state.roulette.bands.some((band) => band.on);
+}
+
+/** Габарит меша, «Ш×Г×В мм». */
+function sizeNote(mesh: SurfaceMesh): string {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < mesh.positions.length; i += 3) {
+    for (let axis = 0; axis < 3; axis++) {
+      min[axis] = Math.min(min[axis], mesh.positions[i + axis]);
+      max[axis] = Math.max(max[axis], mesh.positions[i + axis]);
+    }
+  }
+  return `${max.map((value, axis) => Math.round(value - min[axis])).join('×')} мм`;
 }
 
 function outerWidth(positions: Float32Array): number {
@@ -494,7 +555,10 @@ async function runExport(): Promise<void> {
     // Экспортная детализация — до 384 сегментов; в главном потоке это
     // подвешивало вкладку на секунды, поэтому считает воркер, а полоса
     // показывает, что он не умер.
-    const files = await csg.run({ kind: 'export', state }, showProgress);
+    const files = await progress.track(
+      (onProgress) => csg.run({ kind: 'export', state }, onProgress),
+      { label: 'сборка…', delayMs: 0 },
+    );
     if (!files) return;
 
     const blocking = files.flatMap((file) => file.blocking);
@@ -512,26 +576,13 @@ async function runExport(): Promise<void> {
   } catch (error) {
     blockersEl.textContent = `Сборка не удалась: ${message(error)}`;
   } finally {
-    hideProgress();
     exportBtn.textContent = label;
     exportBtn.disabled = false;
   }
 }
 
-function showProgress({ step, total, label }: JobProgress): void {
-  progressWrap.hidden = false;
-  progressFill.style.width = `${Math.round((step / Math.max(1, total)) * 100)}%`;
-  progressLabel.textContent = label;
-}
-
-function hideProgress(): void {
-  progressWrap.hidden = true;
-  progressFill.style.width = '0%';
-  progressLabel.textContent = '';
-}
-
-function download(buffer: ArrayBuffer, filename: string): void {
-  const url = URL.createObjectURL(new Blob([buffer], { type: 'model/stl' }));
+function download(data: BlobPart, filename: string, type = 'model/stl'): void {
+  const url = URL.createObjectURL(new Blob([data], { type }));
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
@@ -542,6 +593,8 @@ function download(buffer: ArrayBuffer, filename: string): void {
 // --- пресеты ---
 
 let userPresets: UserPreset[] = loadUserPresets();
+/** Имя последнего открытого пресета — подсказка имени при сохранении в файл. */
+let presetName = '';
 
 function fillPresetList(): void {
   presetSel.textContent = '';
@@ -579,12 +632,64 @@ presetSel.addEventListener('change', () => {
   presetSel.value = '';
   if (value.startsWith('b:')) {
     const preset = presetByName(value.slice(2));
-    if (preset) applyState(preset.build());
+    if (preset) {
+      applyState(preset.build());
+      presetName = preset.name;
+    }
   } else if (value.startsWith('u:')) {
     const preset = userPresets.find((item) => item.name === value.slice(2));
-    if (preset) applyState(preset.state);
+    if (preset) {
+      applyState(preset.state);
+      presetName = preset.name;
+    }
   }
 });
+
+// --- пресет файлом ---
+
+fileSaveBtn.addEventListener('click', () => {
+  const suggested = presetName || `Моё ${nextPresetNumber(userPresets)}`;
+  const name = prompt('Имя пресета', suggested)?.trim();
+  if (!name) return;
+  download(encodePresetFile(name, state), presetFileName(name), 'application/json');
+  presetName = name;
+  flash(fileSaveBtn, '✓');
+});
+
+fileOpenBtn.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files?.[0];
+  // сброс — чтобы тот же файл можно было открыть ещё раз
+  fileInput.value = '';
+  if (file) void openPresetFile(file);
+});
+
+// Перетаскивание файла на окно. dragover обязан отменять действие по
+// умолчанию, иначе браузер не пришлёт drop, а откроет файл сам.
+document.addEventListener('dragover', (event) => {
+  if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+});
+document.addEventListener('drop', (event) => {
+  const file = event.dataTransfer?.files[0];
+  if (!file) return;
+  event.preventDefault();
+  void openPresetFile(file);
+});
+
+/**
+ * Открытый файл применяется как любое состояние, но в «Мои» не попадает:
+ * сохранить его туда — отдельное решение, 💾.
+ */
+async function openPresetFile(file: File): Promise<void> {
+  const decoded = decodePresetFile(await file.text().catch(() => ''));
+  if (!decoded) {
+    blockersEl.textContent = `Файл «${file.name}» — не пресет ClayForm.`;
+    return;
+  }
+  applyState(decoded.state);
+  presetName = decoded.name;
+  flash(fileOpenBtn, '✓');
+}
 
 saveBtn.addEventListener('click', () => {
   const suggested = `Моё ${nextPresetNumber(userPresets)}`;
@@ -639,6 +744,27 @@ window.addEventListener('keydown', (event) => {
   event.preventDefault();
   stepHistory(event.shiftKey ? 'redo' : 'undo');
 });
+
+// --- мобильная панель ---
+//
+// На узком экране панель — нижний лист поверх канваса (style.css, правила
+// под max-width: 760px). При загрузке он поднят: без панели первый экран
+// пуст и непонятен. На десктопе #panelBtn и подложка скрыты стилями, и всё
+// это ни на что не влияет.
+
+const panelBtn = el('panelBtn', HTMLButtonElement);
+const panelBackdrop = el('panelBackdrop', HTMLDivElement);
+
+function setPanelOpen(open: boolean): void {
+  panel.classList.toggle('open', open);
+  panelBackdrop.hidden = !open;
+  // пока лист поднят, закрывает его подложка — кнопка не нужна
+  panelBtn.hidden = open;
+}
+
+panelBtn.addEventListener('click', () => setPanelOpen(true));
+panelBackdrop.addEventListener('click', () => setPanelOpen(false));
+setPanelOpen(true);
 
 fillPresetList();
 applyState(state, false);

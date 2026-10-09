@@ -266,3 +266,61 @@ export function assembleMesh(grid: Grid, caps: CapMode): Omit<SurfaceMesh, 'norm
   }
   return { positions: outPos, indices };
 }
+
+/**
+ * Склейка мешей в один: буферы подряд, индексы второго и далее сдвинуты на
+ * число вершин перед ним. Тела не сливаются геометрически — это несколько
+ * замкнутых компонент в одном файле, как их и кладут на стол слайсера.
+ */
+export function mergeMeshes(meshes: readonly SurfaceMesh[]): SurfaceMesh {
+  let vertexCount = 0;
+  let indexCount = 0;
+  for (const mesh of meshes) {
+    vertexCount += mesh.positions.length;
+    indexCount += mesh.indices.length;
+  }
+  const positions = new Float32Array(vertexCount);
+  const normals = new Float32Array(vertexCount);
+  const indices = new Uint32Array(indexCount);
+  let vertexOffset = 0;
+  let indexOffset = 0;
+  for (const mesh of meshes) {
+    positions.set(mesh.positions, vertexOffset);
+    normals.set(mesh.normals, vertexOffset);
+    const base = vertexOffset / 3;
+    for (let i = 0; i < mesh.indices.length; i++) indices[indexOffset + i] = mesh.indices[i] + base;
+    vertexOffset += mesh.positions.length;
+    indexOffset += mesh.indices.length;
+  }
+  return { positions, normals, indices };
+}
+
+/**
+ * Зеркало по высоте: z → top − z, где top — верх меша, так что перевёрнутый
+ * меш снова стоит на z = 0. Отражение меняет ориентацию, поэтому обход
+ * треугольников разворачивается, иначе нормали смотрели бы внутрь.
+ */
+export function mirrorZ(mesh: SurfaceMesh): SurfaceMesh {
+  let top = -Infinity;
+  for (let i = 2; i < mesh.positions.length; i += 3) top = Math.max(top, mesh.positions[i]);
+  const positions = new Float32Array(mesh.positions);
+  const normals = new Float32Array(mesh.normals);
+  for (let i = 2; i < positions.length; i += 3) {
+    positions[i] = top - positions[i];
+    normals[i] = -normals[i];
+  }
+  const indices = new Uint32Array(mesh.indices);
+  for (let t = 0; t < indices.length; t += 3) {
+    indices[t + 1] = mesh.indices[t + 2];
+    indices[t + 2] = mesh.indices[t + 1];
+  }
+  return { positions, normals, indices };
+}
+
+/** Равномерное увеличение относительно начала координат. */
+export function scaleMesh(mesh: SurfaceMesh, factor: number): SurfaceMesh {
+  if (factor === 1) return mesh;
+  const positions = new Float32Array(mesh.positions.length);
+  for (let i = 0; i < positions.length; i++) positions[i] = mesh.positions[i] * factor;
+  return { ...mesh, positions };
+}

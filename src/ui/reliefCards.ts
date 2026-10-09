@@ -4,8 +4,8 @@ import type { ReliefState } from '../geo/relief';
 import { AMP_MAX_MM, FREQ_MAX, SPIRAL_K_MAX } from '../geo/relief';
 import type { RouletteState, RouletteBand, RoulettePattern } from '../geo/roulette';
 import {
-  BAND_MAX_MM, DEPTH_MAX_MM, REPEATS_MAX, GAP_MAX_MM, MAX_BANDS,
-  ROULETTE_PATTERNS, defaultBand,
+  BAND_MAX_MM, DEPTH_MAX_MM, GAP_MAX_MM, MAX_BANDS,
+  ROULETTE_PATTERNS, defaultBand, isContinuous,
 } from '../geo/roulette';
 import type { Control } from './controls';
 import { renderControls } from './controls';
@@ -34,6 +34,7 @@ const PATTERN_OPTIONS = [
   { value: 'diamonds', label: 'ромбы' },
   { value: 'dashes', label: 'насечки' },
   { value: 'lattice', label: 'сетка' },
+  { value: 'image', label: 'картинка' },
 ];
 
 const MODE_OPTIONS = [
@@ -176,14 +177,10 @@ function bandControls(index: number): Control<RouletteState>[] {
       set: (s, v) => put(s, { ...at(s), depthMm: v }),
     },
     {
-      kind: 'range', key: 'repeats', label: 'Оттисков', min: 0, max: REPEATS_MAX, step: 1,
-      hint: '0 — подобрать по размеру изделия',
-      get: (s) => at(s).repeats,
-      set: (s, v) => put(s, { ...at(s), repeats: v }),
-    },
-    {
       kind: 'range', key: 'gap', label: 'Просвет', min: 0, max: GAP_MAX_MM, step: 0.5, unit: 'мм',
-      hint: 'гладкая полоска между соседними оттисками',
+      hint: 'между соседними оттисками; элемент — квадрат в ширину пояска',
+      // у непрерывной ленты оттисков нет — и просвета между ними тоже
+      when: (s) => !isContinuous(at(s).pattern),
       get: (s) => at(s).gapMm,
       set: (s, v) => put(s, { ...at(s), gapMm: v }),
     },
@@ -191,6 +188,24 @@ function bandControls(index: number): Control<RouletteState>[] {
       kind: 'range', key: 'angle', label: 'Наклон', min: -2, max: 2, step: 0.05,
       get: (s) => at(s).angle,
       set: (s, v) => put(s, { ...at(s), angle: v }),
+    },
+    {
+      kind: 'image', key: 'image', label: 'Картинка',
+      hint: 'белое — на всю глубину; мельче шага сетки не видно — на экспорте поднимите детализацию',
+      when: (s) => at(s).pattern === 'image',
+      get: (s) => at(s).image,
+      // инверсия переживает смену картинки
+      set: (s, image) => put(s, { ...at(s), image: { ...image, invert: at(s).image?.invert ?? false } }),
+    },
+    {
+      kind: 'check', key: 'invert', label: 'Инверсия',
+      hint: 'чёрное — на всю глубину: рисунок и фон меняются местами',
+      when: (s) => at(s).pattern === 'image' && Boolean(at(s).image),
+      get: (s) => at(s).image?.invert ?? false,
+      set: (s, v) => {
+        const image = at(s).image;
+        return image ? put(s, { ...at(s), image: { ...image, invert: v } }) : s;
+      },
     },
   ];
 }

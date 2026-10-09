@@ -15,6 +15,8 @@
 //   --check <id>          включить чекбокс (повторяемый)
 //   --uncheck <id>        выключить чекбокс (повторяемый)
 //   --click <selector>    кликнуть по селектору (повторяемый)
+//   --upload <id>=<path>  отдать файл в <input type=file> (повторяемый),
+//                         например --upload roul0_image=tests/fixtures/ornament.png
 //   --view                снять только область просмотра, без панели
 //   --clip x,y,w,h        вырезать кусок кадра — разглядеть стык вблизи
 //   --orbit dx,dy         повернуть камеру мышью: заглянуть внутрь изделия
@@ -30,7 +32,7 @@ import { parseArgs, openApp } from './lib/harness.mjs';
 const flags = parseArgs(
   process.argv.slice(2),
   ['out', 'family', 'preset', 'wait', 'width', 'height', 'url', 'clip', 'orbit'],
-  ['set', 'check', 'uncheck', 'click'],
+  ['set', 'check', 'uncheck', 'click', 'upload'],
 );
 
 const out = flags.get('out');
@@ -106,6 +108,13 @@ for (const pair of flags.get('set') ?? []) {
   if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
   else await page.fill(`#${id}`, value);
   await page.waitForTimeout(80);
+}
+
+for (const pair of flags.get('upload') ?? []) {
+  const eq = pair.indexOf('=');
+  label(`upload:${pair.slice(0, eq)}`);
+  await page.setInputFiles(`#${pair.slice(0, eq)}`, pair.slice(eq + 1));
+  await page.waitForTimeout(300);
 }
 
 for (const selector of flags.get('click') ?? []) {
