@@ -15,7 +15,6 @@ export type { MoldState } from './state';
 export { defaultMold, sanitizeMold, SHRINK_MAX_PCT, PLASTER_MAX_MM, SPARE_MAX_MM } from './state';
 export type { MoldReport, MoldScheme, MoldPart } from './analyze';
 export { analyzeMold, pullUndercut } from './analyze';
-export { buildSlump } from './press';
 
 export interface MoldPartMesh {
   id: string;

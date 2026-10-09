@@ -532,10 +532,8 @@ if (pressWarnings) errors.push(`[press:hump] у миски предупрежд�
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/press-hump.png` });
 await expectDownloads(1, 'hump');
 await page.click('#tabSlump');
-await page.waitForFunction(
-  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
-  { timeout: 60000 },
-);
+const slumpVerdict = await auditVerdict(page);
+if (!slumpVerdict.includes('замкнуто ✓')) errors.push(`[press:slump] audit="${slumpVerdict}"`);
 if ((await page.locator('#partList li').count()) !== 1) errors.push('[press:slump] деталей не одна');
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/press-slump.png` });
 await expectDownloads(1, 'slump');

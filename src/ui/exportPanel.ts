@@ -68,10 +68,10 @@ const MASTER_CONTROLS: Control<MoldState>[] = [SHRINK, SPARE];
 const SLUMP_CONTROLS: Control<MoldState>[] = [
   SHRINK,
   {
-    kind: 'range', key: 'plaster', label: 'Борт', min: 5, max: PLASTER_MAX_MM, step: 1, unit: 'мм',
-    hint: 'толщина печатной формы вокруг полости',
-    get: (s) => s.plasterMm,
-    set: (s, v) => ({ ...s, plasterMm: v }),
+    kind: 'range', key: 'bathWall', label: 'Борт', min: 1.2, max: 12, step: 0.2, unit: 'мм',
+    hint: 'толщина скорлупы формы: печатается только поверхность, которой касается пласт',
+    get: (s) => s.bathWallMm,
+    set: (s, v) => ({ ...s, bathWallMm: v }),
   },
 ];
 

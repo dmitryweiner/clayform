@@ -2,10 +2,10 @@
 // наружной. Проверяем то, от чего зависит, снимется ли пласт и выйдет ли
 // изделие заданного размера.
 
-import { insetProfile, buildHump, humpSurface } from '../src/geo/press';
+import { insetProfile, buildHump, humpSurface, buildSlumpShell } from '../src/geo/press';
 import { cavityPoint, defaultHollow } from '../src/geo/hollow';
 import { buildProfile, defaultFamilyParams, familyById, profileRadius } from '../src/geo/profiles';
-import { defaultBuildParams } from '../src/geo/build';
+import { defaultBuildParams, buildVessel } from '../src/geo/build';
 import { validateMesh, signedVolume } from '../src/geo/validate';
 import { pullUndercut } from '../src/geo/mold/analyze';
 
@@ -120,5 +120,52 @@ describe('горб', () => {
     // волна уходит внутрь на 4 мм, а скорлупе в 1,2 мм позволено лишь 0,6
     expect(buildHump(p, hollow, 1.2, 0).pinchedFraction).toBeGreaterThan(0.1);
     expect(buildHump(p, hollow, 8, 0).pinchedFraction).toBe(0);
+  });
+});
+
+describe('углублённая форма', () => {
+  it('замкнутая скорлупа на столе, а не сплошной блок', () => {
+    for (const family of ['bowl', 'cup', 'pot', 'vase']) {
+      const mesh = buildSlumpShell(params(family), 3, 0);
+      const report = validateMesh(mesh);
+      expect(report.watertight, family).toBe(true);
+      expect(signedVolume(mesh.positions, mesh.indices), family).toBeGreaterThan(0);
+      expect(report.bbox.min[2], family).toBeCloseTo(0, 4);
+      expect(report.degenerateTriangles, family).toBe(0);
+    }
+  });
+
+  it('полость — ровно изделие с усадкой, дно и стенка толщиной в борт', () => {
+    const p = params('bowl');
+    const shell = 3;
+    const vessel = validateMesh(buildVessel(p));
+    const mesh = buildSlumpShell(p, shell, 10);
+    const report = validateMesh(mesh);
+    // высота — изделие плюс дно, всё с усадкой
+    expect(report.extents[2]).toBeCloseTo((vessel.extents[2] + shell) * 1.1, 1);
+    // по венчику снаружи — изделие плюс борт с каждой стороны
+    expect(report.extents[0]).toBeGreaterThan(vessel.extents[0] * 1.1);
+    expect(report.extents[0]).toBeLessThan((vessel.extents[0] + 4 * shell) * 1.1);
+    // скорлупа, а не блок: материала куда меньше, чем в полости
+    expect(report.volume).toBeLessThan(vessel.volume * 1.331 * 0.3);
+  });
+
+  it('выпуклый рельеф не протыкает скорлупу', () => {
+    const base = params('cup');
+    const p = { ...base, relief: { ...base.relief, wave: { ...base.relief.wave, on: true, ampMm: 6 } } };
+    const mesh = buildSlumpShell(p, 1.2, 0);
+    expect(validateMesh(mesh).watertight).toBe(true);
+    // Вершины: сначала наружная сетка, затем внутренняя той же раскладки.
+    // В каждом узле боковой стенки наружная поверхность дальше от оси.
+    const grid = p.nu * (p.nv + 1);
+    let thinnest = Infinity;
+    for (let n = p.nu; n < grid; n++) {
+      const o = n * 3;
+      const i = (grid + n) * 3;
+      const gap = Math.hypot(mesh.positions[o], mesh.positions[o + 1])
+        - Math.hypot(mesh.positions[i], mesh.positions[i + 1]);
+      thinnest = Math.min(thinnest, gap);
+    }
+    expect(thinnest).toBeGreaterThan(0.5);
   });
 });

@@ -1,3 +1,6 @@
+// Отминочные формы — обе печатаются скорлупой толщиной в борт: пласту
+// нужна только поверхность, которой он касается, а не сплошной блок.
+//
 // Отминка в «+»: горб — выпуклая форма, на которую кладут пласт глины.
 //
 // Поверхность горба — ВНУТРЕННЯЯ поверхность изделия: силуэт, отодвинутый
@@ -11,15 +14,17 @@
 // перевёрнутое венчиком на стол. Чистая геометрия без CSG: ~10 мс, строится
 // и в главном потоке, и в воркере.
 //
-// Отминка в «−» (углублённая форма, пласт вдавливают внутрь) — блок с
-// полостью по наружной поверхности, ей нужны булевы операции: geo/mold/press.ts.
+// Отминка в «−»: углублённая форма, пласт вдавливают внутрь. Её рабочая
+// поверхность — НАРУЖНАЯ поверхность изделия с рельефом, а снаружи скорлупы —
+// гладкий силуэт, отодвинутый наружу на борт. Тоже без CSG.
 
-import type { SurfaceMesh } from './surface';
-import { mirrorZ, scaleMesh } from './surface';
+import type { Grid, SurfaceMesh } from './surface';
+import { assembleHollowMesh, mirrorZ, scaleMesh } from './surface';
+import { meshNormals } from './normals';
 import type { ProfileDef, ProfilePoint } from './profiles';
 import { buildProfile, profileRadius, MIN_RADIUS_MM } from './profiles';
 import type { BuildParams } from './build';
-import { buildVessel } from './build';
+import { buildVessel, vesselGrid, vesselSurface } from './build';
 import type { HollowState } from './hollow';
 import { buildHollowVessel, cavityPoint, WALL_MIN_MM, WALL_MAX_MM } from './hollow';
 
@@ -125,4 +130,54 @@ export function buildHump(
     mesh: mirrorZ(scaleMesh(shell.mesh, 1 + shrinkPct / 100)),
     pinchedFraction: shell.pinchedFraction,
   };
+}
+
+/**
+ * Углублённая форма скорлупой. Внутри — наружная поверхность изделия с
+ * рельефом (её и касается пласт), снаружи — гладкий силуэт, отодвинутый по
+ * нормали на борт плюс самый высокий выступ рельефа: выпуклый узор не должен
+ * протыкать скорлупу. Снизу — плоское дно толщиной в борт, на нём форма и
+ * стоит; сверху — плоский торец по венчику. Увеличена на усадку.
+ */
+export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct: number): SurfaceMesh {
+  const surface = vesselSurface(params);
+  const { nu, nv, profile, heightMm } = surface;
+  const inner = vesselGrid(params);
+
+  // самый высокий выступ рельефа наружу — на столько толще скорлупа
+  let outward = 0;
+  for (let j = 0; j <= nv; j++) {
+    for (let i = 0; i < nu; i++) {
+      outward = Math.max(outward, surface.depthAt((2 * Math.PI * i) / nu, j / nv));
+    }
+  }
+  const offset = shellMm + outward;
+  const radiusAt = (v: number): number => profileRadius(profile, v);
+
+  const positions = new Float32Array(inner.positions.length);
+  let previous = -shellMm;
+  for (let j = 0; j <= nv; j++) {
+    const v = j / nv;
+    // cavityPoint с отрицательной стенкой — офсет наружу по той же нормали
+    const point = cavityPoint(radiusAt, heightMm, -offset, v);
+    // Дно скорлупы плоское на −борт, верх — ровно по венчику; между ними
+    // высота не убывает: офсет резкого перегиба шагал бы вниз и складывал
+    // поверхность саму на себя.
+    const z = j === 0 ? -shellMm : j === nv ? heightMm : clamp(Math.max(point.z, previous), -shellMm, heightMm);
+    previous = z;
+    const r = Math.max(point.r, radiusAt(v) + offset * 0.5);
+    for (let i = 0; i < nu; i++) {
+      const u = (2 * Math.PI * i) / nu;
+      const k = (j * nu + i) * 3;
+      positions[k] = r * Math.cos(u);
+      positions[k + 1] = r * Math.sin(u);
+      positions[k + 2] = z;
+    }
+  }
+  const outer: Grid = { nu, nv, positions };
+  const shell = assembleHollowMesh(outer, inner.positions);
+  // дно — на стол
+  for (let i = 2; i < shell.positions.length; i += 3) shell.positions[i] += shellMm;
+  const mesh = { ...shell, normals: meshNormals(shell.positions, shell.indices) };
+  return scaleMesh(mesh, 1 + shrinkPct / 100);
 }

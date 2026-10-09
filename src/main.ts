@@ -27,7 +27,7 @@ import { buildAppliedSpout } from './geo/spout';
 // ним и WASM-обвязку manifold. Здесь она не нужна ни строчкой — весь CSG
 // живёт в воркере, и путь импорта это подтверждает.
 import { analyzeMold, pressWarning } from './geo/mold/analyze';
-import { buildHump, humpSurface } from './geo/press';
+import { buildHump, humpSurface, buildSlumpShell } from './geo/press';
 import { buildHollowVessel } from './geo/hollow';
 import { lidFit, lidSeat, buildLidMesh, lidHeightMm } from './geo/lid';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
@@ -68,7 +68,7 @@ const CSG_DELAY_MS = 400;
 /** Подписи под табами отминки — вместо схемы разъёма. */
 const PRESS_NOTES = {
   slump: 'Углублённая форма: пласт вдавливают внутрь, рельеф ложится снаружи изделия, '
-    + 'наружные размеры — ровно заданные. Печатается сама форма.',
+    + 'наружные размеры — ровно заданные. Печатается скорлупой толщиной в борт.',
   hump: 'Горб — внутренняя поверхность изделия: пласт кладут сверху, рельеф оказывается внутри. '
     + 'Знак рельефа обратный: валик на горбе — канавка в изделии. Пласт — это стенка изделия.',
 } as const;
@@ -279,6 +279,11 @@ function refresh(): void {
   const hump = state.exportMode === 'hump'
     ? buildHump(buildParams, state.hollow, state.mold.bathWallMm, state.mold.shrinkPct)
     : null;
+  // обе отминочные формы — скорлупы без CSG: строятся сразу, без воркера
+  const pressMesh = hump?.mesh
+    ?? (state.exportMode === 'slump'
+      ? buildSlumpShell(buildParams, state.mold.bathWallMm, state.mold.shrinkPct)
+      : null);
   exportPanel.setSchemeNote(press ? PRESS_NOTES[state.exportMode === 'hump' ? 'hump' : 'slump'] : scheme.reason);
 
   if (press) {
@@ -365,20 +370,16 @@ function refresh(): void {
     if (state.handle.on || hasAppliedSpout()) {
       exactTimer = setTimeout(() => void showExactVessel(stamp, lids), CSG_DELAY_MS);
     }
-  } else if (hump) {
-    // горб готов сразу — ни задержки, ни воркера
-    scene.setMeshes([hump.mesh]);
-    exportPanel.setParts([{ label: 'Горб', note: sizeNote(hump.mesh) }]);
+  } else if (pressMesh) {
+    // отминочная форма готова сразу — ни задержки, ни воркера
+    scene.setMeshes([pressMesh]);
+    exportPanel.setParts([{ label: hump ? 'Горб' : 'Отминочная форма', note: sizeNote(pressMesh) }]);
     exportBtn.textContent = 'Экспорт формы';
     auditEl.textContent = 'проверка…';
-    auditTimer = setTimeout(() => audit([hump.mesh], false), AUDIT_DELAY_MS);
+    auditTimer = setTimeout(() => audit([pressMesh], false), AUDIT_DELAY_MS);
   } else {
-    exportPanel.setParts(press
-      ? [{ label: 'Отминочная форма' }]
-      : scheme.parts.map((part) => ({ label: part.label })));
-    exportBtn.textContent = press
-      ? 'Экспорт формы'
-      : state.exportMode === 'master' ? 'Экспорт мастера' : 'Экспорт ванночек';
+    exportPanel.setParts(scheme.parts.map((part) => ({ label: part.label })));
+    exportBtn.textContent = state.exportMode === 'master' ? 'Экспорт мастера' : 'Экспорт ванночек';
     auditEl.textContent = 'собираю оснастку…';
     moldTimer = setTimeout(() => void showMold(stamp), CSG_DELAY_MS);
   }

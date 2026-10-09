@@ -8,7 +8,7 @@
 import { initCSG, CsgScope, toManifold } from '../src/geo/csg';
 import type { CsgApi } from '../src/geo/csg';
 import {
-  buildBlocks, buildMaster, buildBaths, buildSlump, defaultMold, sanitizeMold,
+  buildBlocks, buildMaster, buildBaths, defaultMold, sanitizeMold,
 } from '../src/geo/mold';
 import { analyzeMold } from '../src/geo/mold/analyze';
 import { buildSolidVessel } from '../src/geo/assemble';
@@ -494,22 +494,5 @@ describe('пробка горловины под утопленную крышк
     const master = buildMaster(csg, vessel, reportFor(true), mold(), { mouth: mouthFor(6) });
     expect(master.map((part) => part.id)).toEqual(['master', 'plug']);
     expect(validateMesh(master[0].mesh).watertight).toBe(true);
-  });
-});
-
-describe('отминка в «−»: углублённая форма', () => {
-  it('одна деталь, полость — изделие с усадкой', () => {
-    const vessel = vesselOf('bowl');
-    const state = mold({ shrinkPct: 10 });
-    const slump = buildSlump(csg, vessel, state);
-    expect(slump.id).toBe('slump');
-    const report = validateMesh(slump.mesh);
-    expect(report.watertight).toBe(true);
-    // блок без горловины: габарит ровно изделие с усадкой плюс борт
-    const vesselReport = validateMesh(vessel);
-    const shrink = 1.1;
-    expect(report.extents[2]).toBeCloseTo(vesselReport.extents[2] * shrink + state.plasterMm, 0);
-    const box = report.extents[0] * report.extents[1] * report.extents[2];
-    expect((box - report.volume) / (vesselReport.volume * shrink ** 3)).toBeCloseTo(1, 3);
   });
 });

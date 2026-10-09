@@ -11,14 +11,14 @@ import type { SurfaceMesh } from '../geo/surface';
 import { mergeMeshes } from '../geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from '../geo/layout';
 import type { VesselSurface } from '../geo/build';
-import { vesselSurface, buildVessel } from '../geo/build';
-import { buildHump } from '../geo/press';
+import { vesselSurface } from '../geo/build';
+import { buildHump, buildSlumpShell } from '../geo/press';
 import { buildProfile, profileRadius } from '../geo/profiles';
 import type { LidFit } from '../geo/lid';
 import { lidFit, lidSeat, lidHeightMm, buildLidMesh, buildLidSolid } from '../geo/lid';
 import { buildSolidVessel, buildPrintableVessel } from '../geo/assemble';
 import type { Mouth, MoldPartMesh } from '../geo/mold';
-import { analyzeMold, buildMaster, buildBaths, buildSlump } from '../geo/mold';
+import { analyzeMold, buildMaster, buildBaths } from '../geo/mold';
 import { validateMesh, assessExport } from '../geo/validate';
 import type { AppState } from '../state/schema';
 import { sanitizeState, toBuildParams, effectiveSpout } from '../state/schema';
@@ -75,9 +75,7 @@ function run(csg: CsgApi, jobId: number, job: CsgJob): JobPart[] {
     return [vesselPart(csg, jobId, state, job.segments)];
   }
   if (job.kind === 'mold-preview') {
-    return state.exportMode === 'slump'
-      ? pressParts(csg, jobId, state, job.segments, false)
-      : moldParts(csg, jobId, state, job.segments, false);
+    return moldParts(csg, jobId, state, job.segments, false);
   }
   if (job.kind === 'export') {
     switch (state.exportMode) {
@@ -85,7 +83,7 @@ function run(csg: CsgApi, jobId: number, job: CsgJob): JobPart[] {
         return vesselParts(csg, jobId, state, state.resolution);
       case 'slump':
       case 'hump':
-        return pressParts(csg, jobId, state, state.resolution, true);
+        return pressParts(jobId, state, state.resolution);
       default:
         return moldParts(csg, jobId, state, state.resolution, true);
     }
@@ -162,18 +160,12 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
 }
 
 /**
- * Отминочная форма: углублённая (блок вокруг наружной поверхности, CSG) или
- * горб (скорлупа по внутренней, чистая геометрия — здесь только ради общего
- * пути экспорта с проверкой меша и прогрессом).
+ * Отминочная форма: скорлупа по наружной поверхности (углублённая) или по
+ * внутренней (горб). Чистая геометрия без CSG — в воркере только ради общего
+ * пути экспорта с проверкой меша и прогрессом.
  */
-function pressParts(
-  csg: CsgApi,
-  jobId: number,
-  state: AppState,
-  segments: number,
-  forExport: boolean,
-): JobPart[] {
-  const progress = new Progress(jobId, forExport ? 2 : 1);
+function pressParts(jobId: number, state: AppState, segments: number): JobPart[] {
+  const progress = new Progress(jobId, 2);
   const params = toBuildParams(state, segments);
   let item: { id: string; label: string; mesh: SurfaceMesh };
   if (state.exportMode === 'hump') {
@@ -185,9 +177,12 @@ function pressParts(
     };
   } else {
     progress.next('отминочная форма');
-    item = buildSlump(csg, buildVessel(params), state.mold);
+    item = {
+      id: 'slump',
+      label: 'Отминочная форма',
+      mesh: buildSlumpShell(params, state.mold.bathWallMm, state.mold.shrinkPct),
+    };
   }
-  if (!forExport) return [part(item.id, item.label, sizeNote(item.mesh), item.mesh, [])];
   progress.next('проверка меша');
   return [part(
     item.id, item.label, sizeNote(item.mesh), item.mesh,
