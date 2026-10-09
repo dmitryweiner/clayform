@@ -3,7 +3,7 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: './',
   build: {
-    outDir: 'docs',
+    outDir: 'dist',
     emptyOutDir: true,
     // Three.js — 86 % главного чанка: 490 КБ из 568 (122 из 152 в gzip).
     // Ужать его нечем, и это проверено, а не предположено: внутри
