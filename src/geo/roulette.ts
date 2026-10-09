@@ -44,6 +44,8 @@ export interface RouletteBand {
   gapMm: number;
   /** наклон узора: сдвиг вдоль окружности на всю ширину пояска */
   angle: number;
+  /** вид меандра для узора 'meander' */
+  meander: MeanderKind;
   /** орнамент-картинка для узора 'image'; пока её нет, полоса ничего не делает */
   image?: RouletteImage;
 }
@@ -86,6 +88,8 @@ export interface TileContext {
   depthMm: number;
   /** декодированная картинка — один раз на полосу, а не на каждый узел */
   image?: DecodedImage;
+  /** сетка меандра; по умолчанию классический ключ */
+  meander?: GridPattern;
 }
 
 export interface DecodedImage {
@@ -167,6 +171,66 @@ export const MEANDER_CLASSIC: readonly string[] = [
   '#######',
 ];
 
+/**
+ * Варианты меандра с референса. Правило у всех одно: линия и просвет ровно в
+ * клетку, иначе соседние штрихи сольются. Рельс, идущий через весь тайл, —
+ * строка из одних `#`: она замыкается сама с собой через шов.
+ */
+export const MEANDER_GRIDS = {
+  /** классический ключ: рельс снизу, спираль в полтора оборота */
+  classic: MEANDER_CLASSIC,
+  /** тот же ключ между двумя рельсами — лента в рамке */
+  framed: [
+    '#######',
+    '.......',
+    '######.',
+    '#....#.',
+    '#.##.#.',
+    '#.#..#.',
+    '#.####.',
+    '#......',
+    '#######',
+  ],
+  /** спираль в два с половиной оборота на рельсе — крупные завитки */
+  spiral: [
+    '########.',
+    '#......#.',
+    '#.####.#.',
+    '#.#..#.#.',
+    '#.#.##.#.',
+    '#.#....#.',
+    '#.######.',
+    '#........',
+    '#########',
+  ],
+  /** крючки, свисающие с верхнего рельса */
+  hooks: [
+    '######',
+    '#.....',
+    '#..##.',
+    '#...#.',
+    '#####.',
+  ],
+  /** Т-зубцы на нижнем рельсе: ножка и перекладина с загнутыми концами */
+  tee: [
+    '#####.',
+    '#.#.#.',
+    '..#...',
+    '######',
+  ],
+  /** П-волна: линия ходит вверх-вниз прямоугольной волной */
+  wave: [
+    '###.',
+    '#.#.',
+    '#.#.',
+    '#.#.',
+    '#.##',
+  ],
+} as const satisfies Record<string, readonly string[]>;
+
+export type MeanderKind = keyof typeof MEANDER_GRIDS;
+export const MEANDER_KINDS: readonly MeanderKind[] = ['classic', 'framed', 'spiral', 'hooks', 'tee', 'wave'];
+
 /** Отрезок в долях тайла: (x0, y0) → (x1, y1); y — доля пояска снизу вверх. */
 export type Segment = readonly [number, number, number, number];
 
@@ -240,14 +304,29 @@ export function gridPattern(rows: readonly string[]): GridPattern {
   return { width, height, segments };
 }
 
-const MEANDER = gridPattern(MEANDER_CLASSIC);
+/** Сетки разбираются в отрезки один раз на модуль, а не на каждую полосу. */
+const MEANDERS: Record<MeanderKind, GridPattern> = {
+  classic: gridPattern(MEANDER_GRIDS.classic),
+  framed: gridPattern(MEANDER_GRIDS.framed),
+  spiral: gridPattern(MEANDER_GRIDS.spiral),
+  hooks: gridPattern(MEANDER_GRIDS.hooks),
+  tee: gridPattern(MEANDER_GRIDS.tee),
+  wave: gridPattern(MEANDER_GRIDS.wave),
+};
+
+export const meanderGrid = (kind: MeanderKind = 'classic'): GridPattern => MEANDERS[kind];
 
 /**
  * Отношение ширины тайла к ширине пояска. Тайл перестаёт быть квадратным,
  * если сетка узора не квадратная: клетки должны остаться квадратными.
  */
-export function tileAspect(band: Pick<RouletteBand, 'pattern' | 'image'>): number {
-  if (band.pattern === 'meander') return MEANDER.width / MEANDER.height;
+export function tileAspect(
+  band: Pick<RouletteBand, 'pattern' | 'image'> & { meander?: MeanderKind },
+): number {
+  if (band.pattern === 'meander') {
+    const grid = meanderGrid(band.meander);
+    return grid.width / grid.height;
+  }
   // пропорции картинки сохраняются: ширина пояска задаёт её высоту
   if (band.pattern === 'image' && band.image) return band.image.w / band.image.h;
   return 1;
@@ -314,7 +393,7 @@ export function patternValue(
     case 'meander':
       // Толщину линии меряем в миллиметрах, а не в долях тайла: иначе на
       // вытянутом тайле вертикальные штрихи вышли бы тоньше горизонтальных.
-      return gridValue(MEANDER, s, q, tile);
+      return gridValue(tile.meander ?? meanderGrid(), s, q, tile);
     case 'band':
       // сплошной полукруглый валик по всей окружности
       return Math.sqrt(Math.max(0, 1 - (2 * q - 1) * (2 * q - 1)));
@@ -426,6 +505,7 @@ export function makeRoulette(
         bandMm: band.bandWidthMm,
         depthMm: Math.abs(band.depthMm),
         ...(image ? { image } : {}),
+        meander: meanderGrid(band.meander),
       },
     });
   }
@@ -466,6 +546,7 @@ export function defaultBand(): RouletteBand {
     depthMm: 1.2,
     gapMm: 0,
     angle: 0,
+    meander: 'classic',
   };
 }
 
@@ -504,6 +585,7 @@ export function sanitizeBand(raw: unknown): RouletteBand {
     // оттисков теперь всегда подбирается по размеру (bandLayout)
     gapMm: clamp(num(source.gapMm, fallback.gapMm), 0, GAP_MAX_MM),
     angle: clamp(num(source.angle, fallback.angle), -2, 2),
+    meander: MEANDER_KINDS.find((kind) => kind === source.meander) ?? fallback.meander,
     ...(image ? { image } : {}),
   };
 }

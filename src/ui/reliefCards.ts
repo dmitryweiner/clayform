@@ -2,10 +2,10 @@
 
 import type { ReliefState } from '../geo/relief';
 import { AMP_MAX_MM, FREQ_MAX, SPIRAL_K_MAX } from '../geo/relief';
-import type { RouletteState, RouletteBand, RoulettePattern } from '../geo/roulette';
+import type { RouletteState, RouletteBand, RoulettePattern, MeanderKind } from '../geo/roulette';
 import {
   BAND_MAX_MM, DEPTH_MAX_MM, GAP_MAX_MM, MAX_BANDS,
-  ROULETTE_PATTERNS, defaultBand, isContinuous,
+  ROULETTE_PATTERNS, MEANDER_KINDS, defaultBand, isContinuous,
 } from '../geo/roulette';
 import type { Control } from './controls';
 import { renderControls } from './controls';
@@ -35,6 +35,16 @@ const PATTERN_OPTIONS = [
   { value: 'dashes', label: 'насечки' },
   { value: 'lattice', label: 'сетка' },
   { value: 'image', label: 'картинка' },
+];
+
+/** Виды меандра — с references/meander-variants.png. */
+const MEANDER_OPTIONS = [
+  { value: 'classic', label: 'ключ' },
+  { value: 'framed', label: 'ключ в рамке' },
+  { value: 'spiral', label: 'спираль' },
+  { value: 'hooks', label: 'крючки' },
+  { value: 'tee', label: 'Т-зубцы' },
+  { value: 'wave', label: 'П-волна' },
 ];
 
 const MODE_OPTIONS = [
@@ -161,6 +171,13 @@ function bandControls(index: number): Control<RouletteState>[] {
       set: (s, v) => put(s, { ...at(s), pattern: pattern(v) }),
     },
     {
+      kind: 'select', key: 'meander', label: 'Вид', options: MEANDER_OPTIONS,
+      hint: 'ширина пояска — высота рисунка; линия и просвет всегда в клетку',
+      when: (s) => at(s).pattern === 'meander',
+      get: (s) => at(s).meander,
+      set: (s, v) => put(s, { ...at(s), meander: meanderKind(v) }),
+    },
+    {
       kind: 'range', key: 'bandCenter', label: 'Высота пояса', min: 0, max: 1, step: 0.01,
       get: (s) => at(s).bandCenter,
       set: (s, v) => put(s, { ...at(s), bandCenter: v }),
@@ -218,6 +235,10 @@ function axis(value: string): ReliefState['wave']['axis'] {
 
 function shape(value: string): ReliefState['wave']['shape'] {
   return value === 'tri' || value === 'square' || value === 'rounded' ? value : 'sin';
+}
+
+function meanderKind(value: string): MeanderKind {
+  return MEANDER_KINDS.find((kind) => kind === value) ?? 'classic';
 }
 
 function pattern(value: string): RoulettePattern {

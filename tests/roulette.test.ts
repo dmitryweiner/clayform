@@ -8,7 +8,7 @@
 import {
   ROULETTE_PATTERNS, patternValue, bandRepeats, bandLayout, makeRoulette,
   defaultRoulette, defaultBand, sanitizeRoulette, sanitizeBand, MAX_BANDS,
-  MEANDER_CLASSIC, gridPattern, isContinuous, decodeImage, tileAspect,
+  MEANDER_CLASSIC, MEANDER_GRIDS, MEANDER_KINDS, meanderGrid, gridPattern, isContinuous, decodeImage, tileAspect,
 } from '../src/geo/roulette';
 import type { RouletteBand, RouletteImage, TileContext } from '../src/geo/roulette';
 import { encodeBase64 } from '../src/geo/bytes';
@@ -106,6 +106,34 @@ describe('греческий меандр', () => {
     for (let r = 0; r < H - 1; r++) {
       expect(patternValue('meander', ...centre(r, W - 1), square), `r=${r}`).toBeLessThan(1e-9);
     }
+  });
+
+  it('каждый вид с референса: линия в #-клетках, пусто в .-клетках, ряды стыкуются', () => {
+    for (const kind of MEANDER_KINDS) {
+      const rows = MEANDER_GRIDS[kind];
+      const w = rows[0].length;
+      const h = rows.length;
+      expect(rows.every((row) => row.length === w && /^[#.]+$/.test(row)), kind).toBe(true);
+      // клетка 7 мм, тайл в пропорциях сетки
+      const sized = tile({ elementMm: w * 7, bandMm: h * 7, meander: meanderGrid(kind) });
+      for (let r = 0; r < h; r++) {
+        for (let c = 0; c < w; c++) {
+          const value = patternValue('meander', (c + 0.5) / w, 1 - (r + 0.5) / h, sized);
+          if (rows[r][c] === '#') expect(value, `${kind} #(${r},${c})`).toBeGreaterThan(0.99);
+          else expect(value, `${kind} .(${r},${c})`).toBeLessThan(1e-9);
+        }
+        // шов тайла: край строки смыкается с началом следующего тайла
+        expect(patternValue('meander', 0, 1 - (r + 0.5) / h, sized), `${kind} шов ${r}`)
+          .toBeCloseTo(patternValue('meander', 1, 1 - (r + 0.5) / h, sized), 9);
+      }
+      expect(tileAspect({ pattern: 'meander', image: undefined, meander: kind })).toBeCloseTo(w / h, 9);
+    }
+  });
+
+  it('вид меандра санируется: незнакомый — классический', () => {
+    expect(sanitizeBand({ pattern: 'meander', meander: 'spiral' }).meander).toBe('spiral');
+    expect(sanitizeBand({ pattern: 'meander', meander: 'зигзаг' }).meander).toBe('classic');
+    expect(sanitizeBand({ pattern: 'meander' }).meander).toBe('classic');
   });
 
   it('прогоны склеены: отрезков столько, сколько прямых участков линии', () => {

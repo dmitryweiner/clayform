@@ -172,6 +172,12 @@ if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-image.png` });
 // просвет есть только у одиночных оттисков: непрерывной ленте он не нужен
 label('roulette-gap');
 await page.selectOption('#roul0_pattern', 'meander');
+// каждый вид меандра с референса строится, а переключатель виден только у меандра
+for (const kind of await page.$$eval('#roul0_meander option', (o) => o.map((x) => x.value))) {
+  await page.selectOption('#roul0_meander', kind);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[meander:${kind}] audit="${verdict}"`);
+}
 if (await page.locator('#roul0_gap').isVisible()) errors.push('[gap] у меандра виден просвет');
 await page.selectOption('#roul0_pattern', 'dots');
 if (!(await page.locator('#roul0_gap').isVisible())) errors.push('[gap] у точек скрыт просвет');
