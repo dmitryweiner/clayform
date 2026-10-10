@@ -30,8 +30,8 @@ export interface ParamSpec {
   max: number;
   step: number;
   default: number;
-  /** 'mm' — миллиметры, 'x' — доля/коэффициент (показываем без единиц) */
-  unit: 'mm' | 'x';
+  /** 'mm' — миллиметры, 'x' — доля/коэффициент (без единиц), 'deg' — градусы */
+  unit: 'mm' | 'x' | 'deg';
   hint?: string;
 }
 
@@ -82,6 +82,8 @@ function sampled(count: number, radius: (t: number) => number): ProfilePoint[] {
 }
 
 const SAMPLES = 25; // нечётное: t = 0.5 попадает в узел
+/** Узлов на стенку миски с заданным углом у дна — излом у ножки должен читаться. */
+const WALL_SAMPLES = 128;
 
 // --- семейства ---
 
@@ -132,6 +134,8 @@ const BOWL: FamilyDef = {
     { key: 'dFoot', label: 'Дно', min: 20, max: 300, step: 1, default: 92, unit: 'mm' },
     { key: 'curvature', label: 'Округлость', min: 0, max: 1, step: 0.01, default: 0.6, unit: 'x',
       hint: '0 — прямой конус, 1 — полусфера' },
+    { key: 'baseAngle', label: 'Угол у дна', min: 0, max: 90, step: 1, default: 0, unit: 'deg',
+      hint: 'под каким углом к столу стенка отходит от дна, °; 0 — авто: как велит округлость' },
     { key: 'footH', label: 'Ножка', min: 0, max: 60, step: 1, default: 8, unit: 'mm' },
     { key: 'rimFlare', label: 'Отгиб края', min: -0.08, max: 0.4, step: 0.01, default: 0, unit: 'x' },
   ],
@@ -140,6 +144,21 @@ const BOWL: FamilyDef = {
     const rRim = p.dRim / 2;
     const tFoot = clamp(p.footH / Math.max(1, heightMm), 0, 0.45);
     const c = p.curvature;
+    // Угол у дна не задан — прежняя стенка: смесь прямой и дуги окружности.
+    // У дуги касательная у дна горизонтальна, поэтому от ножки такая стенка
+    // всегда уходит полкой; заданный угол переводит стенку на кривую Безье.
+    if (p.baseAngle > 0) {
+      // Узел ровно на кромке ножки и густая выборка стенки: иначе сплайн
+      // профиля сгладил бы излом у дна, и угла там было бы не видно.
+      const wall = bowlWall(rFoot, rRim, tFoot * heightMm, heightMm, c, p.baseAngle);
+      const points: ProfilePoint[] = [{ t: 0, r: rFoot }];
+      if (tFoot > 0) points.push({ t: tFoot, r: rFoot });
+      for (let k = 1; k <= WALL_SAMPLES; k++) {
+        const t = lerp(tFoot, 1, k / WALL_SAMPLES);
+        points.push({ t, r: Math.max(MIN_RADIUS_MM, wall(t * heightMm) * rimFactor(p.rimFlare, t)) });
+      }
+      return points;
+    }
     return sampled(SAMPLES, (t) => {
       if (t <= tFoot) return rFoot;
       const s = (t - tFoot) / (1 - tFoot);
@@ -150,6 +169,54 @@ const BOWL: FamilyDef = {
     });
   },
 };
+
+/** Длина ручки Безье, дающая четверть эллипса. */
+const QUARTER_ELLIPSE = 0.5523;
+
+/**
+ * Стенка миски — кубическая кривая Безье в осевом сечении от кромки ножки
+ * (rFoot, zFoot) до края (rRim, H). Угол у дна задаёт направление первой
+ * ручки: под ним стенка отходит от дна. Округлость — вторую: 0 — край
+ * продолжает хорду (почти конус), 1 — стенка приходит к краю отвесно, как у
+ * пиалы. Длины ручек — те же, что у прямой (c = 0) и четверти эллипса
+ * (c = 1), между ними линейно.
+ *
+ * Высоты управляющих точек не убывают, поэтому и высота по кривой монотонна:
+ * радиус на заданной высоте находится бисекцией по параметру кривой.
+ */
+function bowlWall(
+  rFoot: number, rRim: number, zFoot: number, heightMm: number, curvature: number, baseAngleDeg: number,
+): (z: number) => number {
+  const c = clamp(curvature, 0, 1);
+  const w = rRim - rFoot;
+  const h = Math.max(1e-6, heightMm - zFoot);
+  const p1x = lerp(1 / 3, QUARTER_ELLIPSE, c);
+  const p1y = lerp(1 / 3, 0, c);
+  const p2x = lerp(2 / 3, 1, c);
+  const p2y = lerp(2 / 3, 1 - QUARTER_ELLIPSE, c);
+  // первая ручка: длина как у формы без угла, направление — по углу
+  const angle = (clamp(baseAngleDeg, 0, 90) * Math.PI) / 180;
+  const handle = Math.hypot(p1x * w, p1y * h);
+  // не выше второй ручки — иначе высота по кривой перестала бы быть монотонной
+  const lift = Math.min(handle * Math.sin(angle), p2y * h * 0.95);
+  const reach = Math.sign(w || 1) * handle * Math.cos(angle);
+  const x = [rFoot, rFoot + reach, rFoot + p2x * w, rRim];
+  const y = [zFoot, zFoot + lift, zFoot + p2y * h, heightMm];
+  const bezier = (v: number[], u: number): number => {
+    const m = 1 - u;
+    return m * m * m * v[0] + 3 * m * m * u * v[1] + 3 * m * u * u * v[2] + u * u * u * v[3];
+  };
+  return (z) => {
+    let lo = 0;
+    let hi = 1;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (bezier(y, mid) < z) lo = mid;
+      else hi = mid;
+    }
+    return bezier(x, (lo + hi) / 2);
+  };
+}
 
 const CUP: FamilyDef = {
   id: 'cup',

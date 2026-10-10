@@ -12,6 +12,7 @@ export interface ParamRowsHandle {
 
 function format(spec: ParamSpec, value: number): string {
   if (spec.unit === 'mm') return `${Math.round(value)}`;
+  if (spec.unit === 'deg') return value > 0 ? `${Math.round(value)}°` : 'авто';
   return value.toFixed(2);
 }
 

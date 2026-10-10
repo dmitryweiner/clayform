@@ -133,6 +133,26 @@ describe('bowl — миска/тарелка/пиала', () => {
     expect(profileRadius(round, 0.5)).toBeGreaterThan(middleOfCone + 5);
   });
 
+  it('угол у дна: стенка отходит от ножки под заданным углом, края на месте', () => {
+    const params = { ...base, dRim: 200, dFoot: 80, footH: 6, rimFlare: 0, curvature: 0.8 };
+    const heightMm = 90;
+    for (const angle of [10, 35, 60, 85]) {
+      const def = buildProfile('bowl', { ...params, baseAngle: angle }, heightMm);
+      // наклон сразу над ножкой — по первому миллиметру стенки
+      const t0 = 6 / heightMm;
+      const dt = 1 / heightMm;
+      const dr = profileRadius(def, t0 + dt) - profileRadius(def, t0);
+      const measured = (Math.atan2(dt * heightMm, dr) * 180) / Math.PI;
+      expect(measured, `угол ${angle}`).toBeCloseTo(angle, -1);
+      expect(profileRadius(def, 0) * 2).toBeCloseTo(80, 6);
+      expect(profileRadius(def, 1) * 2).toBeCloseTo(200, 3);
+    }
+    // 0 — авто: ровно прежний силуэт
+    const auto = buildProfile('bowl', { ...params, baseAngle: 0 }, heightMm);
+    const legacy = buildProfile('bowl', params, heightMm);
+    expect(auto.points).toEqual(legacy.points);
+  });
+
   it('диаметры краёв равны заявленным', () => {
     const def = buildProfile('bowl', { ...base, dRim: 220, dFoot: 70, rimFlare: 0 }, 80);
     expect(profileRadius(def, 0) * 2).toBeCloseTo(70, 6);
