@@ -155,6 +155,7 @@ export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct:
   const radiusAt = (v: number): number => profileRadius(profile, v);
 
   const positions = new Float32Array(inner.positions.length);
+  const rings: { r: number; z: number }[] = [];
   let previous = -shellMm;
   for (let j = 0; j <= nv; j++) {
     const v = j / nv;
@@ -165,7 +166,17 @@ export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct:
     // поверхность саму на себя.
     const z = j === 0 ? -shellMm : j === nv ? heightMm : clamp(Math.max(point.z, previous), -shellMm, heightMm);
     previous = z;
-    const r = Math.max(point.r, radiusAt(v) + offset * 0.5);
+    rings.push({ z, r: Math.max(point.r, radiusAt(v) + offset * 0.5) });
+  }
+  // Снаружи перехваты силуэта снизу не повторяем: ножка миски дала бы форме
+  // цоколь с выемкой, и форма стояла бы на нём, а не на своей стенке. Ниже
+  // самого широкого места наружный силуэт заменяем вогнутой огибающей —
+  // впадины перекрываются прямой стенкой от тулова к основанию, а выпуклые
+  // бока остаются как есть. Внутри ничего не меняется: там изделие.
+  fillWaists(rings);
+  spreadDuplicates(rings);
+  for (let j = 0; j <= nv; j++) {
+    const { r, z } = rings[j];
     for (let i = 0; i < nu; i++) {
       const u = (2 * Math.PI * i) / nu;
       const k = (j * nu + i) * 3;
@@ -180,4 +191,56 @@ export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct:
   for (let i = 2; i < shell.positions.length; i += 3) shell.positions[i] += shellMm;
   const mesh = { ...shell, normals: meshNormals(shell.positions, shell.indices) };
   return scaleMesh(mesh, 1 + shrinkPct / 100);
+}
+
+/**
+ * Наименьшая вогнутая мажоранта r(z) ниже самого широкого кольца: верхняя
+ * оболочка точек (z, r) методом монотонной цепи, кольца поднимаются до неё.
+ */
+function fillWaists(rings: { r: number; z: number }[]): void {
+  let widest = 0;
+  for (let j = 1; j < rings.length; j++) if (rings[j].r >= rings[widest].r) widest = j;
+  const hull: { r: number; z: number }[] = [];
+  for (let j = 0; j <= widest; j++) {
+    const p = rings[j];
+    while (hull.length >= 2) {
+      const a = hull[hull.length - 2];
+      const b = hull[hull.length - 1];
+      // b лежит не выше хорды a→p — для верхней оболочки он лишний
+      const cross = (b.z - a.z) * (p.r - a.r) - (b.r - a.r) * (p.z - a.z);
+      if (cross >= 0) hull.pop();
+      else break;
+    }
+    hull.push(p);
+  }
+  for (let j = 0; j <= widest; j++) {
+    const { z } = rings[j];
+    let k = 0;
+    while (k < hull.length - 2 && hull[k + 1].z < z) k++;
+    const a = hull[k];
+    const b = hull[Math.min(k + 1, hull.length - 1)];
+    const t = b.z > a.z ? clamp((z - a.z) / (b.z - a.z), 0, 1) : 1;
+    rings[j] = { z, r: Math.max(rings[j].r, a.r + (b.r - a.r) * t) };
+  }
+}
+
+/**
+ * Кольца, совпавшие после подъёма (те же r и z), разносятся по отрезку до
+ * следующего отличного кольца — иначе между ними легли бы вырожденные грани.
+ */
+function spreadDuplicates(rings: { r: number; z: number }[]): void {
+  const same = (p: { r: number; z: number }, q: { r: number; z: number }): boolean =>
+    Math.abs(p.r - q.r) < 1e-6 && Math.abs(p.z - q.z) < 1e-6;
+  for (let a = 0; a < rings.length - 1; a++) {
+    let b = a + 1;
+    while (b < rings.length && same(rings[a], rings[b])) b++;
+    if (b === a + 1 || b >= rings.length) continue;
+    const from = rings[a];
+    const to = rings[b];
+    for (let k = a + 1; k < b; k++) {
+      const t = (k - a) / (b - a);
+      rings[k] = { r: from.r + (to.r - from.r) * t, z: from.z + (to.z - from.z) * t };
+    }
+    a = b - 1;
+  }
 }

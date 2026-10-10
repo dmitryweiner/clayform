@@ -5,6 +5,9 @@ import { REACH_MAX_MM, THICKNESS_MAX_MM, ANGLE_MAX_DEG } from '../geo/handle';
 import type { SpoutState } from '../geo/spout';
 import { PULL_MAX_MM, SPOUT_LIMITS } from '../geo/spout';
 import type { LidState } from '../geo/lid';
+import type { RouletteBand } from '../geo/roulette';
+import { renderBandList } from './reliefCards';
+import { make } from './dom';
 import { LID_LIMITS } from '../geo/lid';
 import type { Control } from './controls';
 import { renderControls } from './controls';
@@ -210,6 +213,14 @@ const LID_CONTROLS: Control<LidState>[] = [
     set: (s, v) => ({ ...s, knobDMm: v }),
   },
   {
+    kind: 'range', key: 'knobFlat', label: 'Сплющенность',
+    min: LID_LIMITS.knobFlat.min, max: LID_LIMITS.knobFlat.max, step: 0.05,
+    hint: '0 — шар; больше — эллипс в разрезе: ниже на эту долю при том же диаметре',
+    when: (s) => !isTee(s),
+    get: (s) => s.knobFlat,
+    set: (s, v) => ({ ...s, knobFlat: v }),
+  },
+  {
     kind: 'range', key: 'stemD', label: '⌀ ножки',
     min: LID_LIMITS.stemDMm.min, max: LID_LIMITS.stemDMm.max, step: 0.5, unit: 'мм',
     hint: 'толще ручки не бывает — это была бы уже не ручка, а обрубок',
@@ -247,6 +258,8 @@ export interface AttachSinks {
 
 export interface AttachCardsHandle {
   sync(handle: HandleState, spout: SpoutState, lid: LidState): void;
+  /** подпись полосы накатки на куполе: сколько оттисков ляжет за оборот */
+  setLidBandNote(describe: (band: RouletteBand) => string): void;
 }
 
 export function renderAttachCards(
@@ -285,6 +298,17 @@ export function renderAttachCards(
     onToggle: (on) => write.lid({ ...read.lid(), on }),
   });
   const lidRows = renderControls(lidCard.body, LID_CONTROLS, read.lid, write.lid, 'lid');
+  // Накатка на куполе — свои полосы. Высота полосы здесь — доля дуги купола.
+  lidCard.body.append(make('h4', 'sub-title', 'Накатка на куполе'));
+  const lidBandsHost = make('div');
+  lidCard.body.append(lidBandsHost);
+  const lidBands = renderBandList(
+    lidBandsHost,
+    () => read.lid().roulette,
+    (roulette) => write.lid({ ...read.lid(), roulette }),
+    'lidroul',
+  );
+  let describeLidBand: (band: RouletteBand) => string = () => '';
 
   return {
     sync(handle, spout, lid): void {
@@ -294,6 +318,10 @@ export function renderAttachCards(
       handleRows.sync(handle);
       spoutRows.sync(spout);
       lidRows.sync(lid);
+      lidBands.sync(lid.roulette, describeLidBand);
+    },
+    setLidBandNote(describe): void {
+      describeLidBand = describe;
     },
   };
 }

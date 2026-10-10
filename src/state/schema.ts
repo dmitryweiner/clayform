@@ -179,6 +179,19 @@ export function effectiveSpout(state: AppState): SpoutState {
   return state.lid.on && state.spout.kind === 'lip' ? { ...state.spout, on: false } : state.spout;
 }
 
+/**
+ * Волны для купола крышки: только те, у которых стоит «И на крышке тоже».
+ * Вторая волна без первой ничего не делает и на крышке тоже.
+ */
+export function lidRelief(state: AppState): ReliefState {
+  const { relief } = state;
+  return {
+    ...relief,
+    wave: { ...relief.wave, on: relief.wave.on && relief.wave.onLid },
+    wave2: { ...relief.wave2, on: relief.wave2.on && relief.wave2.onLid },
+  };
+}
+
 /** Состояние + детализация → параметры сборки геометрии. */
 export function toBuildParams(state: AppState, segments: number): BuildParams {
   return {

@@ -56,6 +56,12 @@ const SPIRAL_HINT = 'работает при оси «по спирали»';
 
 const WAVE_CONTROLS: Control<ReliefState>[] = [
   {
+    kind: 'check', key: 'onLid', label: 'И на крышке тоже',
+    hint: 'волна идёт и по куполу крышки; высота там — доля дуги купола от поля до ножки',
+    get: (s) => s.wave.onLid,
+    set: (s, v) => ({ ...s, wave: { ...s.wave, onLid: v } }),
+  },
+  {
     kind: 'select', key: 'axis', label: 'Куда бежит', options: AXIS_OPTIONS,
     get: (s) => s.wave.axis,
     set: (s, v) => ({ ...s, wave: { ...s.wave, axis: axis(v) } }),
@@ -105,6 +111,12 @@ const WAVE_CONTROLS: Control<ReliefState>[] = [
 ];
 
 const WAVE2_CONTROLS: Control<ReliefState>[] = [
+  {
+    kind: 'check', key: 'onLid', label: 'И на крышке тоже',
+    hint: 'действует, только если и первая волна идёт на крышку',
+    get: (s) => s.wave2.onLid,
+    set: (s, v) => ({ ...s, wave2: { ...s.wave2, onLid: v } }),
+  },
   {
     kind: 'select', key: 'mode', label: 'Как связаны', options: MODE_OPTIONS,
     hint: 'плетение — простое произведение волн: корзинка, вафля',
@@ -258,10 +270,11 @@ export interface ReliefCardsHandle {
  * меняют длину массива, поэтому список пересобирается целиком; правка
  * значений внутри полосы обходится синхронизацией.
  */
-function renderBandList(
+export function renderBandList(
   host: HTMLElement,
   read: () => RouletteState,
   onChange: (state: RouletteState) => void,
+  idPrefix = 'roul',
 ): { sync(state: RouletteState, describe: (band: RouletteBand) => string): void } {
   let rows: ReturnType<typeof renderControls<RouletteState>>[] = [];
   let notes: HTMLElement[] = [];
@@ -302,7 +315,7 @@ function renderBandList(
 
       const controls = make('div');
       box.append(controls);
-      rows.push(renderControls(controls, bandControls(index), read, onChange, `roul${index}`));
+      rows.push(renderControls(controls, bandControls(index), read, onChange, `${idPrefix}${index}`));
 
       const note = make('p', 'fcard-desc');
       box.append(note);

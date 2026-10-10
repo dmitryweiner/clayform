@@ -23,12 +23,16 @@
 
 import type { SurfaceMesh } from './surface';
 import { meshNormals } from './normals';
-import type { LathePoint } from './lathe';
+import type { LathePoint, LatheDepth } from './lathe';
 import { lathe } from './lathe';
 import type { ProfileDef } from './profiles';
 import { profileRadius } from './profiles';
 import type { HollowState, SeatFit } from './hollow';
 import { cavityPoint, WALL_MIN_MM, WALL_MAX_MM } from './hollow';
+import type { ReliefState } from './relief';
+import { reliefDepth } from './relief';
+import type { RouletteState, RouletteContext } from './roulette';
+import { makeRoulette, sanitizeRoulette } from './roulette';
 
 export type LidKnob = 'ball' | 'tee';
 
@@ -52,12 +56,23 @@ export interface LidState {
   knobKind: LidKnob;
   /** наружный диаметр шара или диска, мм */
   knobDMm: number;
+  /**
+   * Сплющенность шара: 0 — шар, больше — эллипс в разрезе, ниже на эту долю
+   * при том же диаметре. Только у ручки-шара.
+   */
+  knobFlat: number;
   /** диаметр ножки, мм */
   stemDMm: number;
   /** высота ножки, мм */
   stemHMm: number;
   /** толщина диска у ручки-Т, мм */
   capHMm: number;
+  /**
+   * Накатка на куполе — свои полосы, не те, что на теле: у купола своя
+   * «высота» (длина дуги от поля до ножки) и свои радиусы. Высота полосы
+   * считается долей этой дуги.
+   */
+  roulette: RouletteState;
 }
 
 interface Limit {
@@ -68,7 +83,7 @@ interface Limit {
 /** Пределы ползунков: одни и те же для UI и для санатора. */
 export const LID_LIMITS: Record<
   'recessMm' | 'depthMm' | 'clearanceMm' | 'ledgeMm' | 'fieldMm' | 'domeMm'
-  | 'curvature' | 'knobDMm' | 'stemDMm' | 'stemHMm' | 'capHMm',
+  | 'curvature' | 'knobDMm' | 'knobFlat' | 'stemDMm' | 'stemHMm' | 'capHMm',
   Limit
 > = {
   recessMm: { min: 0, max: 20 },
@@ -79,6 +94,7 @@ export const LID_LIMITS: Record<
   domeMm: { min: 1, max: 80 },
   curvature: { min: 0, max: 1 },
   knobDMm: { min: 6, max: 50 },
+  knobFlat: { min: 0, max: 0.8 },
   stemDMm: { min: 3, max: 30 },
   stemHMm: { min: 0, max: 30 },
   capHMm: { min: 1.5, max: 15 },
@@ -96,6 +112,16 @@ const MAX_DEPTH_FRACTION = 0.5;
 const MAX_RECESS_FRACTION = 0.25;
 /** Точек на купол и на дугу шара. */
 const DOME_STEPS = 28;
+/**
+ * Колец купола на один сегмент окружности, когда на нём есть рельеф: 28
+ * колец гладкому куполу хватает, а волну или накатку вдоль дуги они
+ * превратили бы в ступеньки.
+ */
+const RELIEF_DOME_SHARE = 0.5;
+/** Доля дуги у поля и у ножки, на которой рельеф плавно гаснет. */
+const RELIEF_GUARD = 0.12;
+/** Тоньше этого стенка купола под вдавленным рельефом не становится. */
+const MIN_RELIEF_WALL_MM = 0.6;
 const BALL_STEPS = 14;
 /** По скольким высотам ищется самое узкое место горловины. */
 const CAVITY_SAMPLES = 96;
@@ -116,9 +142,11 @@ export function defaultLid(): LidState {
     curvature: 0.55,
     knobKind: 'ball',
     knobDMm: 18,
+    knobFlat: 0,
     stemDMm: 8,
     stemHMm: 6,
     capHMm: 4,
+    roulette: { bands: [] },
   };
 }
 
@@ -150,10 +178,13 @@ export function sanitizeLid(raw: unknown): LidState {
     curvature: within('curvature', source.curvature),
     knobKind: source.knobKind === 'tee' ? 'tee' : 'ball',
     knobDMm,
+    knobFlat: within('knobFlat', source.knobFlat),
     // ножка толще шляпки — это уже не ручка, а обрубок
     stemDMm: Math.min(within('stemDMm', source.stemDMm), knobDMm),
     stemHMm: within('stemHMm', source.stemHMm),
     capHMm: within('capHMm', source.capHMm),
+    // нет поля — нет и полос (sanitizeRoulette на пустом дал бы одну выключенную)
+    roulette: source.roulette === undefined ? { bands: [] } : sanitizeRoulette(source.roulette),
   };
 }
 
@@ -316,8 +347,8 @@ function domeAt(radius: number, fieldMm: number, curvature: number): number {
  * зенита меняется как √Δs, и последний сегмент вышел бы в несколько
  * миллиметров — купол выглядел бы конусом с плоской нашлёпкой сверху.
  */
-function domeParams(fit: LidFit, lid: LidState, sTop: number): number[] {
-  const dense = DOME_STEPS * 8;
+function domeParams(fit: LidFit, lid: LidState, sTop: number, steps = DOME_STEPS): DomeParams {
+  const dense = steps * 8;
   const sAt = (i: number): number => (sTop * i) / dense;
   const lengths = [0];
   let previous = domePoint(fit, lid, 0);
@@ -329,15 +360,33 @@ function domeParams(fit: LidFit, lid: LidState, sTop: number): number[] {
 
   const params = [0];
   let cursor = 1;
-  for (let m = 1; m < DOME_STEPS; m++) {
-    const target = (lengths[dense] * m) / DOME_STEPS;
+  for (let m = 1; m < steps; m++) {
+    const target = (lengths[dense] * m) / steps;
     while (cursor < dense && lengths[cursor] < target) cursor++;
     const span = lengths[cursor] - lengths[cursor - 1];
     const t = span > 1e-12 ? (target - lengths[cursor - 1]) / span : 0;
     params.push(lerp(sAt(cursor - 1), sAt(cursor), t));
   }
   params.push(sTop);
-  return params;
+  return { params, lengthMm: lengths[dense] };
+}
+
+interface DomeParams {
+  /** доли параметра купола, равномерно по длине дуги, от поля до ножки */
+  params: number[];
+  /** длина дуги купола, мм — «высота» для рельефа на нём */
+  lengthMm: number;
+}
+
+/** Наружная нормаль купола в осевом сечении на доле высоты s. */
+function domeNormal(fit: LidFit, lid: LidState, s: number): { nr: number; nz: number } {
+  const h = 1e-4;
+  const s0 = Math.max(0, s - h);
+  const s1 = Math.min(1, s + h);
+  const dr = fit.fieldMm * (domeShape(s1, lid.curvature) - domeShape(s0, lid.curvature));
+  const dz = lid.domeMm * (s1 - s0);
+  const len = Math.hypot(dr, dz) || 1;
+  return { nr: dz / len, nz: -dr / len };
 }
 
 /** Радиус ножки — не толще четырёх пятых поля, иначе купола не останется. */
@@ -362,14 +411,17 @@ function knobPoints(lid: LidState, stemR: number, topZ: number): LathePoint[] {
       { r: 0, z: topZ + lid.capHMm },
     ];
   }
-  // Шар садится на ножку так, чтобы дуга прошла ровно через её верхнюю
-  // кромку: стык получается без ступеньки при любом соотношении диаметров.
-  const centerZ = topZ + Math.sqrt(Math.max(0, knobR * knobR - stemR * stemR));
-  const from = Math.atan2(topZ - centerZ, stemR);
+  // Шар (или эллипсоид, если сплющен) садится на ножку так, чтобы дуга
+  // прошла ровно через её верхнюю кромку: стык получается без ступеньки при
+  // любом соотношении диаметров. Полуось по высоте — knobR·(1 − flat).
+  const knobH = knobR * (1 - clamp(lid.knobFlat, LID_LIMITS.knobFlat.min, LID_LIMITS.knobFlat.max));
+  const across = clamp(stemR / knobR, 0, 1);
+  const centerZ = topZ + knobH * Math.sqrt(1 - across * across);
+  const from = Math.atan2(-Math.sqrt(1 - across * across), across);
   const points: LathePoint[] = [];
   for (let m = 1; m <= BALL_STEPS; m++) {
     const angle = lerp(from, Math.PI / 2, m / BALL_STEPS);
-    points.push({ r: knobR * Math.cos(angle), z: centerZ + knobR * Math.sin(angle) });
+    points.push({ r: knobR * Math.cos(angle), z: centerZ + knobH * Math.sin(angle) });
   }
   return points;
 }
@@ -379,7 +431,7 @@ function knobPoints(lid: LidState, stemR: number, topZ: number): LathePoint[] {
  * Начинается с юбки, потому что она у крышки снаружи и есть, а вот низ
  * контура у полой и сплошной крышки разный — его дописывает вызывающий.
  */
-function outerPoints(fit: LidFit, lid: LidState): LathePoint[] {
+function outerPoints(fit: LidFit, lid: LidState, steps = DOME_STEPS): LathePoint[] {
   const domeBaseZ = fit.depthMm + fit.wallMm;
   const stemR = stemRadius(fit, lid);
   const points: LathePoint[] = [
@@ -391,7 +443,12 @@ function outerPoints(fit: LidFit, lid: LidState): LathePoint[] {
   ];
 
   const sTop = domeAt(stemR, fit.fieldMm, lid.curvature);
-  for (const s of domeParams(fit, lid, sTop).slice(1)) points.push(domePoint(fit, lid, s));
+  const { params } = domeParams(fit, lid, sTop, steps);
+  // Кольца купола несут рельеф: доля v — по длине дуги, нормаль — наружная.
+  // Кольцо у поля (m = 0) уже стоит в контуре выше; рельеф там гаснет.
+  for (let m = 1; m < params.length; m++) {
+    points.push({ ...domePoint(fit, lid, params[m]), relief: { v: m / steps, ...domeNormal(fit, lid, params[m]) } });
+  }
 
   const stemTopZ = domeBaseZ + lid.domeMm * sTop + lid.stemHMm;
   points.push({ r: stemR, z: stemTopZ });
@@ -406,18 +463,9 @@ function outerPoints(fit: LidFit, lid: LidState): LathePoint[] {
  * тоньше заданной.
  */
 function domeInnerPoint(fit: LidFit, lid: LidState, s: number): LathePoint {
-  const h = 1e-4;
-  const s0 = Math.max(0, s - h);
-  const s1 = Math.min(1, s + h);
   const outer = domePoint(fit, lid, s);
-  const dr = fit.fieldMm * (domeShape(s1, lid.curvature) - domeShape(s0, lid.curvature));
-  const dz = lid.domeMm * (s1 - s0);
-  const len = Math.hypot(dr, dz) || 1;
-  // наружная нормаль в осевом сечении: (dz, −dr)/|…|
-  return {
-    r: outer.r - (fit.wallMm * dz) / len,
-    z: outer.z + (fit.wallMm * dr) / len,
-  };
+  const { nr, nz } = domeNormal(fit, lid, s);
+  return { r: outer.r - fit.wallMm * nr, z: outer.z - fit.wallMm * nz };
 }
 
 /** Высота, на которой сдвинутая внутрь образующая пересекает ось. */
@@ -439,7 +487,7 @@ function innerPoints(fit: LidFit, lid: LidState): LathePoint[] {
   if (innerPlug < MIN_CAVITY_MM) return [];
 
   const sTop = domeAt(stemRadius(fit, lid), fit.fieldMm, lid.curvature);
-  const params = domeParams(fit, lid, sTop);
+  const { params } = domeParams(fit, lid, sTop);
   const raw: LathePoint[] = [];
   for (let m = params.length - 1; m >= 0; m--) raw.push(domeInnerPoint(fit, lid, params[m]));
 
@@ -483,6 +531,62 @@ export interface LidBuildOptions {
   liftMm?: number;
   /** перевернуть юбкой вверх — так крышку кладут в литейную форму */
   upsideDown?: boolean;
+  /**
+   * Волны тела, которые идут и на крышку («И на крышке тоже»). Накатка
+   * крышки своя и берётся из LidState.
+   */
+  relief?: ReliefState;
+}
+
+/** Есть ли на куполе хоть какой-то рельеф. */
+function hasDomeRelief(lid: LidState, relief: ReliefState | undefined): boolean {
+  return Boolean(relief?.wave.on && relief.wave.ampMm !== 0)
+    || lid.roulette.bands.some((band) => band.on && band.depthMm !== 0);
+}
+
+/**
+ * Глубина рельефа на куполе: волны (если их пустили на крышку) плюс своя
+ * накатка, погашенная у поля и у ножки — поле садится в горловину и обязано
+ * остаться точным, а к ножке рельефу подходить незачем. Вдавленный рельеф
+ * не съедает стенку купола тоньше MIN_RELIEF_WALL_MM.
+ */
+function domeDepth(fit: LidFit, lid: LidState, relief: ReliefState | undefined): LatheDepth | undefined {
+  if (!hasDomeRelief(lid, relief)) return undefined;
+  const roll = makeRoulette(lid.roulette, lidDomeContext(fit, lid));
+  const floor = -Math.max(0, fit.wallMm - MIN_RELIEF_WALL_MM);
+  return (u, v) => {
+    const guard = smoothstep(v / RELIEF_GUARD) * smoothstep((1 - v) / RELIEF_GUARD);
+    if (guard === 0) return 0;
+    const depth = ((relief ? reliefDepth(relief, u, v) : 0) + roll(u, v)) * guard;
+    return Math.max(depth, floor);
+  };
+}
+
+function smoothstep(x: number): number {
+  const q = clamp(x, 0, 1);
+  return q * q * (3 - 2 * q);
+}
+
+/**
+ * Купол глазами накатки: «высота» — длина дуги от поля до ножки, радиус —
+ * по доле этой дуги. По нему же главный поток подписывает полосы.
+ */
+export function lidDomeContext(fit: LidFit, lid: LidState): RouletteContext {
+  const sTop = domeAt(stemRadius(fit, lid), fit.fieldMm, lid.curvature);
+  const { params, lengthMm } = domeParams(fit, lid, sTop);
+  return {
+    heightMm: Math.max(1, lengthMm),
+    radiusAt: (v) => {
+      const x = clamp(v, 0, 1) * (params.length - 1);
+      const m = Math.min(Math.floor(x), params.length - 2);
+      return fit.fieldMm * domeShape(lerp(params[m], params[m + 1], x - m), lid.curvature);
+    },
+  };
+}
+
+/** Колец купола: больше, когда на нём рельеф. */
+function domeSteps(lid: LidState, nu: number, relief: ReliefState | undefined): number {
+  return hasDomeRelief(lid, relief) ? Math.max(DOME_STEPS, Math.round(nu * RELIEF_DOME_SHARE)) : DOME_STEPS;
 }
 
 function place(
@@ -494,15 +598,19 @@ function place(
   if (options.upsideDown) {
     const height = lidHeightMm(fit, lid);
     // Зеркало по z пустило бы контур по часовой и вывернуло меш наизнанку —
-    // разворачиваем заодно и порядок обхода.
-    return points.map((point) => ({ r: point.r, z: height - point.z })).reverse();
+    // разворачиваем заодно и порядок обхода. Нормаль рельефа отражается тоже.
+    return points.map((point) => ({
+      ...point,
+      z: height - point.z,
+      ...(point.relief ? { relief: { ...point.relief, nz: -point.relief.nz } } : {}),
+    })).reverse();
   }
   const lift = options.liftMm ?? 0;
-  return lift === 0 ? points : points.map((point) => ({ r: point.r, z: point.z + lift }));
+  return lift === 0 ? points : points.map((point) => ({ ...point, z: point.z + lift }));
 }
 
-function toMesh(points: LathePoint[], nu: number): SurfaceMesh {
-  const mesh = lathe(points, nu);
+function toMesh(points: LathePoint[], nu: number, depthAt?: LatheDepth): SurfaceMesh {
+  const mesh = lathe(points, nu, depthAt);
   return { ...mesh, normals: meshNormals(mesh.positions, mesh.indices) };
 }
 
@@ -520,10 +628,10 @@ export function buildLidMesh(
   if (inner.length === 0) return buildLidSolid(fit, lid, nu, options);
   const points: LathePoint[] = [
     { r: fit.plugMm - fit.wallMm, z: 0 },
-    ...outerPoints(fit, lid),
+    ...outerPoints(fit, lid, domeSteps(lid, nu, options.relief)),
     ...inner,
   ];
-  return toMesh(place(points, fit, lid, options), nu);
+  return toMesh(place(points, fit, lid, options), nu, domeDepth(fit, lid, options.relief));
 }
 
 /**
@@ -537,6 +645,6 @@ export function buildLidSolid(
   nu: number,
   options: LidBuildOptions = {},
 ): SurfaceMesh {
-  const points: LathePoint[] = [{ r: 0, z: 0 }, ...outerPoints(fit, lid)];
-  return toMesh(place(points, fit, lid, options), nu);
+  const points: LathePoint[] = [{ r: 0, z: 0 }, ...outerPoints(fit, lid, domeSteps(lid, nu, options.relief))];
+  return toMesh(place(points, fit, lid, options), nu, domeDepth(fit, lid, options.relief));
 }

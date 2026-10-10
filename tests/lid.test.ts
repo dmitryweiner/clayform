@@ -14,7 +14,9 @@ import { buildHollowVessel, sanitizeHollow } from '../src/geo/hollow';
 import { defaultBuildParams } from '../src/geo/build';
 import { validateMesh } from '../src/geo/validate';
 import { FAMILY_IDS, defaultFamilyParams, familyById, buildProfile } from '../src/geo/profiles';
-import { sanitizeState } from '../src/state/schema';
+import { sanitizeState, defaultState, lidRelief } from '../src/state/schema';
+import { defaultBand } from '../src/geo/roulette';
+import { defaultRelief } from '../src/geo/relief';
 
 const params = (family: string, over: Record<string, unknown> = {}) => ({
   ...defaultBuildParams(),
@@ -302,5 +304,83 @@ describe('фланец в горловине', () => {
       expect(report.watertight, family).toBe(true);
       expect(report.volume, family).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('сплющенный шар ручки', () => {
+  it('ниже ровно на сплющенную долю полуоси, ширина та же', () => {
+    const round = fitFor('pot', { knobFlat: 0 });
+    const flat = fitFor('pot', { knobFlat: 0.5 });
+    const knobR = round.lid.knobDMm / 2;
+    const across = Math.min(1, round.lid.stemDMm / 2 / knobR);
+    // верх эллипса: центр (над кромкой ножки на b·√(1−a²)) плюс полуось b
+    const drop = knobR * 0.5 * (1 + Math.sqrt(1 - across * across));
+    expect(lidHeightMm(round.fit, round.lid) - lidHeightMm(flat.fit, flat.lid)).toBeCloseTo(drop, 3);
+    const mesh = buildLidMesh(flat.fit, flat.lid, 96);
+    expect(validateMesh(mesh).watertight).toBe(true);
+  });
+
+  it('санатор держит сплющенность в пределах', () => {
+    expect(sanitizeLid({ knobFlat: 5 }).knobFlat).toBe(LID_LIMITS.knobFlat.max);
+    expect(sanitizeLid({ knobFlat: -1 }).knobFlat).toBe(0);
+    expect(sanitizeLid({}).knobFlat).toBe(0);
+  });
+});
+
+describe('рельеф на куполе крышки', () => {
+  const band = { ...defaultBand(), on: true, pattern: 'rope' as const, bandCenter: 0.5, bandWidthMm: 12, depthMm: 1.2 };
+
+  /** Наибольший радиус ниже основания купола — по нему крышка садится. */
+  function seatSpan(mesh: { positions: Float32Array }, topZ: number): number {
+    let r = 0;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      if (mesh.positions[i + 2] <= topZ + 1e-4) r = Math.max(r, Math.hypot(mesh.positions[i], mesh.positions[i + 1]));
+    }
+    return r;
+  }
+
+  it('накатка ложится на купол, а поле и юбка остаются точными', () => {
+    const { fit, lid } = fitFor('pot');
+    const plain = buildLidMesh(fit, lid, 96);
+    const rolled = buildLidMesh(fit, { ...lid, roulette: { bands: [band] } }, 96);
+    const report = validateMesh(rolled);
+    expect(report.watertight).toBe(true);
+    expect(report.volume).not.toBeCloseTo(validateMesh(plain).volume, 0);
+    // всё, что ниже купола (юбка и поле), не сдвинулось ни на микрон
+    const domeBase = fit.depthMm + fit.wallMm;
+    expect(seatSpan(rolled, domeBase)).toBeCloseTo(seatSpan(plain, domeBase), 5);
+    expect(lidHeightMm(fit, lid)).toBeCloseTo(validateMesh(rolled).bbox.max[2], 3);
+  });
+
+  it('вдавленный рельеф не протыкает купол, перевёрнутый позитив тоже цел', () => {
+    const { fit, lid } = fitFor('pot');
+    const deep = { ...lid, roulette: { bands: [{ ...band, depthMm: -8 }] } };
+    expect(validateMesh(buildLidMesh(fit, deep, 96)).watertight).toBe(true);
+    const solid = buildLidSolid(fit, deep, 96, { upsideDown: true });
+    expect(validateMesh(solid).watertight).toBe(true);
+    expect(validateMesh(solid).volume).toBeGreaterThan(0);
+  });
+
+  it('волны идут на крышку только с «И на крышке тоже»', () => {
+    const base = defaultRelief();
+    const relief = { ...base, wave: { ...base.wave, on: true, axis: 'theta' as const, ampMm: 2 } };
+    const off = sanitizeState({ ...defaultState(), relief });
+    const on = sanitizeState({ ...defaultState(), relief: { ...relief, wave: { ...relief.wave, onLid: true } } });
+    expect(lidRelief(off).wave.on).toBe(false);
+    expect(lidRelief(on).wave.on).toBe(true);
+
+    const { fit, lid } = fitFor('pot');
+    const plain = buildLidMesh(fit, lid, 96, { relief: lidRelief(off) });
+    const waved = buildLidMesh(fit, lid, 96, { relief: lidRelief(on) });
+    expect(plain.positions.length).toBe(buildLidMesh(fit, lid, 96).positions.length);
+    expect(validateMesh(waved).watertight).toBe(true);
+    expect(waved.positions.length).toBeGreaterThan(plain.positions.length);
+  });
+
+  it('у крышки по умолчанию полос нет, санатор идемпотентен', () => {
+    expect(sanitizeLid({}).roulette.bands).toEqual([]);
+    const once = sanitizeLid({ roulette: { bands: [band] } });
+    expect(once.roulette.bands).toHaveLength(1);
+    expect(sanitizeLid(once)).toEqual(once);
   });
 });

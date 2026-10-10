@@ -27,7 +27,16 @@ export interface LathePoint {
   r: number;
   /** высота, мм */
   z: number;
+  /**
+   * Точка несёт рельеф: её кольцо смещается вдоль наружной нормали контура
+   * (nr, nz) на depthAt(u, v). Так рельеф ложится на купол крышки, а юбка,
+   * поле и ручка остаются точными.
+   */
+  relief?: { v: number; nr: number; nz: number };
 }
+
+/** Смещение вдоль нормали, мм, в точке (угол u, доля v). */
+export type LatheDepth = (u: number, v: number) => number;
 
 /** Ниже этого радиуса точка контура считается лежащей на оси. */
 const AXIS_EPS = 1e-6;
@@ -46,7 +55,7 @@ function compact(contour: readonly LathePoint[]): LathePoint[] {
     Math.abs(a.r - b.r) < STEP_EPS && Math.abs(a.z - b.z) < STEP_EPS;
 
   for (const point of contour) {
-    const next = { r: Math.max(0, point.r), z: point.z };
+    const next = { ...point, r: Math.max(0, point.r) };
     if (points.length > 0 && same(points[points.length - 1], next)) continue;
     points.push(next);
   }
@@ -58,7 +67,11 @@ function compact(contour: readonly LathePoint[]): LathePoint[] {
  * Меш тела вращения. Контур замыкается сам: последняя точка соединяется с
  * первой. Нормали не считает — как и assembleMesh, см. normals.ts.
  */
-export function lathe(contour: readonly LathePoint[], nu: number): Omit<SurfaceMesh, 'normals'> {
+export function lathe(
+  contour: readonly LathePoint[],
+  nu: number,
+  depthAt?: LatheDepth,
+): Omit<SurfaceMesh, 'normals'> {
   if (!Number.isFinite(nu) || nu < 3) throw new Error(`lathe: мало сегментов по кругу: ${nu}`);
   const points = compact(contour);
   if (points.length < 3) throw new Error(`lathe: в контуре ${points.length} точек, нужно хотя бы 3`);
@@ -73,7 +86,7 @@ export function lathe(contour: readonly LathePoint[], nu: number): Omit<SurfaceM
 
   const positions = new Float32Array(vertexCount * 3);
   for (let m = 0; m < points.length; m++) {
-    const { r, z } = points[m];
+    const { r, z, relief } = points[m];
     if (axis[m]) {
       positions[base[m] * 3 + 2] = z;
       continue;
@@ -81,9 +94,12 @@ export function lathe(contour: readonly LathePoint[], nu: number): Omit<SurfaceM
     for (let i = 0; i < nu; i++) {
       const u = (2 * Math.PI * i) / nu;
       const k = (base[m] + i) * 3;
-      positions[k] = r * Math.cos(u);
-      positions[k + 1] = r * Math.sin(u);
-      positions[k + 2] = z;
+      const depth = relief && depthAt ? depthAt(u, relief.v) : 0;
+      // не дальше оси: за ней кольцо вывернулось бы наизнанку
+      const radius = Math.max(AXIS_EPS * 10, r + depth * (relief?.nr ?? 0));
+      positions[k] = radius * Math.cos(u);
+      positions[k + 1] = radius * Math.sin(u);
+      positions[k + 2] = z + depth * (relief?.nz ?? 0);
     }
   }
 

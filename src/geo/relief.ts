@@ -14,6 +14,8 @@ export type WaveAxis = (typeof WAVE_AXES)[number];
 
 export interface WaveState {
   on: boolean;
+  /** «И на крышке тоже»: волна идёт и по куполу крышки */
+  onLid: boolean;
   axis: WaveAxis;
   shape: WaveShape;
   /** число периодов на единицу координаты оси */
@@ -41,6 +43,8 @@ export type Wave2Mode = (typeof WAVE2_MODES)[number];
 
 export interface Wave2State {
   on: boolean;
+  /** «И на крышке тоже» */
+  onLid: boolean;
   mode: Wave2Mode;
   axis: WaveAxis;
   shape: WaveShape;
@@ -152,9 +156,9 @@ export function reliefDepth(relief: ReliefState, u: number, v: number): number {
 
 export function defaultRelief(): ReliefState {
   return {
-    wave: { on: false, axis: 'z', shape: 'rounded', freq: 12, ampMm: 2, phase: 0, spiralK: 1 },
+    wave: { on: false, onLid: false, axis: 'z', shape: 'rounded', freq: 12, ampMm: 2, phase: 0, spiralK: 1 },
     wave2: {
-      on: false, mode: 'weave', axis: 'theta', shape: 'sin', freq: 8,
+      on: false, onLid: false, mode: 'weave', axis: 'theta', shape: 'sin', freq: 8,
       phase: 0, fm: 0.2, am: 0.5, spiralK: 1,
     },
     zone: { from: 0.08, to: 0.95, fade: 0.06 },
@@ -224,6 +228,7 @@ export function sanitizeRelief(raw: unknown): ReliefState {
   const waveFreq = wrapSafeFreq(waveAxis, num(waveSrc.freq, fallback.wave.freq));
   const wave: WaveState = {
     on: bool(waveSrc.on, fallback.wave.on),
+    onLid: bool(waveSrc.onLid, fallback.wave.onLid),
     axis: waveAxis,
     shape: shapeOf(waveSrc.shape, fallback.wave.shape),
     freq: waveFreq,
@@ -237,6 +242,7 @@ export function sanitizeRelief(raw: unknown): ReliefState {
   const wave2Freq = wrapSafeFreq(wave2Axis, num(wave2Src.freq, fallback.wave2.freq));
   const wave2: Wave2State = {
     on: bool(wave2Src.on, fallback.wave2.on),
+    onLid: bool(wave2Src.onLid, fallback.wave2.onLid),
     mode: modeOf(wave2Src.mode, fallback.wave2.mode),
     axis: wave2Axis,
     shape: shapeOf(wave2Src.shape, fallback.wave2.shape),

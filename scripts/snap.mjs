@@ -11,6 +11,8 @@
 //   --out <path>          куда сохранить (обязателен)
 //   --family <id>         pot | bowl | cup | vase
 //   --preset <name>       встроенный пресет по имени
+//   Действия (--check/--uncheck/--set/--upload/--click) выполняются в порядке
+//   командной строки — клик может открыть ползунок, который следом ставится.
 //   --set <id>=<value>    любой input/select по id элемента (повторяемый)
 //   --check <id>          включить чекбокс (повторяемый)
 //   --uncheck <id>        выключить чекбокс (повторяемый)
@@ -88,39 +90,36 @@ if (preset) {
   await page.waitForTimeout(300);
 }
 
-for (const id of flags.get('check') ?? []) {
-  label(`check:${id}`);
-  await page.check(`#${id}`);
-  await page.waitForTimeout(80);
-}
-for (const id of flags.get('uncheck') ?? []) {
-  label(`uncheck:${id}`);
-  await page.uncheck(`#${id}`);
-  await page.waitForTimeout(80);
-}
-
-for (const pair of flags.get('set') ?? []) {
-  const eq = pair.indexOf('=');
-  const id = pair.slice(0, eq);
-  const value = pair.slice(eq + 1);
-  label(`set:${id}`);
-  const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
-  if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
-  else await page.fill(`#${id}`, value);
-  await page.waitForTimeout(80);
-}
-
-for (const pair of flags.get('upload') ?? []) {
-  const eq = pair.indexOf('=');
-  label(`upload:${pair.slice(0, eq)}`);
-  await page.setInputFiles(`#${pair.slice(0, eq)}`, pair.slice(eq + 1));
-  await page.waitForTimeout(300);
-}
-
-for (const selector of flags.get('click') ?? []) {
-  label(`click:${selector}`);
-  await page.click(selector);
-  await page.waitForTimeout(120);
+// Действия идут в порядке командной строки: «--click '+ Полоса'» и следом
+// «--set lidroul0_pattern=…» должны работать — ползунок появляется кликом.
+const ACTIONS = new Set(['check', 'uncheck', 'set', 'upload', 'click']);
+const argv = process.argv.slice(2);
+for (let i = 0; i < argv.length; i++) {
+  const name = argv[i].startsWith('--') ? argv[i].slice(2) : '';
+  if (!ACTIONS.has(name)) continue;
+  const arg = argv[++i];
+  label(`${name}:${arg}`);
+  const eq = arg.indexOf('=');
+  if (name === 'check') {
+    await page.check(`#${arg}`);
+    await page.waitForTimeout(80);
+  } else if (name === 'uncheck') {
+    await page.uncheck(`#${arg}`);
+    await page.waitForTimeout(80);
+  } else if (name === 'set') {
+    const id = arg.slice(0, eq);
+    const value = arg.slice(eq + 1);
+    const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
+    if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
+    else await page.fill(`#${id}`, value);
+    await page.waitForTimeout(80);
+  } else if (name === 'upload') {
+    await page.setInputFiles(`#${arg.slice(0, eq)}`, arg.slice(eq + 1));
+    await page.waitForTimeout(300);
+  } else {
+    await page.click(arg);
+    await page.waitForTimeout(120);
+  }
 }
 
 // Вращение — обычным перетаскиванием по канвасу, как это делает человек.

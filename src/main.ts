@@ -29,14 +29,16 @@ import { buildAppliedSpout } from './geo/spout';
 import { analyzeMold, pressWarning } from './geo/mold/analyze';
 import { buildHump, humpSurface, buildSlumpShell } from './geo/press';
 import { buildHollowVessel } from './geo/hollow';
-import { lidFit, lidSeat, buildLidMesh, lidHeightMm } from './geo/lid';
+import { lidFit, lidSeat, buildLidMesh, lidHeightMm, lidDomeContext } from './geo/lid';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
 import { bandLayout, isContinuous } from './geo/roulette';
+import type { RouletteBand, RouletteContext } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
 import type { AppState } from './state/schema';
 import {
-  defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, isPressMode, RESOLUTIONS,
+  defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, isPressMode, lidRelief,
+  RESOLUTIONS,
 } from './state/schema';
 import { PRESETS, presetByName } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
@@ -237,16 +239,10 @@ function refresh(): void {
   const profile = buildProfile(state.family, state.shape, state.heightMm);
   drawProfileGraph(profileGraph, profile);
 
-  reliefRows.setBandNote((band) => {
-    if (band.pattern === 'image' && !band.image) return 'Загрузите картинку: пока её нет, полоса не действует.';
-    const layout = bandLayout(band, {
-      heightMm: state.heightMm,
-      radiusAt: (v) => profileRadius(profile, v),
-    });
-    const head = `${layout.repeats} оттисков по ⌀${(layout.circumferenceMm / Math.PI).toFixed(0)} мм: `
-      + `шаг ${layout.stepMm.toFixed(1)} мм`;
-    return isContinuous(band.pattern) ? `${head}.` : `${head}, просвет ${layout.gapMm.toFixed(1)} мм.`;
-  });
+  reliefRows.setBandNote((band) => describeBand(band, {
+    heightMm: state.heightMm,
+    radiusAt: (v) => profileRadius(profile, v),
+  }));
 
   const buildParams = toBuildParams(state, PREVIEW_SEGMENTS);
   // Посадку под крышку считаем от того же силуэта и той же стенки, из
@@ -259,8 +255,15 @@ function refresh(): void {
   // Надетой её показываем сразу, без ожидания воркера.
   // «Крышка рядом» — в печатном положении, юбкой вниз; иначе — надетой.
   const beside = Boolean(fit) && state.lidBeside && state.exportMode === 'vessel';
+  if (fit) {
+    const dome = lidDomeContext(fit, state.lid);
+    attachRows.setLidBandNote((band) => describeBand(band, dome));
+  }
   const lidMeshes = fit
-    ? [buildLidMesh(fit, state.lid, PREVIEW_SEGMENTS, beside ? {} : { liftMm: fit.liftMm })]
+    ? [buildLidMesh(fit, state.lid, PREVIEW_SEGMENTS, {
+      relief: lidRelief(state),
+      ...(beside ? {} : { liftMm: fit.liftMm }),
+    })]
     : [];
 
   // Схему разъёма считаем по телу без ручки: ручка влияет на выбор самим
@@ -498,6 +501,15 @@ function hasAngularRelief(): boolean {
   return (state.relief.wave.on && angular(state.relief.wave.axis))
     || (state.relief.wave2.on && angular(state.relief.wave2.axis))
     || state.roulette.bands.some((band) => band.on);
+}
+
+/** Подпись полосы накатки: сколько оттисков ляжет за оборот и с каким шагом. */
+function describeBand(band: RouletteBand, ctx: RouletteContext): string {
+  if (band.pattern === 'image' && !band.image) return 'Загрузите картинку: пока её нет, полоса не действует.';
+  const layout = bandLayout(band, ctx);
+  const head = `${layout.repeats} оттисков по ⌀${(layout.circumferenceMm / Math.PI).toFixed(0)} мм: `
+    + `шаг ${layout.stepMm.toFixed(1)} мм`;
+  return isContinuous(band.pattern) ? `${head}.` : `${head}, просвет ${layout.gapMm.toFixed(1)} мм.`;
 }
 
 /** Габарит меша, «Ш×Г×В мм». */

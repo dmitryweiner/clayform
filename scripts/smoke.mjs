@@ -366,6 +366,30 @@ for (const [id, value] of [['lid_dome', '1'], ['lid_dome', '80'], ['lid_dome', '
   if (!verdict.includes('замкнуто ✓')) errors.push(`[lid:${id}=${value}] audit="${verdict}"`);
 }
 
+// сплющенный шар, накатка на куполе и волна «и на крышке тоже»
+label('lid-relief');
+for (const value of ['0.8', '0.4']) {
+  await page.fill('#lid_knobFlat', value);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[lid:knobFlat=${value}] audit="${verdict}"`);
+}
+await page.locator('#card_lid button', { hasText: 'Полоса' }).click();
+await page.waitForTimeout(150);
+for (const pattern of ['meander', 'dots', 'rope']) {
+  await page.selectOption('#lidroul0_pattern', pattern);
+  await page.fill('#lidroul0_depth', '-2');
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[lid-roulette:${pattern}] audit="${verdict}"`);
+}
+await page.check('#on_wave');
+await page.check('#wave_onLid');
+const lidWaveVerdict = await auditVerdict(page);
+if (!lidWaveVerdict.includes('замкнуто ✓')) errors.push(`[lid-wave] audit="${lidWaveVerdict}"`);
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-relief.png` });
+await page.uncheck('#wave_onLid');
+await page.uncheck('#on_wave');
+await page.locator('#card_lid .band-del').click();
+
 // толщина диска нужна только букве Т — у шара её ползунок ни на что не влияет
 if (await page.locator('#lid_capH').isVisible()) {
   errors.push('[lid] ползунок толщины диска виден у ручки-шара');

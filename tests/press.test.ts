@@ -150,6 +150,21 @@ describe('углублённая форма', () => {
     expect(report.volume).toBeLessThan(vessel.volume * 1.331 * 0.3);
   });
 
+  it('снаружи нет цоколя под ножку: стенка идёт к основанию без перехвата', () => {
+    const p = params('bowl');
+    expect(p.shape.footH).toBeGreaterThan(0);
+    const mesh = buildSlumpShell(p, 3, 0);
+    // наружная сетка — первые nu·(nv+1) вершин, ряд j начинается с j·nu
+    let previous = 0;
+    for (let j = 0; j <= p.nv; j++) {
+      const k = j * p.nu * 3;
+      const r = Math.hypot(mesh.positions[k], mesh.positions[k + 1]);
+      expect(r, `ряд ${j}`).toBeGreaterThanOrEqual(previous - 1e-4);
+      previous = r;
+    }
+    expect(validateMesh(mesh).degenerateTriangles).toBe(0);
+  });
+
   it('выпуклый рельеф не протыкает скорлупу', () => {
     const base = params('cup');
     const p = { ...base, relief: { ...base.relief, wave: { ...base.relief.wave, on: true, ampMm: 6 } } };

@@ -21,7 +21,7 @@ import type { Mouth, MoldPartMesh } from '../geo/mold';
 import { analyzeMold, buildMaster, buildBaths } from '../geo/mold';
 import { validateMesh, assessExport } from '../geo/validate';
 import type { AppState } from '../state/schema';
-import { sanitizeState, toBuildParams, effectiveSpout } from '../state/schema';
+import { sanitizeState, toBuildParams, effectiveSpout, lidRelief } from '../state/schema';
 import type { CsgJob, JobPart, WorkerIn, WorkerOut } from './protocol';
 
 /**
@@ -138,7 +138,7 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
   ];
   if (fit) {
     progress.next('сборка крышки');
-    const lid = buildLidMesh(fit, state.lid, segments);
+    const lid = buildLidMesh(fit, state.lid, segments, { relief: lidRelief(state) });
     if (state.lidBeside) {
       // Один файл на двоих: печатают за один заход. Две замкнутые
       // компоненты в одном меше — законный STL, проверка его принимает.
@@ -226,7 +226,7 @@ function moldSubjects(csg: CsgApi, state: AppState, segments: number): MoldSubje
       // Крышку кладут в форму перевёрнутой: юбка смотрит вверх, и её торец
       // становится устьем, в которое льют шликер. Купол при этом лежит в
       // гипсе целиком, а шов проходит по краю поля.
-      build: () => buildLidSolid(fit, state.lid, segments, { upsideDown: true }),
+      build: () => buildLidSolid(fit, state.lid, segments, { upsideDown: true, relief: lidRelief(state) }),
       mouth: {
         zMm: lidHeightMm(fit, state.lid),
         radiusMm: Math.max(fit.plugMm * (1 - LID_MOUTH_INSET_MAX), fit.plugMm - LID_MOUTH_INSET_MM),
