@@ -11,7 +11,7 @@
     <div id="app">
       <header id="topbar">
         <span id="brand">ClayForm</span>
-        <select id="presetSel" title="Пресеты"></select>
+        <button id="presetBtn" class="tb-btn preset-btn" title="Готовые и свои пресеты">Пресеты…</button>
         <button id="saveBtn" class="tb-btn" title="Сохранить как пресет">💾</button>
         <button id="fileOpenBtn" class="tb-btn" title="Открыть пресет из файла (или перетащите файл на окно)">📂</button>
         <button id="fileSaveBtn" class="tb-btn" title="Сохранить пресет в файл">⬇️</button>
@@ -78,6 +78,13 @@
         </aside>
         <main id="viewWrap">
           <canvas id="view"></canvas>
+          <div id="presets" hidden>
+            <div id="presetsBox" role="dialog" aria-labelledby="presetsTitle">
+              <button id="presetsClose" class="panel-close" type="button" title="Закрыть (Esc)" aria-label="Закрыть">✕</button>
+              <h2 id="presetsTitle">Пресеты</h2>
+              <div id="presetList"></div>
+            </div>
+          </div>
           <div id="progressWrap" hidden>
             <div id="progressBar"><div id="progressFill"></div></div>
             <span id="progressLabel"></span>

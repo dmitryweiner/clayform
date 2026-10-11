@@ -18,6 +18,8 @@ import { renderExportPanel } from './ui/exportPanel';
 import { setupAdjustmentButtons } from './ui/adjust';
 import { drawProfileGraph } from './ui/graph';
 import { createProgress } from './ui/progress';
+import { renderPresetList } from './ui/presetList';
+import type { PresetRow } from './ui/presetList';
 import type { SurfaceMesh } from './geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from './geo/layout';
 import { buildVessel, vesselSurface } from './geo/build';
@@ -44,7 +46,7 @@ import { PRESETS, presetByName } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
 import { encodePresetFile, decodePresetFile, presetFileName } from './state/presetFile';
 import type { UserPreset } from './state/userPresets';
-import { loadUserPresets, saveUserPresets, nextPresetNumber } from './state/userPresets';
+import { loadUserPresets, saveUserPresets, nextPresetNumber, PRESET_NAME_PREFIX } from './state/userPresets';
 import { History } from './state/history';
 import type { JobPart } from './worker/protocol';
 import { CsgClient } from './worker/client';
@@ -106,7 +108,10 @@ const statusEl = el('status', HTMLParagraphElement);
 const auditEl = el('audit', HTMLParagraphElement);
 const warningsEl = el('warnings', HTMLParagraphElement);
 const blockersEl = el('blockers', HTMLParagraphElement);
-const presetSel = el('presetSel', HTMLSelectElement);
+const presetBtn = el('presetBtn', HTMLButtonElement);
+const presetsPanel = el('presets', HTMLDivElement);
+const presetsClose = el('presetsClose', HTMLButtonElement);
+const presetList = el('presetList', HTMLDivElement);
 const saveBtn = el('saveBtn', HTMLButtonElement);
 const fileOpenBtn = el('fileOpenBtn', HTMLButtonElement);
 const fileSaveBtn = el('fileSaveBtn', HTMLButtonElement);
@@ -609,63 +614,86 @@ let userPresets: UserPreset[] = loadUserPresets();
 /** Имя последнего открытого пресета — подсказка имени при сохранении в файл. */
 let presetName = '';
 
-function fillPresetList(): void {
-  presetSel.textContent = '';
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = 'Пресеты…';
-  presetSel.append(placeholder);
+/** Какой пресет открыт: 'b:<имя>', 'u:<имя>' или пусто — его подсвечивает список. */
+let presetRef = '';
 
-  const builtin = document.createElement('optgroup');
-  builtin.label = 'Готовые';
-  for (const preset of PRESETS) {
-    const option = document.createElement('option');
-    option.value = `b:${preset.name}`;
-    option.textContent = preset.name;
-    option.title = preset.note;
-    builtin.append(option);
-  }
-  presetSel.append(builtin);
-
-  if (userPresets.length > 0) {
-    const mine = document.createElement('optgroup');
-    mine.label = 'Мои';
-    for (const preset of userPresets) {
-      const option = document.createElement('option');
-      option.value = `u:${preset.name}`;
-      option.textContent = preset.name;
-      mine.append(option);
-    }
-    presetSel.append(mine);
-  }
+function presetRows(): PresetRow[] {
+  return [
+    ...userPresets.map((preset) => ({ ref: `u:${preset.name}`, name: preset.name, mine: true })),
+    ...PRESETS.map((preset) => ({ ref: `b:${preset.name}`, name: preset.name, note: preset.note, mine: false })),
+  ];
 }
 
-presetSel.addEventListener('change', () => {
-  const value = presetSel.value;
-  presetSel.value = '';
-  if (value.startsWith('b:')) {
-    const preset = presetByName(value.slice(2));
-    if (preset) {
-      applyState(preset.build());
-      presetName = preset.name;
-    }
-  } else if (value.startsWith('u:')) {
-    const preset = userPresets.find((item) => item.name === value.slice(2));
-    if (preset) {
-      applyState(preset.state);
-      presetName = preset.name;
-    }
+/** Кнопка в шапке показывает открытый пресет, список — где выбрать и удалить. */
+function setPresetRef(ref: string, name: string): void {
+  presetRef = ref;
+  presetName = name;
+  presetBtn.textContent = name || 'Пресеты…';
+  if (!presetsPanel.hidden) renderPresets();
+}
+
+function renderPresets(): void {
+  renderPresetList(presetList, presetRows(), presetRef, { onPick: openPreset, onDelete: deletePreset });
+}
+
+function openPresets(): void {
+  renderPresets();
+  presetsPanel.hidden = false;
+}
+
+function closePresets(): void {
+  presetsPanel.hidden = true;
+}
+
+function openPreset(ref: string): void {
+  closePresets();
+  const name = ref.slice(2);
+  if (ref.startsWith('b:')) {
+    const preset = presetByName(name);
+    if (!preset) return;
+    applyState(preset.build());
+  } else {
+    const preset = userPresets.find((item) => item.name === name);
+    if (!preset) return;
+    applyState(preset.state);
   }
+  setPresetRef(ref, name);
+}
+
+function deletePreset(ref: string): void {
+  const name = ref.slice(2);
+  const next = userPresets.filter((item) => item.name !== name);
+  if (!saveUserPresets(next)) {
+    blockersEl.textContent = 'Не удалось удалить пресет: браузер запретил доступ к хранилищу.';
+    return;
+  }
+  userPresets = next;
+  // изделие на экране остаётся — пропадает только запись в списке
+  if (presetRef === ref) setPresetRef('', '');
+  renderPresets();
+}
+
+presetBtn.addEventListener('click', () => {
+  if (presetsPanel.hidden) openPresets();
+  else closePresets();
+});
+presetsClose.addEventListener('click', closePresets);
+// клик мимо коробки — по затемнению — закрывает
+presetsPanel.addEventListener('click', (event) => {
+  if (event.target === presetsPanel) closePresets();
+});
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !presetsPanel.hidden) closePresets();
 });
 
 // --- пресет файлом ---
 
 fileSaveBtn.addEventListener('click', () => {
-  const suggested = presetName || `Моё ${nextPresetNumber(userPresets)}`;
+  const suggested = presetName || `${PRESET_NAME_PREFIX} ${nextPresetNumber(userPresets)}`;
   const name = prompt('Имя пресета', suggested)?.trim();
   if (!name) return;
   download(encodePresetFile(name, state), presetFileName(name), 'application/json');
-  presetName = name;
+  setPresetRef(presetRef, name);
   flash(fileSaveBtn, '✓');
 });
 
@@ -700,17 +728,18 @@ async function openPresetFile(file: File): Promise<void> {
     return;
   }
   applyState(decoded.state);
-  presetName = decoded.name;
+  // в «Мои» открытый файл не попадает — только имя на кнопке
+  setPresetRef('', decoded.name);
   flash(fileOpenBtn, '✓');
 }
 
 saveBtn.addEventListener('click', () => {
-  const suggested = `Моё ${nextPresetNumber(userPresets)}`;
+  const suggested = `${PRESET_NAME_PREFIX} ${nextPresetNumber(userPresets)}`;
   const name = prompt('Имя пресета', suggested)?.trim();
   if (!name) return;
   userPresets = [...userPresets.filter((item) => item.name !== name), { name, state }];
   if (saveUserPresets(userPresets)) {
-    fillPresetList();
+    setPresetRef(`u:${name}`, name);
     flash(saveBtn, '✓');
   } else {
     blockersEl.textContent = 'Не удалось сохранить пресет: браузер запретил доступ к хранилищу.';
@@ -779,5 +808,4 @@ panelBtn.addEventListener('click', () => setPanelOpen(true));
 panelBackdrop.addEventListener('click', () => setPanelOpen(false));
 setPanelOpen(true);
 
-fillPresetList();
 applyState(state, false);

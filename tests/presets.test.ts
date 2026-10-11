@@ -10,6 +10,7 @@ import { buildProfile } from '../src/geo/profiles';
 import { buildVessel } from '../src/geo/build';
 import { validateMesh } from '../src/geo/validate';
 import { analyzeMold } from '../src/geo/mold';
+import { nextPresetNumber, PRESET_NAME_PREFIX } from '../src/state/userPresets';
 
 describe('встроенные пресеты', () => {
   it('имена уникальны и у каждого есть пояснение', () => {
@@ -122,5 +123,14 @@ describe('ссылки на состояние', () => {
     expect(tokenFromHash('#s=abcDEF-_123')).toBe('abcDEF-_123');
     expect(tokenFromHash('#other=1')).toBeNull();
     expect(tokenFromHash('')).toBeNull();
+  });
+});
+
+describe('автоимя своего пресета', () => {
+  it('«Изделие N», и старые «Моё N» тоже в счёт', () => {
+    const state = defaultState();
+    expect(nextPresetNumber([])).toBe(1);
+    expect(nextPresetNumber([{ name: 'Изделие 2', state }, { name: 'Моё 5', state }, { name: 'Ваза', state }])).toBe(6);
+    expect(PRESET_NAME_PREFIX).toBe('Изделие');
   });
 });

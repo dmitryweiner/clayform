@@ -73,6 +73,137 @@ body {
   border: none;
 }
 
+/* Открытый пресет; кнопка открывает список (#presets). */
+.preset-btn {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+/* Список пресетов — модальная панель поверх всего, как в synesthesia. */
+#presets {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 40;
+}
+
+#presetsBox {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 100%);
+  max-height: min(80vh, 80dvh);
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+#presetsTitle {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+#presetList {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.panel-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.panel-close:hover {
+  color: var(--text);
+}
+
+.preset-group {
+  margin: 10px 0 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+}
+
+.preset-group:first-child {
+  margin-top: 0;
+}
+
+.preset-empty {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.preset-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.preset-pick,
+.preset-del {
+  min-height: 38px;
+  font: inherit;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.preset-pick {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-del {
+  flex: none;
+  min-width: 44px;
+  padding: 0 8px;
+  color: var(--muted);
+}
+
+.preset-pick:hover,
+.preset-del:hover {
+  border-color: var(--accent);
+}
+
+.preset-pick.current {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* второе касание удаляет — кнопка об этом предупреждает цветом */
+.preset-del.armed {
+  color: #1a0f08;
+  background: var(--warn);
+  border-color: var(--warn);
+}
+
 #heightLab {
   color: var(--muted);
   font-size: 12px;
@@ -491,9 +622,9 @@ input[type='number'] {
     padding: 4px 7px;
   }
 
-  #presetSel {
+  #presetBtn {
     flex: 1;
-    min-width: 0;
+    max-width: none;
   }
 
   /* шапка в две строки: бренд и пресеты, затем кнопки и высота */

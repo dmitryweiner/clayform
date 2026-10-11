@@ -44,7 +44,27 @@ export interface FamilyDef {
   params: ParamSpec[];
   /** контрольные точки силуэта; параметры уже зажаты clampFamilyParams */
   points(p: Params, heightMm: number): ProfilePoint[];
+  /**
+   * Высота ножки в мм — ровно та, что заложена в points (после зажимов).
+   * Нет у семейства ножки — нет и метода: скругление ножки ему не положено.
+   */
+  footZ?(p: Params, heightMm: number): number;
 }
+
+/**
+ * Скругления — общие для семейств параметры, обрабатываются в buildProfile
+ * поверх силуэта семейства. Кромка дна есть у всех, переход ножки к телу —
+ * только у тех, у кого есть ножка.
+ */
+const BASE_FILLET: ParamSpec = {
+  key: 'baseFillet', label: 'Скругление дна', min: 0, max: 15, step: 0.5, default: 0, unit: 'mm',
+  hint: 'радиус кромки, где стенка (или ножка) встречается с основанием: острая кромка отбивается, '
+    + 'а глину из острого угла формы не достать',
+};
+const FOOT_FILLET: ParamSpec = {
+  key: 'footFillet', label: 'Скругление ножки', min: 0, max: 20, step: 0.5, default: 0, unit: 'mm',
+  hint: 'радиус перехода от ножки к телу: в остром внутреннем углу керамика трескается',
+};
 
 /** Тоньше глина всё равно не держится; страхует и от нулевого радиуса. */
 export const MIN_RADIUS_MM = 1.5;
@@ -101,6 +121,7 @@ const POT: FamilyDef = {
       hint: 'резкость перехода тулово → горло' },
     { key: 'neckH', label: 'Высота горла', min: 0, max: 0.4, step: 0.01, default: 0.16, unit: 'x' },
     { key: 'rimFlare', label: 'Отгиб венчика', min: -0.1, max: 0.6, step: 0.01, default: 0.18, unit: 'x' },
+    BASE_FILLET,
   ],
   points(p, _heightMm) {
     const rFoot = p.dFoot / 2;
@@ -137,8 +158,11 @@ const BOWL: FamilyDef = {
     { key: 'baseAngle', label: 'Угол у дна', min: 0, max: 90, step: 1, default: 0, unit: 'deg',
       hint: 'под каким углом к столу стенка отходит от дна, °; 0 — авто: как велит округлость' },
     { key: 'footH', label: 'Ножка', min: 0, max: 60, step: 1, default: 8, unit: 'mm' },
+    FOOT_FILLET,
+    BASE_FILLET,
     { key: 'rimFlare', label: 'Отгиб края', min: -0.08, max: 0.4, step: 0.01, default: 0, unit: 'x' },
   ],
+  footZ: (p, heightMm) => clamp(p.footH / Math.max(1, heightMm), 0, 0.45) * heightMm,
   points(p, heightMm) {
     const rFoot = p.dFoot / 2;
     const rRim = p.dRim / 2;
@@ -229,6 +253,7 @@ const CUP: FamilyDef = {
     { key: 'barrel', label: 'Бочка', min: -0.25, max: 0.35, step: 0.01, default: 0.06, unit: 'x',
       hint: '>0 — выпуклые бока, <0 — талия' },
     { key: 'rimFlare', label: 'Отгиб края', min: -0.08, max: 0.4, step: 0.01, default: 0, unit: 'x' },
+    BASE_FILLET,
   ],
   points(p, _heightMm) {
     const rFoot = p.dFoot / 2;
@@ -254,9 +279,16 @@ const VASE: FamilyDef = {
     { key: 'bellyAt', label: 'Высота тулова', min: 0.2, max: 0.7, step: 0.01, default: 0.4, unit: 'x' },
     { key: 'neckAt', label: 'Высота горла', min: 0.5, max: 0.95, step: 0.01, default: 0.79, unit: 'x' },
     { key: 'footH', label: 'Ножка', min: 0, max: 90, step: 1, default: 12, unit: 'mm' },
+    FOOT_FILLET,
+    BASE_FILLET,
     { key: 'rimFlare', label: 'Отгиб венчика', min: -0.2, max: 0.8, step: 0.01, default: 0, unit: 'x',
       hint: 'раструб сверх диаметра устья' },
   ],
+  footZ: (p, heightMm) => {
+    const bellyAt = clamp(p.bellyAt, 0.12, 0.72);
+    const tFoot = clamp(p.footH / Math.max(1, heightMm), 0, bellyAt - 0.06);
+    return tFoot > 0.015 ? tFoot * heightMm : 0;
+  },
   points(p, heightMm) {
     const rFoot = p.dFoot / 2;
     const rBelly = p.dBelly / 2;
@@ -318,7 +350,126 @@ export function buildProfile(id: string, raw: Partial<Params>, heightMm: number)
   const params = clampFamilyParams(id, raw);
   const points = family.points(params, heightMm);
   points.sort((a, b) => a.t - b.t);
-  return { familyId: id, heightMm, points };
+  const def: ProfileDef = { familyId: id, heightMm, points };
+  const baseR = params.baseFillet ?? 0;
+  const footR = params.footFillet ?? 0;
+  const footZ = family.footZ?.(params, heightMm) ?? 0;
+  // без скруглений силуэт остаётся ровно тем, что дало семейство
+  if (baseR <= 0 && (footR <= 0 || footZ <= 0)) return def;
+  return filleted(def, footZ, footZ > 0 ? footR : 0, baseR);
+}
+
+/** Точек на силуэт со скруглениями — плюс сгущение в самих скруглениях. */
+const FILLET_PROFILE_POINTS = 160;
+const FILLET_ARC_POINTS = 32;
+/** Точек кривой, по которым ищется касание окружности. */
+const FILLET_PROBE = 400;
+
+interface Point2 {
+  r: number;
+  z: number;
+}
+
+/** Ближайшее расстояние от точки до набора точек и сама ближайшая точка. */
+function nearest(c: Point2, points: Point2[]): { d: number; at: Point2 } {
+  let best = Infinity;
+  let at = points[0];
+  for (const p of points) {
+    const d = Math.hypot(p.r - c.r, p.z - c.z);
+    if (d < best) {
+      best = d;
+      at = p;
+    }
+  }
+  return { d: best, at };
+}
+
+/** Точки кривой r(z) на отрезке высот — густо, для поиска касания. */
+function probe(radius: (z: number) => number, from: number, to: number): Point2[] {
+  const out: Point2[] = [];
+  for (let k = 0; k <= FILLET_PROBE; k++) {
+    const z = lerp(from, to, k / FILLET_PROBE);
+    out.push({ r: radius(z), z });
+  }
+  return out;
+}
+
+/**
+ * Силуэт со скруглениями — катящейся окружностью, как их и делает гончар:
+ *
+ *  • ножка → тело (вогнутый угол): окружность СНАРУЖИ материала касается
+ *    стенки ножки и тела; центр (r_ножки + R, z_c), z_c ищется бисекцией так,
+ *    чтобы расстояние до тела стало ровно R;
+ *  • кромка дна (выпуклый угол): окружность ВНУТРИ материала касается
+ *    основания и стенки; центр (c, R), c — бисекцией по тому же правилу.
+ *
+ * Дуга заменяет силуэт между точками касания. Высота по дуге монотонна,
+ * поэтому силуэт остаётся функцией r(z) и дальше живёт как любой другой:
+ * его пересэмплируют густо, со сгущением в скруглениях.
+ */
+function filleted(def: ProfileDef, footZ: number, footFillet: number, baseFillet: number): ProfileDef {
+  const H = def.heightMm;
+  const original = (z: number): number => profileRadius(def, z / H);
+  const zones: [number, number][] = [];
+
+  // 1. ножка → тело
+  let afterFoot = original;
+  let footArcFrom = footZ;
+  if (footFillet > 0 && footZ > 0) {
+    const rFoot = original(0);
+    const R = Math.min(footFillet, footZ * 0.9);
+    const body = probe(original, footZ, Math.min(H, footZ + 6 * R + 1));
+    const cx = rFoot + R;
+    let lo = footZ - R;
+    let hi = footZ;
+    for (let i = 0; i < 48; i++) {
+      const mid = (lo + hi) / 2;
+      if (nearest({ r: cx, z: mid }, body).d > R) lo = mid;
+      else hi = mid;
+    }
+    const zc = (lo + hi) / 2;
+    const touch = nearest({ r: cx, z: zc }, body).at;
+    footArcFrom = zc;
+    afterFoot = (z) => {
+      if (z <= zc) return rFoot;
+      if (z <= touch.z) return cx - Math.sqrt(Math.max(0, R * R - (z - zc) * (z - zc)));
+      return original(z);
+    };
+    zones.push([zc, touch.z]);
+  }
+
+  // 2. кромка дна
+  let final = afterFoot;
+  if (baseFillet > 0) {
+    const r0 = afterFoot(0);
+    // на ножке скругление дна не заходит в скругление ножки
+    const room = footFillet > 0 && footZ > 0 ? footArcFrom * 0.95 : H * 0.3;
+    const R = Math.min(baseFillet, r0 * 0.45, room);
+    const wall = probe(afterFoot, 0, Math.min(H, 4 * R + 1));
+    let lo = 0;
+    let hi = r0;
+    if (R > 0 && nearest({ r: 0, z: R }, wall).d > R) {
+      for (let i = 0; i < 48; i++) {
+        const mid = (lo + hi) / 2;
+        if (nearest({ r: mid, z: R }, wall).d > R) lo = mid;
+        else hi = mid;
+      }
+      const cx = (lo + hi) / 2;
+      const touch = nearest({ r: cx, z: R }, wall).at;
+      final = (z) => (z < touch.z ? cx + Math.sqrt(Math.max(0, R * R - (R - z) * (R - z))) : afterFoot(z));
+      zones.push([0, touch.z]);
+    }
+  }
+
+  const ts = new Set<number>();
+  for (let k = 0; k <= FILLET_PROFILE_POINTS; k++) ts.add(k / FILLET_PROFILE_POINTS);
+  for (const [from, to] of zones) {
+    for (let k = 0; k <= FILLET_ARC_POINTS; k++) ts.add(clamp(lerp(from, to, k / FILLET_ARC_POINTS) / H, 0, 1));
+  }
+  const points = [...ts].sort((a, b) => a - b)
+    .filter((t, i, all) => i === 0 || t - all[i - 1] > 1e-7)
+    .map((t) => ({ t, r: Math.max(MIN_RADIUS_MM, final(t * H)) }));
+  return { familyId: def.familyId, heightMm: H, points };
 }
 
 /**

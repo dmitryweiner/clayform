@@ -9,6 +9,8 @@ import {
   FAMILIES, FAMILY_IDS, familyById, isFamilyId, defaultFamilyParams,
   clampFamilyParams, buildProfile, profileRadius, MIN_RADIUS_MM,
 } from '../src/geo/profiles';
+import { buildVessel, defaultBuildParams } from '../src/geo/build';
+import { validateMesh } from '../src/geo/validate';
 
 /** Радиусы профиля в n точках по высоте. */
 function samples(id: string, params: Record<string, number>, heightMm = 140, n = 201): number[] {
@@ -229,6 +231,54 @@ describe('profileRadius', () => {
       const r = profileRadius(def, i / 1000);
       expect(Math.abs(r - previous)).toBeLessThan(3);
       previous = r;
+    }
+  });
+});
+
+describe('скругления у дна и у ножки', () => {
+  const at = (def: ReturnType<typeof buildProfile>, z: number) => profileRadius(def, z / def.heightMm);
+
+  it('кромка дна цилиндра — четверть окружности радиуса R', () => {
+    const shape = { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, barrel: 0, rimFlare: 0 };
+    const R = 6;
+    const sharp = buildProfile('cup', shape, 100);
+    const round = buildProfile('cup', { ...shape, baseFillet: R }, 100);
+    expect(at(round, 0)).toBeCloseTo(40 - R, 1);
+    // на высоте R(1 − cos45°) дуга отходит от оси на R·sin45°
+    expect(at(round, R * (1 - Math.SQRT1_2))).toBeCloseTo(40 - R + R * Math.SQRT1_2, 1);
+    for (const z of [R + 1, 30, 70]) expect(at(round, z), `z=${z}`).toBeCloseTo(at(sharp, z), 1);
+  });
+
+  it('скругление ножки добавляет материал во внутренний угол и только там', () => {
+    const shape = { ...defaultFamilyParams('bowl'), footH: 8, curvature: 0.86 };
+    const sharp = buildProfile('bowl', shape, 80);
+    const round = buildProfile('bowl', { ...shape, footFillet: 5 }, 80);
+    let added = 0;
+    for (let z = 0; z <= 80; z += 0.25) {
+      const diff = at(round, z) - at(sharp, z);
+      expect(diff, `z=${z}`).toBeGreaterThan(-0.3);
+      if (diff > 0.5) added++;
+      if (z < 2 || z > 30) expect(Math.abs(diff), `z=${z}`).toBeLessThan(0.3);
+    }
+    expect(added).toBeGreaterThan(4);
+  });
+
+  it('без радиусов силуэт ровно прежний, у горшка и чашки скругления ножки нет', () => {
+    for (const family of FAMILY_IDS) {
+      const plain = buildProfile(family, defaultFamilyParams(family), 120);
+      const zero = buildProfile(family, { ...defaultFamilyParams(family), baseFillet: 0, footFillet: 0 }, 120);
+      expect(zero.points).toEqual(plain.points);
+      expect(familyById(family).params.some((spec) => spec.key === 'baseFillet'), family).toBe(true);
+    }
+    expect(familyById('pot').params.some((spec) => spec.key === 'footFillet')).toBe(false);
+    expect(familyById('cup').params.some((spec) => spec.key === 'footFillet')).toBe(false);
+  });
+
+  it('на пределах ползунков изделие строится замкнутым', () => {
+    for (const family of FAMILY_IDS) {
+      const shape = { ...defaultFamilyParams(family), baseFillet: 15, footFillet: 20 };
+      const mesh = buildVessel({ ...defaultBuildParams(), family, shape, heightMm: familyById(family).defaultHeightMm, nu: 64, nv: 96 });
+      expect(validateMesh(mesh).watertight, family).toBe(true);
     }
   });
 });

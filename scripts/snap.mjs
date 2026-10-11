@@ -86,7 +86,8 @@ if (family) {
 const preset = flags.get('preset');
 if (preset) {
   label(`preset:${preset}`);
-  await page.selectOption('#presetSel', `b:${preset}`);
+  await page.click('#presetBtn');
+  await page.click(`#presetList [data-preset="b:${preset}"]`);
   await page.waitForTimeout(300);
 }
 

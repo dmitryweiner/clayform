@@ -213,14 +213,16 @@ await page.fill('#roul0_gap', '0');
 
 // каждый встроенный пресет открывается и строится
 label('presets');
+await page.click('#presetBtn');
 const presetValues = await page.$$eval(
-  '#presetSel optgroup[label="Готовые"] option',
-  (nodes) => nodes.map((n) => n.value),
+  '#presetList [data-preset^="b:"]',
+  (nodes) => nodes.map((n) => n.dataset.preset),
 );
+await page.click('#presetsClose');
 if (presetValues.length < 10) errors.push(`[presets] пресетов ${presetValues.length}, ожидалось ≥10`);
 for (const value of presetValues) {
   label(`preset:${value}`);
-  await page.selectOption('#presetSel', value);
+  await pickPreset(value);
   await page.waitForTimeout(120);
   const verdict = await auditVerdict(page);
   if (!verdict.includes('замкнуто ✓')) errors.push(`[${value}] audit="${verdict}"`);
@@ -235,7 +237,7 @@ for (const value of presetValues) {
 
 // ссылка переносит состояние: открываем её в чистой вкладке и сверяем статус
 label('share');
-await page.selectOption('#presetSel', presetValues[1]);
+await pickPreset(presetValues[1]);
 await auditVerdict(page);
 const beforeShare = await page.locator('#status').textContent();
 await page.click('#shareBtn');
@@ -252,7 +254,7 @@ if (afterShare !== beforeShare) {
 
 // пресет файлом: сохранили, сменили форму, открыли файл — состояние вернулось
 label('preset-file');
-await page.selectOption('#presetSel', presetValues[2]);
+await pickPreset(presetValues[2]);
 await auditVerdict(page);
 const beforeFile = await page.locator('#status').textContent();
 page.once('dialog', (dialog) => dialog.accept(dialog.defaultValue()));
@@ -263,7 +265,7 @@ const [presetDownload] = await Promise.all([
 if (!/^clayform-.+\.json$/.test(presetDownload.suggestedFilename())) {
   errors.push(`[preset-file] имя файла "${presetDownload.suggestedFilename()}"`);
 }
-await page.selectOption('#presetSel', presetValues[0]);
+await pickPreset(presetValues[0]);
 await auditVerdict(page);
 await page.setInputFiles('#fileInput', await presetDownload.path());
 await page.waitForTimeout(200);
@@ -271,6 +273,34 @@ await auditVerdict(page);
 const afterFile = await page.locator('#status').textContent();
 if (afterFile !== beforeFile) {
   errors.push(`[preset-file] состояние не восстановилось: "${beforeFile}" → "${afterFile}"`);
+}
+
+// свой пресет: сохранили под автоименем «Изделие N», он в списке, удалили
+// в два касания — и его нет, а изделие на экране осталось
+label('preset-delete');
+page.once('dialog', (dialog) => dialog.accept(dialog.defaultValue()));
+await page.click('#saveBtn');
+await page.waitForTimeout(150);
+const savedName = (await page.locator('#presetBtn').textContent()).trim();
+if (!/^Изделие \d+$/.test(savedName)) errors.push(`[preset-delete] автоимя "${savedName}"`);
+await page.click('#presetBtn');
+const savedRef = `u:${savedName}`;
+if (!(await page.locator(`#presetList [data-preset="${savedRef}"]`).count())) {
+  errors.push('[preset-delete] сохранённого пресета нет в списке');
+}
+const statusBeforeDelete = await page.locator('#status').textContent();
+await page.click(`#presetList [data-del="${savedRef}"]`);
+if (await page.locator(`#presetList [data-preset="${savedRef}"]`).count() !== 1) {
+  errors.push('[preset-delete] пресет удалился с первого касания');
+}
+await page.click(`#presetList [data-del="${savedRef}"]`);
+if (await page.locator(`#presetList [data-preset="${savedRef}"]`).count()) {
+  errors.push('[preset-delete] пресет не удалился со второго касания');
+}
+await page.keyboard.press('Escape');
+if (await page.locator('#presets').isVisible()) errors.push('[preset-delete] Esc не закрыл список');
+if ((await page.locator('#status').textContent()) !== statusBeforeDelete) {
+  errors.push('[preset-delete] удаление пресета поменяло изделие');
 }
 
 // отмена возвращает к прежнему состоянию, повтор — обратно
@@ -429,7 +459,7 @@ await expectDownloads(1, 'vessel');
 // полостью торцами и сквозным носиком. Отличить одно от другого можно по
 // числу треугольников в вердикте: оно обязано смениться.
 label('exact-preview');
-await page.selectOption('#presetSel', 'b:Чайник');
+await pickPreset('b:Чайник');
 const quickVerdict = await auditVerdict(page);
 const exactStarted = Date.now();
 try {
@@ -504,7 +534,7 @@ for (const [family, index, tab, expected] of [
 // самую тяжёлую сборку, она идёт дольше задержки появления полосы и на M1.
 // (CDP под --slow замедляет только главный поток, воркер считает как есть.)
 label('mold-progress');
-await page.selectOption('#presetSel', 'b:Чайник');
+await pickPreset('b:Чайник');
 await expectPreviewProgress('mold', () => page.click('#tabBath'), true);
 
 // утопленная крышка: форме нужна пробка горловины — на деталь больше
@@ -584,6 +614,12 @@ await page.waitForFunction(
   { timeout: 60000 },
 );
 await expectDownloads(3, 'mold', true);
+
+/** Открывает список пресетов и выбирает строку по её ref ('b:Чайник', 'u:…'). */
+async function pickPreset(ref) {
+  await page.click('#presetBtn');
+  await page.click(`#presetList [data-preset="${ref}"]`);
+}
 
 /**
  * `action` запускает долгую сборку превью; полоса должна появиться и
