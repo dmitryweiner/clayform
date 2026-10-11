@@ -182,7 +182,7 @@ function pressParts(jobId: number, state: AppState, segments: number): JobPart[]
     // замкнутые компоненты в одном меше.
     progress = new Progress(jobId, 3);
     progress.next('отминочная форма');
-    const slump = buildSlumpShell(params, bathWallMm, shrinkPct);
+    const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct);
     progress.next('пуансон');
     const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit);
     item = {

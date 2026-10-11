@@ -16,7 +16,8 @@
 //
 // Отминка в «−»: углублённая форма, пласт вдавливают внутрь. Её рабочая
 // поверхность — НАРУЖНАЯ поверхность изделия с рельефом, а снаружи скорлупы —
-// гладкий силуэт, отодвинутый наружу на борт. Тоже без CSG.
+// гладкий силуэт, отодвинутый наружу на борт, с тремя ушками под кромкой. К
+// ней — пуансон, садящийся лапками на эти ушки. Тоже без CSG.
 
 import type { Grid, SurfaceMesh } from './surface';
 import { assembleHollowMesh, mirrorZ, scaleMesh } from './surface';
@@ -41,14 +42,43 @@ export interface InsetProfile {
   heightMm: number;
 }
 
-/** Лапок у пуансона: три точки опоры не качаются и центрируют без переопределения. */
+/** Лапок у пуансона и ушек у матрицы: три опоры не качаются и центрируют без переопределения. */
 export const PUNCH_LEGS = 3;
-/** Радиальная толщина лапки, мм. */
-export const PUNCH_LEG_MM = 8;
 /** Ширина лапки по дуге, мм; квантуется шагом сетки по углу. */
 export const PUNCH_LEG_WIDTH_MM = 14;
-/** Зазор между лапками и матрицей, мм: скользящая посадка FDM. */
+/** Зазор между губой лапки и ушком, мм: скользящая посадка FDM. */
 export const PUNCH_CLEARANCE_MM = 0.3;
+/** На сколько верх ушка ниже кромки матрицы, мм. */
+export const EAR_DROP_MM = 10;
+/** Ширина площадки на ушке, на которую садится лапка, радиально, мм. */
+const EAR_SEAT_MM = 8;
+/**
+ * Зазор между стенкой матрицы и лапкой сверх пласта, мм: свес глины за
+ * кромку ложится между ними и не защемляется.
+ */
+const EAR_CLAY_GAP_MM = 1;
+/**
+ * Насколько губа лапки опускается ниже верха ушка, мм. Чем длиннее, тем
+ * раньше она берётся за ушко и тем меньше пуансон перекашивает на ходу.
+ */
+export const PUNCH_LIP_MM = 10;
+/** Радиальная толщина губы, мм. */
+const PUNCH_LIP_T_MM = 4;
+/** Отвесная наружная грань ушка длиннее губы на столько, мм; ниже — фаска 45°. */
+const EAR_FACE_SPARE_MM = 3;
+/** Ширина щеки паза по дуге, мм; не уже двух шагов сетки. */
+const CHEEK_MM = 5;
+/**
+ * Щёки паза кончаются ниже кромки на столько, мм: свес глины ложится на них
+ * свободно, фланец (он выше кромки на пласт) его не зажимает.
+ */
+const CHEEK_BELOW_RIM_MM = 1.5;
+/**
+ * Диаметр отдушины в дне матрицы, мм. PLA, в отличие от гипса, воду не
+ * пьёт: без отдушины воздух запирается под пластом при вдавливании, а при
+ * выемке держит его присосом.
+ */
+export const SLUMP_VENT_MM = 2.5;
 /** Диаметр отдушины по оси пуансона, мм. */
 export const PUNCH_VENT_MM = 3;
 /** Тоньше фланец не делаем: лапки на нём гуляют. */
@@ -205,8 +235,43 @@ export interface SlumpFit {
   rimMm: number;
   /** высота кромки над столом = высота изделия + борт, мм */
   rimZ: number;
-  /** самое широкое наружное кольцо матрицы (после fillWaists), мм */
+  /** самое широкое наружное кольцо матрицы без ушек (после fillWaists), мм */
   outerMaxMm: number;
+  ear: EarFit;
+}
+
+/**
+ * Ушко матрицы — выступ на наружной стенке под кромкой, на него садится
+ * лапка пуансона. Верх ушка — грань сетки между кольцом, вытянутым до
+ * наружной грани ушка, и следующим кольцом стенки: прямая в осевом сечении,
+ * чуть наклонённая наружу-вниз. Подошва лапки повторяет её, и контакт —
+ * плоскость, а не ребро.
+ */
+export interface EarFit {
+  /** наружная грань ушка и высота его верха у неё */
+  outerMm: number;
+  topZ: number;
+  /** верх ушка у стенки: следующее кольцо матрицы */
+  wallMm: number;
+  wallZ: number;
+  /** откуда начинается площадка лапки: стенка + пласт + зазор */
+  seatInMm: number;
+  /** охват лапки: у пуансона опущены вершины с legDistance ≤ legReach */
+  legReach: number;
+  /**
+   * Охват паза: вершины в (legReach, slotReach] свободны — пустая ячейка
+   * сетки между гранью лапки и гранью щеки, обе наклонены на шаг по углу.
+   */
+  slotReach: number;
+  /** охват ушка вместе со щеками: щёки — в (slotReach, reach] */
+  reach: number;
+  /** верх щёк паза */
+  cheekZ: number;
+}
+
+/** Высота верха ушка на радиусе r — по прямой его верхней грани. */
+export function earTopAt(ear: EarFit, r: number): number {
+  return ear.topZ + ((r - ear.outerMm) * (ear.wallZ - ear.topZ)) / (ear.wallMm - ear.outerMm);
 }
 
 export interface SlumpShell {
@@ -220,9 +285,16 @@ export interface SlumpShell {
  * рельефом (её и касается пласт), снаружи — гладкий силуэт, отодвинутый по
  * нормали на борт плюс самый высокий выступ рельефа: выпуклый узор не должен
  * протыкать скорлупу. Снизу — плоское дно толщиной в борт, на нём форма и
- * стоит; сверху — плоский торец по венчику. Увеличена на усадку.
+ * стоит; сверху — плоский торец по венчику. Под кромкой снаружи — три ушка
+ * под лапки пуансона (`slumpEars`); их размер зависит от пласта: между
+ * стенкой и лапкой оставлено место под свес глины. Увеличена на усадку.
  */
-export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct: number): SlumpShell {
+export function buildSlumpShell(
+  params: BuildParams,
+  hollow: HollowState,
+  shellMm: number,
+  shrinkPct: number,
+): SlumpShell {
   const surface = vesselSurface(params);
   const { nu, nv, profile, heightMm } = surface;
   const inner = vesselGrid(params);
@@ -258,18 +330,21 @@ export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct:
   // бока остаются как есть. Внутри ничего не меняется: там изделие.
   fillWaists(rings);
   spreadDuplicates(rings);
+  const outerMaxMm = rings.reduce((max, ring) => Math.max(max, ring.r), 0);
+  const ears = slumpEars(rings, nu, slabThickness(hollow.wallMm, heightMm), heightMm);
   for (let j = 0; j <= nv; j++) {
     const { r, z } = rings[j];
     for (let i = 0; i < nu; i++) {
       const u = (2 * Math.PI * i) / nu;
       const k = (j * nu + i) * 3;
-      positions[k] = r * Math.cos(u);
-      positions[k + 1] = r * Math.sin(u);
+      const radius = Math.max(r, ears.radiusAt(j, z, legDistance(u)));
+      positions[k] = radius * Math.cos(u);
+      positions[k + 1] = radius * Math.sin(u);
       positions[k + 2] = z;
     }
   }
   const outer: Grid = { nu, nv, positions };
-  const shell = assembleHollowMesh(outer, inner.positions);
+  const shell = assembleHollowMesh(outer, inner.positions, [], SLUMP_VENT_MM);
   // дно — на стол
   for (let i = 2; i < shell.positions.length; i += 3) shell.positions[i] += shellMm;
   const mesh = { ...shell, normals: meshNormals(shell.positions, shell.indices) };
@@ -278,9 +353,76 @@ export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct:
     fit: {
       rimMm: radiusAt(1),
       rimZ: heightMm + shellMm,
-      outerMaxMm: rings.reduce((max, ring) => Math.max(max, ring.r), 0),
+      outerMaxMm,
+      ear: {
+        ...ears.fit,
+        topZ: ears.fit.topZ + shellMm,
+        wallZ: ears.fit.wallZ + shellMm,
+        cheekZ: ears.fit.cheekZ + shellMm,
+      },
     },
   };
+}
+
+/**
+ * Ушки матрицы: кольца до `ring` включительно в секторах ушек вытягиваются
+ * до наружной грани — отвесной под верхом, ниже фаска 45° обратно к стенке
+ * (форма печатается стоя, без поддержек). Верх — на кольце не выше
+ * EAR_DROP_MM под кромкой; площадка лапки — дальше стенки над ушком на пласт
+ * и зазор, чтобы свес глины ложился между ними. По бокам площадки над ушком
+ * поднимаются щёки паза почти до кромки: лапка входит между ними задолго до
+ * посадки, и пуансон не промахнётся мимо ушек и не перекосится на ходу.
+ * Высоты — до подъёма на борт.
+ */
+function slumpEars(
+  rings: readonly { r: number; z: number }[],
+  nu: number,
+  slabMm: number,
+  heightMm: number,
+): { radiusAt: (j: number, z: number, angle: number) => number; fit: EarFit } {
+  const nv = rings.length - 1;
+  let ring = 1;
+  for (let j = 1; j < nv; j++) if (rings[j].z <= heightMm - EAR_DROP_MM) ring = j;
+  let cheekRing = ring;
+  for (let j = ring + 1; j < nv; j++) if (rings[j].z <= heightMm - CHEEK_BELOW_RIM_MM) cheekRing = j;
+  const topZ = rings[ring].z;
+  const faceZ = topZ - PUNCH_LIP_MM - EAR_FACE_SPARE_MM;
+
+  let above = 0;
+  for (let j = ring + 1; j <= nv; j++) above = Math.max(above, rings[j].r);
+  // губа опускается вдоль наружной грани: там стенка не должна торчать за неё
+  let face = 0;
+  for (const { r, z } of rings) if (z >= faceZ && z <= topZ) face = Math.max(face, r);
+  const seatInMm = above + slabMm + EAR_CLAY_GAP_MM;
+  const outerMm = Math.max(seatInMm, face) + EAR_SEAT_MM;
+
+  // Лапка, пустая ячейка, щека. Ушко идёт и под щёками: иначе их низ висел
+  // бы над столом, а форма печатается стоя.
+  const step = (2 * Math.PI) / nu;
+  const legReach = legSpan(outerMm, nu);
+  const slotReach = legReach + step;
+  const reach = slotReach + Math.max(CHEEK_MM / outerMm, step * 2.01);
+  return {
+    radiusAt: (j, z, angle) => {
+      if (angle > reach) return 0;
+      if (j <= ring) return outerMm - Math.max(0, faceZ - z);
+      return j <= cheekRing && angle > slotReach ? outerMm : 0;
+    },
+    fit: {
+      outerMm, topZ, wallMm: rings[ring + 1].r, wallZ: rings[ring + 1].z, seatInMm,
+      legReach, slotReach, reach, cheekZ: rings[cheekRing].z,
+    },
+  };
+}
+
+/**
+ * Угловой охват лапки: вершины, чья ячейка сетки по углу задевает её сектор,
+ * но не меньше шага с каждой стороны от центра — одна опущенная вершина дала
+ * бы иглу с подошвой в линию.
+ */
+function legSpan(radiusMm: number, nu: number): number {
+  const step = (2 * Math.PI) / nu;
+  return Math.max(PUNCH_LEG_WIDTH_MM / 2 / radiusMm + step / 2, step * 1.01);
 }
 
 /**
@@ -337,34 +479,37 @@ function spreadDuplicates(rings: { r: number; z: number }[]): void {
 
 /**
  * Внутренняя геометрия пуансона — то, что нужно и сборке, и тестам: радиусы
- * лапок и фланца, толщины, секторы лапок. Всё до усадки, в координатах
+ * лапок и фланца, толщины, охват лапок. Всё до усадки, в координатах
  * матрицы.
  */
 export interface PunchLayout {
   /** толщина пласта: зазор между пуансоном и матрицей */
   slabMm: number;
-  /** внутренняя (центрирующая) грань лапок */
-  legInnerMm: number;
+  /** внутренняя грань губы лапки: наружная грань ушка + зазор */
+  lipInMm: number;
+  /** низ губы: ниже верха ушка на PUNCH_LIP_MM */
+  lipZ: number;
   /** наружный радиус фланца и лапок */
   flangeMm: number;
   /** толщина фланца */
   flangeT: number;
-  /** низ фланца над столом = кромка матрицы + пласт; это и длина лапки */
+  /** низ фланца над столом = кромка матрицы + пласт */
   flangeZ: number;
-  /** полуширина лапки по углу, рад */
-  legHalfAngle: number;
+  /** угловой охват лапки: опущены вершины с legDistance ≤ reach */
+  legReach: number;
 }
 
 export function punchLayout(params: BuildParams, hollow: HollowState, shellMm: number, fit: SlumpFit): PunchLayout {
   const { heightMm } = vesselSurface(params);
-  const legInnerMm = fit.outerMaxMm + PUNCH_CLEARANCE_MM;
+  const lipInMm = fit.ear.outerMm + PUNCH_CLEARANCE_MM;
   return {
     slabMm: slabThickness(hollow.wallMm, heightMm),
-    legInnerMm,
-    flangeMm: legInnerMm + PUNCH_LEG_MM,
+    lipInMm,
+    lipZ: fit.ear.topZ - PUNCH_LIP_MM,
+    flangeMm: lipInMm + PUNCH_STEP_MM + PUNCH_LIP_T_MM,
     flangeT: Math.max(shellMm, PUNCH_FLANGE_MIN_MM),
     flangeZ: fit.rimZ + slabThickness(hollow.wallMm, heightMm),
-    legHalfAngle: PUNCH_LEG_WIDTH_MM / 2 / legInnerMm,
+    legReach: fit.ear.legReach,
   };
 }
 
@@ -426,13 +571,15 @@ function offsetPolyline(
  * Рабочая поверхность — внутренняя поверхность изделия (силуэт, отодвинутый
  * внутрь на пласт), гладкая: рельеф в этом режиме лежит на матрице. Над
  * кромкой матрицы — плоский фланец, висящий над ней на пласт; с фланца
- * снаружи матрицы спускаются три лапки до стола. Внутренние грани лапок
- * обнимают самое широкое кольцо матрицы с зазором — центрируют; длина лапок
- * задаёт глубину — толщину пласта.
+ * снаружи матрицы спускаются три короткие лапки-крючка к ушкам матрицы.
+ * Подошва лапки садится на верх ушка — это упор глубины, он и задаёт толщину
+ * пласта; губа опускается ниже и обнимает ушко снаружи с зазором — три губы
+ * центрируют пуансон. От стенки лапка отстоит на пласт и зазор: свес глины
+ * за кромку ложится между ними.
  *
  * Всё — одно тело вращения (lathe), и лапки тоже: точки низа фланца на их
  * радиусах несут «рельеф» вниз, и depthAt в секторах лапок опускает их до
- * стола — тем же механизмом, что кладёт рельеф на купол крышки. Пуансон полый,
+ * ушка — тем же механизмом, что кладёт рельеф на купол крышки. Пуансон полый,
  * скорлупой в борт, и с отдушиной по оси — контур оси не касается, тело —
  * тор. Печатается фланцем на стол; увеличен на усадку, как и матрица.
  */
@@ -445,7 +592,8 @@ export function buildPunch(
 ): SurfaceMesh {
   const { profile, heightMm, nu } = vesselSurface(params);
   const layout = punchLayout(params, hollow, shellMm, fit);
-  const { slabMm, legInnerMm, flangeMm, flangeZ, legHalfAngle } = layout;
+  const { slabMm, lipInMm, lipZ, flangeMm, flangeZ, legReach: reach } = layout;
+  const { ear } = fit;
   const flangeTop = flangeZ + layout.flangeT;
   const radiusAt = (v: number): number => profileRadius(profile, v);
   const vent = PUNCH_VENT_MM / 2;
@@ -474,16 +622,20 @@ export function buildPunch(
   const inner = offsetPolyline(surface, shellMm, floorZ + shellMm, fit.rimZ);
   const shellTop = inner[inner.length - 1];
 
-  const leg = { v: 0, nr: 0, nz: -1 };
+  const leg = { nr: 0, nz: -1 };
   const contour: LathePoint[] = [
     // отдушина снизу и пол рабочей поверхности
     { r: vent, z: floorZ },
     ...surface,
     ...arc,
-    // низ фланца; на радиусах лапок он опускается в секторах до стола
-    { r: legInnerMm - PUNCH_STEP_MM, z: flangeZ },
-    { r: legInnerMm, z: flangeZ, relief: leg },
-    { r: flangeMm, z: flangeZ, relief: leg },
+    // Низ фланца; в секторах лапок его кольца опускаются: подошва — на
+    // верх ушка, губа — ниже, вдоль его наружной грани. v у точки — номер
+    // глубины для depthAt, а не доля дуги.
+    { r: ear.seatInMm - PUNCH_STEP_MM, z: flangeZ },
+    { r: ear.seatInMm, z: flangeZ, relief: { ...leg, v: 0 } },
+    { r: lipInMm, z: flangeZ, relief: { ...leg, v: 1 } },
+    { r: lipInMm + PUNCH_STEP_MM, z: flangeZ, relief: { ...leg, v: 2 } },
+    { r: flangeMm, z: flangeZ, relief: { ...leg, v: 2 } },
     // торец фланца — он же наружная грань лапки
     { r: flangeMm, z: flangeTop },
     { r: shellTop.r, z: flangeTop },
@@ -491,12 +643,9 @@ export function buildPunch(
     ...[...inner].reverse(),
     { r: vent, z: floorZ + shellMm },
   ];
-  // Лапка опускает те вершины кольца, чья ячейка сетки по углу задевает её
-  // сектор, но не меньше одного шага с каждой стороны от центра: одна
-  // опущенная вершина дала бы иглу с подошвой в линию.
-  const step = (2 * Math.PI) / nu;
-  const reach = Math.max(legHalfAngle + step / 2, step * 1.01);
-  const depthAt = (u: number): number => (legDistance(u) <= reach ? flangeZ : 0);
+  // подошва ложится на верх ушка по всей ширине: та же прямая, что у него
+  const depths = [flangeZ - earTopAt(ear, ear.seatInMm), flangeZ - earTopAt(ear, lipInMm), flangeZ - lipZ];
+  const depthAt = (u: number, v: number): number => (legDistance(u) <= reach ? depths[v] : 0);
   const raw = lathe(contour, nu, depthAt);
   const mesh = { ...raw, normals: meshNormals(raw.positions, raw.indices) };
   return mirrorZ(scaleMesh(mesh, 1 + shrinkPct / 100));

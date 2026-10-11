@@ -4,7 +4,7 @@
 
 import {
   insetProfile, buildHump, humpSurface, buildSlumpShell, buildPunch, punchLayout, slabThickness, legDistance,
-  PUNCH_LEG_WIDTH_MM, PUNCH_VENT_MM,
+  earTopAt, SLUMP_VENT_MM, PUNCH_LEG_WIDTH_MM, PUNCH_VENT_MM, PUNCH_CLEARANCE_MM, EAR_DROP_MM,
 } from '../src/geo/press';
 import { cavityPoint, defaultHollow } from '../src/geo/hollow';
 import { buildProfile, defaultFamilyParams, familyById, profileRadius } from '../src/geo/profiles';
@@ -129,7 +129,7 @@ describe('горб', () => {
 describe('углублённая форма', () => {
   it('замкнутая скорлупа на столе, а не сплошной блок', () => {
     for (const family of ['bowl', 'cup', 'pot', 'vase']) {
-      const { mesh } = buildSlumpShell(params(family), 3, 0);
+      const { mesh } = buildSlumpShell(params(family), defaultHollow(), 3, 0);
       const report = validateMesh(mesh);
       expect(report.watertight, family).toBe(true);
       expect(signedVolume(mesh.positions, mesh.indices), family).toBeGreaterThan(0);
@@ -142,13 +142,19 @@ describe('углублённая форма', () => {
     const p = params('bowl');
     const shell = 3;
     const vessel = validateMesh(buildVessel(p));
-    const { mesh } = buildSlumpShell(p, shell, 10);
+    const { mesh, fit } = buildSlumpShell(p, defaultHollow(), shell, 10);
     const report = validateMesh(mesh);
     // высота — изделие плюс дно, всё с усадкой
     expect(report.extents[2]).toBeCloseTo((vessel.extents[2] + shell) * 1.1, 1);
-    // по венчику снаружи — изделие плюс борт с каждой стороны
-    expect(report.extents[0]).toBeGreaterThan(vessel.extents[0] * 1.1);
-    expect(report.extents[0]).toBeLessThan((vessel.extents[0] + 4 * shell) * 1.1);
+    // по венчику снаружи — изделие плюс борт с каждой стороны (ушки не в счёт)
+    let radius = 0;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const u = Math.atan2(mesh.positions[i + 1], mesh.positions[i]);
+      if (legDistance(u) <= fit.ear.reach + 1e-6) continue;
+      radius = Math.max(radius, Math.hypot(mesh.positions[i], mesh.positions[i + 1]));
+    }
+    expect(2 * radius).toBeGreaterThan(vessel.extents[0] * 1.1);
+    expect(2 * radius).toBeLessThan((vessel.extents[0] + 4 * shell) * 1.1);
     // скорлупа, а не блок: материала куда меньше, чем в полости
     expect(report.volume).toBeLessThan(vessel.volume * 1.331 * 0.3);
   });
@@ -156,7 +162,7 @@ describe('углублённая форма', () => {
   it('снаружи нет цоколя под ножку: стенка идёт к основанию без перехвата', () => {
     const p = params('bowl');
     expect(p.shape.footH).toBeGreaterThan(0);
-    const { mesh } = buildSlumpShell(p, 3, 0);
+    const { mesh } = buildSlumpShell(p, defaultHollow(), 3, 0);
     // наружная сетка — первые nu·(nv+1) вершин, ряд j начинается с j·nu
     let previous = 0;
     for (let j = 0; j <= p.nv; j++) {
@@ -171,7 +177,7 @@ describe('углублённая форма', () => {
   it('выпуклый рельеф не протыкает скорлупу', () => {
     const base = params('cup');
     const p = { ...base, relief: { ...base.relief, wave: { ...base.relief.wave, on: true, ampMm: 6 } } };
-    const { mesh } = buildSlumpShell(p, 1.2, 0);
+    const { mesh } = buildSlumpShell(p, defaultHollow(), 1.2, 0);
     expect(validateMesh(mesh).watertight).toBe(true);
     // Вершины: сначала наружная сетка, затем внутренняя той же раскладки.
     // В каждом узле боковой стенки наружная поверхность дальше от оси.
@@ -196,7 +202,7 @@ describe('пуансон', () => {
   /** Пуансон в рабочем положении (до переворота), без усадки. */
   const working = (family: string) => {
     const p = params(family);
-    const { fit } = buildSlumpShell(p, shell, 0);
+    const { fit } = buildSlumpShell(p, hollow, shell, 0);
     const layout = punchLayout(p, hollow, shell, fit);
     const mesh = buildPunch(p, hollow, shell, 0, fit);
     const top = layout.flangeZ + layout.flangeT;
@@ -217,7 +223,7 @@ describe('пуансон', () => {
   it('замкнут, снаружи нормали, фланцем на столе, размеры от посадки', () => {
     for (const family of families) {
       const p = params(family);
-      const { fit } = buildSlumpShell(p, shell, 10);
+      const { fit } = buildSlumpShell(p, hollow, shell, 10);
       const layout = punchLayout(p, hollow, shell, fit);
       const mesh = buildPunch(p, hollow, shell, 10, fit);
       const report = validateMesh(mesh);
@@ -229,8 +235,11 @@ describe('пуансон', () => {
       for (let i = 0; i < mesh.positions.length; i += 3) {
         rMax = Math.max(rMax, Math.hypot(mesh.positions[i], mesh.positions[i + 1]));
       }
-      expect(rMax, family).toBeCloseTo(layout.flangeMm * 1.1, 3);
-      expect(report.extents[2], family).toBeCloseTo((layout.flangeZ + layout.flangeT) * 1.1, 3);
+      // у горшка и вазы тулово пуансона шире фланца: ушки — на горле
+      expect(rMax, family).toBeGreaterThanOrEqual(layout.flangeMm * 1.1 - 1e-3);
+      // лапки короткие: ниже всего — пол рабочей поверхности или губа у ушка
+      const low = Math.min(layout.lipZ, shell + layout.slabMm);
+      expect(report.extents[2], family).toBeCloseTo((layout.flangeZ + layout.flangeT - low) * 1.1, 3);
     }
   });
 
@@ -251,44 +260,140 @@ describe('пуансон', () => {
     }
   });
 
-  it('три лапки на столе, обнимают матрицу с зазором', () => {
+  /** Кластеры углов: между лапками (ушками) дыры больше полутора шагов сетки. */
+  const clustersOf = (us: number[], step: number): number[][] => {
+    const angles = [...new Set(us.map((u) => u.toFixed(6)))].map(Number).sort((a, b) => a - b);
+    const clusters: number[][] = [];
+    for (const a of angles) {
+      const last = clusters[clusters.length - 1];
+      if (last && a - last[last.length - 1] < step * 1.5) last.push(a);
+      else clusters.push([a]);
+    }
+    // кластер через ±π сшиваем
+    const tail = clusters[clusters.length - 1];
+    if (clusters.length > 1 && angles[0] + 2 * Math.PI - angles[angles.length - 1] < step * 1.5) {
+      clusters.pop();
+      clusters[0].push(...tail.map((a) => a - 2 * Math.PI));
+    }
+    return clusters;
+  };
+
+  it('у матрицы три ушка под кромкой, верх — на заявленной высоте', () => {
     for (const family of families) {
-      const { p, layout, positions } = working(family);
+      const p = params(family);
+      const { mesh, fit } = buildSlumpShell(p, hollow, shell, 0);
       const step = (2 * Math.PI) / p.nu;
-      const feet: { u: number; r: number }[] = [];
-      let flangeLow = Infinity;
+      const us: number[] = [];
+      let rMax = 0;
+      let top = -Infinity;
+      for (let i = 0; i < mesh.positions.length; i += 3) {
+        const r = Math.hypot(mesh.positions[i], mesh.positions[i + 1]);
+        // у горшка тулово шире ушек, но ниже их: смотрим только пояс ушка
+        if (r < fit.ear.seatInMm || mesh.positions[i + 2] < fit.ear.topZ - EAR_DROP_MM) continue;
+        const u = Math.atan2(mesh.positions[i + 1], mesh.positions[i]);
+        us.push(u);
+        // щёки паза выше ушка; само ушко — где идёт лапка
+        if (legDistance(u) > fit.ear.slotReach) continue;
+        rMax = Math.max(rMax, r);
+        top = Math.max(top, mesh.positions[i + 2]);
+      }
+      expect(clustersOf(us, step).length, family).toBe(3);
+      expect(rMax, family).toBeCloseTo(fit.ear.outerMm, 3);
+      expect(top, family).toBeCloseTo(fit.ear.topZ, 3);
+      expect(fit.rimZ - fit.ear.topZ, family).toBeGreaterThanOrEqual(EAR_DROP_MM - 1e-6);
+      expect(validateMesh(mesh).watertight, family).toBe(true);
+    }
+  });
+
+  it('над ушком — паз: две щеки почти до кромки, лапка проходит между ними', () => {
+    for (const family of families) {
+      const p = params(family);
+      const { mesh, fit } = buildSlumpShell(p, hollow, shell, 0);
+      const { ear } = fit;
+      const step = (2 * Math.PI) / p.nu;
+      const cheeks: number[] = [];
+      for (let i = 0; i < mesh.positions.length; i += 3) {
+        const r = Math.hypot(mesh.positions[i], mesh.positions[i + 1]);
+        const z = mesh.positions[i + 2];
+        if (r < ear.seatInMm || z < ear.topZ + 1 || z > fit.rimZ) continue;
+        const u = Math.atan2(mesh.positions[i + 1], mesh.positions[i]);
+        cheeks.push(u);
+        // щека не заходит туда, где идёт лапка, и оставляет ей пустую ячейку
+        expect(legDistance(u), family).toBeGreaterThan(ear.slotReach);
+      }
+      const clusters = clustersOf(cheeks, step);
+      expect(clusters.length, family).toBe(6);
+      for (const cluster of clusters) expect(cluster.length, `${family}: щека в линию`).toBeGreaterThan(1);
+      // берутся за лапку задолго до посадки, но свес глины над ними не зажат
+      expect(ear.cheekZ - ear.topZ, family).toBeGreaterThan(EAR_DROP_MM - 3);
+      expect(fit.rimZ - ear.cheekZ, family).toBeGreaterThan(1);
+    }
+  });
+
+  it('в дне матрицы — сквозная отдушина по оси', () => {
+    for (const family of families) {
+      const { mesh } = buildSlumpShell(params(family), hollow, shell, 10);
+      const report = validateMesh(mesh);
+      expect(report.watertight, family).toBe(true);
+      expect(report.degenerateTriangles, family).toBe(0);
+      const { positions, indices } = mesh;
+      let wall = 0;
+      for (let t = 0; t < indices.length; t += 3) {
+        let x = 0;
+        let y = 0;
+        for (let k = 0; k < 3; k++) {
+          x += positions[indices[t + k] * 3] / 3;
+          y += positions[indices[t + k] * 3 + 1] / 3;
+        }
+        const r = Math.hypot(x, y);
+        expect(r, family).toBeGreaterThan((SLUMP_VENT_MM / 2) * 1.1 * 0.95);
+        if (r < (SLUMP_VENT_MM / 2) * 1.1) wall++;
+      }
+      expect(wall, family).toBe(2 * params(family).nu);
+    }
+  });
+
+  it('три короткие лапки: подошва на ушке, губа обнимает его снаружи', () => {
+    for (const family of families) {
+      const { p, fit, layout, positions } = working(family);
+      const { ear } = fit;
+      const step = (2 * Math.PI) / p.nu;
+      const legs: { u: number; r: number; z: number }[] = [];
       for (let i = 0; i < positions.length; i += 3) {
         const r = Math.hypot(positions[i], positions[i + 1]);
-        const u = Math.atan2(positions[i + 1], positions[i]);
-        if (positions[i + 2] < 1) feet.push({ u, r });
-        else if (r > layout.legInnerMm - 0.01) flangeLow = Math.min(flangeLow, positions[i + 2]);
+        const z = positions[i + 2];
+        if (z < layout.flangeZ - 0.01 && z > layout.lipZ - 1e-3 && r > ear.seatInMm - 0.5) {
+          legs.push({ u: Math.atan2(positions[i + 1], positions[i]), r, z });
+        }
       }
-      // кластеры по углу: между лапками дыры больше шага сетки
-      const angles = [...new Set(feet.map((f) => f.u.toFixed(6)))].map(Number).sort((a, b) => a - b);
-      const clusters: number[][] = [];
-      for (const a of angles) {
-        const last = clusters[clusters.length - 1];
-        if (last && a - last[last.length - 1] < step * 1.5) last.push(a);
-        else clusters.push([a]);
-      }
-      // кластер через ±π сшиваем
-      if (clusters.length > 1 && angles[0] + 2 * Math.PI - angles[angles.length - 1] < step * 1.5) {
-        clusters[0].push(...clusters.pop()!.map((a) => a - 2 * Math.PI));
-      }
+      const clusters = clustersOf(legs.map((leg) => leg.u), step);
       expect(clusters.length, family).toBe(3);
       for (const cluster of clusters) {
+        expect(cluster.length, `${family}: подошва в линию`).toBeGreaterThan(1);
         const width = Math.max(...cluster) - Math.min(...cluster);
-        expect(Math.abs(width - PUNCH_LEG_WIDTH_MM / layout.legInnerMm), family).toBeLessThanOrEqual(step * 1.01);
+        expect(Math.abs(width - PUNCH_LEG_WIDTH_MM / ear.outerMm), family).toBeLessThanOrEqual(step * 1.01);
       }
-      expect(Math.min(...feet.map((f) => f.r)), family).toBeCloseTo(layout.legInnerMm, 3);
-      for (const f of feet) expect(legDistance(f.u), family).toBeLessThan(layout.legHalfAngle + step);
-      expect(Math.min(...clusters.map((c) => c.length)), `${family}: подошва в линию`).toBeGreaterThan(1);
+      // глубину держит ушко, а не стол
+      expect(Math.min(...legs.map((leg) => leg.z)), family).toBeCloseTo(layout.lipZ, 3);
+      expect(layout.lipZ, family).toBeGreaterThan(1);
+      let contact = 0;
+      for (const leg of legs) {
+        // лапка целиком над ушком по углу — подошва не съезжает с площадки
+        expect(legDistance(leg.u), family).toBeLessThan(ear.legReach + 1e-6);
+        // от стенки — на пласт и зазор, под свес глины
+        expect(leg.r, family).toBeGreaterThan(ear.seatInMm - 0.31);
+        // в ушко не входит: либо снаружи его грани, либо не ниже его верха
+        const outside = leg.r >= layout.lipInMm - 0.31 - 1e-3 && leg.r >= ear.outerMm + 1e-3;
+        expect(outside || leg.z >= earTopAt(ear, leg.r) - 1e-3, `${family} r=${leg.r} z=${leg.z}`).toBe(true);
+        if (Math.abs(leg.z - earTopAt(ear, leg.r)) < 1e-3 && leg.r <= ear.outerMm) contact++;
+      }
+      expect(contact, `${family}: подошва не легла на ушко`).toBeGreaterThan(0);
+      // губа — на зазор от наружной грани ушка
+      const lip = legs.filter((leg) => leg.z < ear.topZ - 1);
+      expect(Math.min(...lip.map((leg) => leg.r)) - ear.outerMm, family).toBeGreaterThanOrEqual(PUNCH_CLEARANCE_MM - 1e-3);
       // вне секторов низ фланца висит над кромкой на пласт
-      expect(flangeLow, family).toBeGreaterThan(-1);
-      const below = section(positions).filter((q) => q.r > layout.legInnerMm - 0.01 && q.z > 1);
-      if (legDistance(0) > layout.legHalfAngle + step) {
-        expect(Math.min(...below.map((q) => q.z)), family).toBeCloseTo(layout.flangeZ, 3);
-      }
+      const flange = section(positions).filter((q) => q.r > ear.seatInMm && q.z > ear.topZ);
+      expect(Math.min(...flange.map((q) => q.z)), family).toBeCloseTo(layout.flangeZ, 3);
     }
   });
 
@@ -316,7 +421,7 @@ describe('пуансон', () => {
 
   it('отдушина сквозная', () => {
     const p = params('bowl');
-    const { fit } = buildSlumpShell(p, shell, 10);
+    const { fit } = buildSlumpShell(p, hollow, shell, 10);
     const mesh = buildPunch(p, hollow, shell, 10, fit);
     const { positions, indices } = mesh;
     for (let t = 0; t < indices.length; t += 3) {
@@ -336,9 +441,9 @@ describe('пуансон', () => {
       ...base,
       relief: { ...base.relief, wave: { ...base.relief.wave, on: true, ampMm: 3 } },
     };
-    const plain = buildPunch(base, hollow, shell, 0, buildSlumpShell(base, shell, 0).fit);
+    const plain = buildPunch(base, hollow, shell, 0, buildSlumpShell(base, hollow, shell, 0).fit);
     // матрица с волной шире, и лапки за ней уходят; рабочая поверхность — та же
-    const wavy = buildPunch(fancy, hollow, shell, 0, buildSlumpShell(base, shell, 0).fit);
+    const wavy = buildPunch(fancy, hollow, shell, 0, buildSlumpShell(base, hollow, shell, 0).fit);
     expect(Array.from(wavy.positions)).toEqual(Array.from(plain.positions));
     expect(Array.from(wavy.indices)).toEqual(Array.from(plain.indices));
   });

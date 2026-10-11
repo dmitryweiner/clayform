@@ -115,16 +115,21 @@ export function assembleTorusMesh(grid: Grid): Omit<SurfaceMesh, 'normals'> {
  * `rimRings` — промежуточные кольца кромки между внешним и внутренним верхом.
  * Пустой массив даёт плоский срез, как у сырого края; несколько колец по дуге
  * дают заглаженный край, какой гончар делает пальцем.
+ *
+ * `ventMm` — диаметр сквозного отверстия по оси в дне. Без него оба дна —
+ * веер из центроида кольца; с ним — кольца вокруг отверстия и его стенка.
  */
 export function assembleHollowMesh(
   outer: Grid,
   inner: Float32Array,
   rimRings: Float32Array[] = [],
+  ventMm = 0,
 ): Omit<SurfaceMesh, 'normals'> {
   const { nu, nv } = outer;
   const nGrid = nu * (nv + 1);
   const rimCount = rimRings.length;
-  const vertexCount = 2 * nGrid + rimCount * nu + 2;
+  const vent = ventMm > 0;
+  const vertexCount = 2 * nGrid + rimCount * nu + (vent ? 2 * nu : 2);
   const outPos = new Float32Array(vertexCount * 3);
   outPos.set(outer.positions, 0);
   outPos.set(inner, nGrid * 3);
@@ -136,7 +141,7 @@ export function assembleHollowMesh(
   const iCap = oCap + 1; // центроид дна полости
 
   const wallTris = nu * nv * 2 * 2; // внешние + внутренние стенки
-  const capTris = nu * 2; // внешнее дно + дно полости
+  const capTris = nu * (vent ? 6 : 2); // внешнее дно + дно полости (+ стенка отверстия)
   const rimTris = nu * 2 * (rimCount + 1); // полос кромки на одну больше, чем колец
   const indices = new Uint32Array((wallTris + capTris + rimTris) * 3);
   let k = 0;
@@ -178,16 +183,49 @@ export function assembleHollowMesh(
     outPos[dst * 3 + 1] = y / nu;
     outPos[dst * 3 + 2] = z / nu;
   };
-  centroid(oBase, oCap);
-  centroid(iBase, iCap);
+  if (vent) {
+    // Кольца отверстия: нижнее — на высоте внешнего дна, верхнее — на высоте
+    // дна полости, оба по оси их центроидов.
+    const ventLow = oCap;
+    const ventHigh = oCap + nu;
+    const ringZ = (base: number): number => {
+      let z = 0;
+      for (let i = 0; i < nu; i++) z += outPos[(base + i) * 3 + 2];
+      return z / nu;
+    };
+    const lowZ = ringZ(oBase);
+    const highZ = ringZ(iBase);
+    for (let i = 0; i < nu; i++) {
+      const u = (2 * Math.PI * i) / nu;
+      const x = (ventMm / 2) * Math.cos(u);
+      const y = (ventMm / 2) * Math.sin(u);
+      outPos.set([x, y, lowZ], (ventLow + i) * 3);
+      outPos.set([x, y, highZ], (ventHigh + i) * 3);
+    }
+    for (let i = 0; i < nu; i++) {
+      const i1 = (i + 1) % nu;
+      // внешнее дно кольцом (нормаль вниз)
+      indices[k++] = ventLow + i; indices[k++] = oBase + i1; indices[k++] = oBase + i;
+      indices[k++] = ventLow + i; indices[k++] = ventLow + i1; indices[k++] = oBase + i1;
+      // дно полости кольцом (нормаль вверх)
+      indices[k++] = ventHigh + i; indices[k++] = iBase + i; indices[k++] = iBase + i1;
+      indices[k++] = ventHigh + i; indices[k++] = iBase + i1; indices[k++] = ventHigh + i1;
+      // стенка отверстия (нормаль к оси)
+      indices[k++] = ventLow + i1; indices[k++] = ventLow + i; indices[k++] = ventHigh + i;
+      indices[k++] = ventLow + i1; indices[k++] = ventHigh + i; indices[k++] = ventHigh + i1;
+    }
+  } else {
+    centroid(oBase, oCap);
+    centroid(iBase, iCap);
 
-  // внешнее дно (нормаль вниз)
-  for (let i = 0; i < nu; i++) {
-    indices[k++] = oCap; indices[k++] = oBase + ((i + 1) % nu); indices[k++] = oBase + i;
-  }
-  // дно полости (нормаль вверх)
-  for (let i = 0; i < nu; i++) {
-    indices[k++] = iCap; indices[k++] = iBase + i; indices[k++] = iBase + ((i + 1) % nu);
+    // внешнее дно (нормаль вниз)
+    for (let i = 0; i < nu; i++) {
+      indices[k++] = oCap; indices[k++] = oBase + ((i + 1) % nu); indices[k++] = oBase + i;
+    }
+    // дно полости (нормаль вверх)
+    for (let i = 0; i < nu; i++) {
+      indices[k++] = iCap; indices[k++] = iBase + i; indices[k++] = iBase + ((i + 1) % nu);
+    }
   }
   // Кромка: полосы от внешнего верха через кольца дуги к внутреннему верху.
   // Нормаль наружу-вверх, обход тот же, что у плоского кольца.
