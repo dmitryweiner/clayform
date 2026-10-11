@@ -69,17 +69,20 @@ const SLUMP_CONTROLS: Control<MoldState>[] = [
   SHRINK,
   {
     kind: 'range', key: 'bathWall', label: 'Борт', min: 1.2, max: 12, step: 0.2, unit: 'мм',
-    hint: 'толщина скорлупы формы: печатается только поверхность, которой касается пласт',
+    hint: 'толщина скорлупы формы и пуансона: печатается только поверхность, которой касается пласт',
     get: (s) => s.bathWallMm,
     set: (s, v) => ({ ...s, bathWallMm: v }),
   },
 ];
 
-/** Толщина пласта — это стенка изделия: горб строится по его внутренней поверхности. */
+/**
+ * Толщина пласта — это стенка изделия: горб и пуансон строятся по его
+ * внутренней поверхности. Один массив на оба таба.
+ */
 const SLAB_CONTROLS: Control<HollowState>[] = [
   {
     kind: 'range', key: 'wall', label: 'Пласт', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1, unit: 'мм',
-    hint: 'толщина пласта — стенка изделия; горб меньше изделия ровно на неё',
+    hint: 'толщина пласта — стенка изделия; на неё горб меньше изделия, а пуансон — формы',
     get: (s) => s.wallMm,
     set: (s, v) => ({ ...s, wallMm: v }),
   },
@@ -163,7 +166,11 @@ export function renderExportPanel(
   const besideRows = renderControls(besideHost, LID_BESIDE, read, onChange, 'print');
   const masterRows = renderControls(masterHost, MASTER_CONTROLS, readMold, onMold, 'master');
   const bathRows = renderControls(bathHost, BATH_CONTROLS, readMold, onMold, 'bath');
-  const slumpRows = renderControls(slumpHost, SLUMP_CONTROLS, readMold, onMold, 'slump');
+  const slumpMoldHost = make('div');
+  const slumpSlabHost = make('div');
+  slumpHost.append(slumpMoldHost, slumpSlabHost);
+  const slumpRows = renderControls(slumpMoldHost, SLUMP_CONTROLS, readMold, onMold, 'slump');
+  const slumpSlabRows = renderControls(slumpSlabHost, SLAB_CONTROLS, readHollow, onHollow, 'slump');
   const slabHost = make('div');
   const humpMoldHost = make('div');
   humpHost.append(slabHost, humpMoldHost);
@@ -183,6 +190,7 @@ export function renderExportPanel(
       humpHost.hidden = mode !== 'hump';
       pressRow.hidden = !pressAllowed(state);
       slumpRows.sync(mold);
+      slumpSlabRows.sync(hollow);
       slabRows.sync(hollow);
       humpRows.sync(mold);
       hollowRows.sync(hollow);

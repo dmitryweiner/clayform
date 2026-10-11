@@ -27,6 +27,8 @@ import type { BuildParams } from './build';
 import { buildVessel, vesselGrid, vesselSurface } from './build';
 import type { HollowState } from './hollow';
 import { buildHollowVessel, cavityPoint, WALL_MIN_MM, WALL_MAX_MM } from './hollow';
+import type { LathePoint } from './lathe';
+import { lathe } from './lathe';
 
 /** Точек выборки офсета: столько же, сколько рядов у превью, с запасом. */
 const INSET_SAMPLES = 256;
@@ -39,30 +41,91 @@ export interface InsetProfile {
   heightMm: number;
 }
 
+/** Лапок у пуансона: три точки опоры не качаются и центрируют без переопределения. */
+export const PUNCH_LEGS = 3;
+/** Радиальная толщина лапки, мм. */
+export const PUNCH_LEG_MM = 8;
+/** Ширина лапки по дуге, мм; квантуется шагом сетки по углу. */
+export const PUNCH_LEG_WIDTH_MM = 14;
+/** Зазор между лапками и матрицей, мм: скользящая посадка FDM. */
+export const PUNCH_CLEARANCE_MM = 0.3;
+/** Диаметр отдушины по оси пуансона, мм. */
+export const PUNCH_VENT_MM = 3;
+/** Тоньше фланец не делаем: лапки на нём гуляют. */
+const PUNCH_FLANGE_MIN_MM = 3;
+/**
+ * Радиальный шажок между точкой фланца без рельефа и первой точкой лапки.
+ * При нулевом lathe схлопнул бы их в одну (compact сравнивает только r и z),
+ * а вне секторов грань сложилась бы в полосу нулевой ширины.
+ */
+const PUNCH_STEP_MM = 0.3;
+/** Сегментов дуги, огибающей кромку матрицы. */
+const PUNCH_ARC_STEPS = 6;
+
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
+
+/**
+ * Толщина пласта — она же стенка изделия — с тем зажимом, который держат обе
+ * детали отминки: горб и пуансон. Один на двоих, иначе лапки пуансона
+ * встанут на одну глубину, а рабочая поверхность отодвинется на другую.
+ */
+export function slabThickness(wallMm: number, heightMm: number): number {
+  return clamp(wallMm, WALL_MIN_MM, Math.min(WALL_MAX_MM, heightMm * 0.4));
+}
+
+interface Offset {
+  /** точки офсета снизу вверх; первая — уже на полу или выше */
+  samples: { r: number; z: number }[];
+  /** радиус, на котором офсет пересекает пол (линейно между выборками) */
+  floorR: number;
+}
+
+/**
+ * Офсет силуэта внутрь по нормали на `wall` — та же `cavityPoint`, что строит
+ * полость, и с теми же ограничениями: не ниже пола, не ниже предыдущей точки
+ * (офсет резкого плеча шагает вниз) и не выше `zMax`.
+ */
+function offsetSamples(
+  radiusAt: (v: number) => number,
+  heightMm: number,
+  wall: number,
+  floorZ: number,
+  zMax: number,
+): Offset {
+  const samples: { r: number; z: number }[] = [];
+  let previous = floorZ;
+  let below: { r: number; z: number } | null = null;
+  let floorR = NaN;
+  for (let i = 0; i <= INSET_SAMPLES; i++) {
+    const point = cavityPoint(radiusAt, heightMm, wall, i / INSET_SAMPLES);
+    const z = Math.min(Math.max(point.z, floorZ, previous), zMax);
+    previous = z;
+    // ниже пола точка офсета лежит под ним — её место занимает пол
+    if (point.z < floorZ) {
+      below = point;
+      continue;
+    }
+    if (samples.length === 0) {
+      const t = below && point.z > below.z ? (floorZ - below.z) / (point.z - below.z) : 1;
+      floorR = below ? below.r + (point.r - below.r) * t : point.r;
+    }
+    samples.push({ r: Math.max(MIN_RADIUS_MM, point.r), z });
+  }
+  return { samples, floorR: Math.max(MIN_RADIUS_MM, Number.isFinite(floorR) ? floorR : MIN_RADIUS_MM) };
+}
 
 /**
  * Силуэт, отодвинутый внутрь по нормали на `wallMm`, — поверхность полости
  * изделия с полом на высоте стенки (пласт одинаковой толщины везде, и на
- * дне тоже). Офсет считает та же `cavityPoint`, что строит полость, и с теми
- * же ограничениями: не ниже пола, не ниже предыдущей точки (офсет резкого
- * плеча шагает вниз) и не выше венчика. После них высота монотонна, и r(z)
- * пересэмплируется по равномерной сетке высот.
+ * дне тоже). Офсет — `offsetSamples` с потолком по венчику. После
+ * ограничений высота монотонна, и r(z) пересэмплируется по равномерной сетке
+ * высот.
  */
 export function insetProfile(profile: ProfileDef, heightMm: number, wallMm: number): InsetProfile {
-  const wall = clamp(wallMm, WALL_MIN_MM, Math.min(WALL_MAX_MM, heightMm * 0.4));
+  const wall = slabThickness(wallMm, heightMm);
   const radiusAt = (v: number): number => profileRadius(profile, v);
   const floorZ = wall;
-  const samples: { r: number; z: number }[] = [];
-  let previous = floorZ;
-  for (let i = 0; i <= INSET_SAMPLES; i++) {
-    const point = cavityPoint(radiusAt, heightMm, wall, i / INSET_SAMPLES);
-    const z = Math.min(Math.max(point.z, floorZ, previous), heightMm);
-    previous = z;
-    // ниже пола точка офсета лежит под ним — её место занимает пол
-    if (point.z < floorZ) continue;
-    samples.push({ r: Math.max(MIN_RADIUS_MM, point.r), z });
-  }
+  const { samples } = offsetSamples(radiusAt, heightMm, wall, floorZ, heightMm);
 
   const innerHeight = heightMm - floorZ;
   /** r на высоте z: линейно между соседними выборками, первая — у пола. */
@@ -133,13 +196,33 @@ export function buildHump(
 }
 
 /**
+ * Мера матрицы, от которой строится пуансон, — до усадки, в координатах
+ * матрицы (дно на столе, z = 0). Пуансон её не пересчитывает по силуэту:
+ * иначе лапки рано или поздно разъехались бы с матрицей.
+ */
+export interface SlumpFit {
+  /** радиус кромки матрицы = наружный радиус изделия у венчика, мм */
+  rimMm: number;
+  /** высота кромки над столом = высота изделия + борт, мм */
+  rimZ: number;
+  /** самое широкое наружное кольцо матрицы (после fillWaists), мм */
+  outerMaxMm: number;
+}
+
+export interface SlumpShell {
+  /** матрица в печатном положении, увеличенная на усадку */
+  mesh: SurfaceMesh;
+  fit: SlumpFit;
+}
+
+/**
  * Углублённая форма скорлупой. Внутри — наружная поверхность изделия с
  * рельефом (её и касается пласт), снаружи — гладкий силуэт, отодвинутый по
  * нормали на борт плюс самый высокий выступ рельефа: выпуклый узор не должен
  * протыкать скорлупу. Снизу — плоское дно толщиной в борт, на нём форма и
  * стоит; сверху — плоский торец по венчику. Увеличена на усадку.
  */
-export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct: number): SurfaceMesh {
+export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct: number): SlumpShell {
   const surface = vesselSurface(params);
   const { nu, nv, profile, heightMm } = surface;
   const inner = vesselGrid(params);
@@ -190,7 +273,14 @@ export function buildSlumpShell(params: BuildParams, shellMm: number, shrinkPct:
   // дно — на стол
   for (let i = 2; i < shell.positions.length; i += 3) shell.positions[i] += shellMm;
   const mesh = { ...shell, normals: meshNormals(shell.positions, shell.indices) };
-  return scaleMesh(mesh, 1 + shrinkPct / 100);
+  return {
+    mesh: scaleMesh(mesh, 1 + shrinkPct / 100),
+    fit: {
+      rimMm: radiusAt(1),
+      rimZ: heightMm + shellMm,
+      outerMaxMm: rings.reduce((max, ring) => Math.max(max, ring.r), 0),
+    },
+  };
 }
 
 /**
@@ -243,4 +333,171 @@ function spreadDuplicates(rings: { r: number; z: number }[]): void {
     }
     a = b - 1;
   }
+}
+
+/**
+ * Внутренняя геометрия пуансона — то, что нужно и сборке, и тестам: радиусы
+ * лапок и фланца, толщины, секторы лапок. Всё до усадки, в координатах
+ * матрицы.
+ */
+export interface PunchLayout {
+  /** толщина пласта: зазор между пуансоном и матрицей */
+  slabMm: number;
+  /** внутренняя (центрирующая) грань лапок */
+  legInnerMm: number;
+  /** наружный радиус фланца и лапок */
+  flangeMm: number;
+  /** толщина фланца */
+  flangeT: number;
+  /** низ фланца над столом = кромка матрицы + пласт; это и длина лапки */
+  flangeZ: number;
+  /** полуширина лапки по углу, рад */
+  legHalfAngle: number;
+}
+
+export function punchLayout(params: BuildParams, hollow: HollowState, shellMm: number, fit: SlumpFit): PunchLayout {
+  const { heightMm } = vesselSurface(params);
+  const legInnerMm = fit.outerMaxMm + PUNCH_CLEARANCE_MM;
+  return {
+    slabMm: slabThickness(hollow.wallMm, heightMm),
+    legInnerMm,
+    flangeMm: legInnerMm + PUNCH_LEG_MM,
+    flangeT: Math.max(shellMm, PUNCH_FLANGE_MIN_MM),
+    flangeZ: fit.rimZ + slabThickness(hollow.wallMm, heightMm),
+    legHalfAngle: PUNCH_LEG_WIDTH_MM / 2 / legInnerMm,
+  };
+}
+
+/** Угловое расстояние до центра ближайшей лапки; лапка 0 — на −y. */
+export function legDistance(u: number): number {
+  const pitch = (2 * Math.PI) / PUNCH_LEGS;
+  const t = (((u + Math.PI / 2) % pitch) + pitch) % pitch;
+  return Math.min(t, pitch - t);
+}
+
+/**
+ * Офсет ломаной внутрь материала (влево по ходу снизу вверх) на `d`, с теми
+ * же ограничениями, что у полости: не ниже пола (под ним точка отбрасывается,
+ * а пересечение с полом интерполируется), не ниже предыдущей и не выше
+ * `zMax` (на нём ломаная обрывается).
+ */
+function offsetPolyline(
+  points: readonly { r: number; z: number }[],
+  d: number,
+  floorZ: number,
+  zMax: number,
+): { r: number; z: number }[] {
+  const out: { r: number; z: number }[] = [];
+  let previous = floorZ;
+  let below: { r: number; z: number } | null = null;
+  for (let k = 0; k < points.length; k++) {
+    const a = points[Math.max(0, k - 1)];
+    const b = points[Math.min(points.length - 1, k + 1)];
+    const dr = b.r - a.r;
+    const dz = b.z - a.z;
+    const len = Math.hypot(dr, dz) || 1;
+    // наружная нормаль ломаной, идущей вверх с материалом слева: (dz, −dr)
+    const raw = { r: points[k].r - (d * dz) / len, z: points[k].z + (d * dr) / len };
+    if (raw.z < floorZ) {
+      below = raw;
+      continue;
+    }
+    if (out.length === 0 && below) {
+      const t = (floorZ - below.z) / (raw.z - below.z);
+      out.push({ r: below.r + (raw.r - below.r) * t, z: floorZ });
+    }
+    const z = Math.max(raw.z, previous);
+    if (z >= zMax) {
+      const last = out[out.length - 1] ?? raw;
+      const t = z > last.z ? (zMax - last.z) / (z - last.z) : 1;
+      out.push({ r: last.r + (raw.r - last.r) * t, z: zMax });
+      return out;
+    }
+    previous = z;
+    out.push({ r: raw.r, z });
+  }
+  return out;
+}
+
+/**
+ * Пуансон к углублённой отминке: входит в матрицу сверху и прижимает пласт к
+ * её рабочей поверхности так, что между ними везде ровно толщина пласта.
+ *
+ * Рабочая поверхность — внутренняя поверхность изделия (силуэт, отодвинутый
+ * внутрь на пласт), гладкая: рельеф в этом режиме лежит на матрице. Над
+ * кромкой матрицы — плоский фланец, висящий над ней на пласт; с фланца
+ * снаружи матрицы спускаются три лапки до стола. Внутренние грани лапок
+ * обнимают самое широкое кольцо матрицы с зазором — центрируют; длина лапок
+ * задаёт глубину — толщину пласта.
+ *
+ * Всё — одно тело вращения (lathe), и лапки тоже: точки низа фланца на их
+ * радиусах несут «рельеф» вниз, и depthAt в секторах лапок опускает их до
+ * стола — тем же механизмом, что кладёт рельеф на купол крышки. Пуансон полый,
+ * скорлупой в борт, и с отдушиной по оси — контур оси не касается, тело —
+ * тор. Печатается фланцем на стол; увеличен на усадку, как и матрица.
+ */
+export function buildPunch(
+  params: BuildParams,
+  hollow: HollowState,
+  shellMm: number,
+  shrinkPct: number,
+  fit: SlumpFit,
+): SurfaceMesh {
+  const { profile, heightMm, nu } = vesselSurface(params);
+  const layout = punchLayout(params, hollow, shellMm, fit);
+  const { slabMm, legInnerMm, flangeMm, flangeZ, legHalfAngle } = layout;
+  const flangeTop = flangeZ + layout.flangeT;
+  const radiusAt = (v: number): number => profileRadius(profile, v);
+  const vent = PUNCH_VENT_MM / 2;
+
+  // Рабочая поверхность в координатах изделия, без потолка по венчику: у
+  // отогнутого края её конец выше кромки, и оттуда идёт дуга вокруг кромки.
+  const work = offsetSamples(radiusAt, heightMm, slabMm, slabMm, Infinity);
+  const lift = (p: { r: number; z: number }): { r: number; z: number } => ({ r: p.r, z: p.z + shellMm });
+  const surface = [{ r: work.floorR, z: slabMm }, ...work.samples].map(lift);
+  const floorZ = shellMm + slabMm;
+
+  // Дуга радиусом в пласт вокруг кромки матрицы: честный офсет угла
+  // «стенка–венчик», глина в углу той же толщины, что везде.
+  const top = surface[surface.length - 1];
+  const from = Math.atan2(top.z - fit.rimZ, top.r - fit.rimMm);
+  const arc: { r: number; z: number }[] = [];
+  const to = Math.PI / 2;
+  for (let k = 1; k <= PUNCH_ARC_STEPS; k++) {
+    const a = from + ((to - from) * k) / PUNCH_ARC_STEPS;
+    arc.push({ r: fit.rimMm + slabMm * Math.cos(a), z: fit.rimZ + slabMm * Math.sin(a) });
+  }
+  arc[arc.length - 1] = { r: fit.rimMm, z: flangeZ };
+
+  // Внутренняя скорлупа — офсет рабочей поверхности ещё на борт, до кромки;
+  // выше неё — вертикаль до верха фланца.
+  const inner = offsetPolyline(surface, shellMm, floorZ + shellMm, fit.rimZ);
+  const shellTop = inner[inner.length - 1];
+
+  const leg = { v: 0, nr: 0, nz: -1 };
+  const contour: LathePoint[] = [
+    // отдушина снизу и пол рабочей поверхности
+    { r: vent, z: floorZ },
+    ...surface,
+    ...arc,
+    // низ фланца; на радиусах лапок он опускается в секторах до стола
+    { r: legInnerMm - PUNCH_STEP_MM, z: flangeZ },
+    { r: legInnerMm, z: flangeZ, relief: leg },
+    { r: flangeMm, z: flangeZ, relief: leg },
+    // торец фланца — он же наружная грань лапки
+    { r: flangeMm, z: flangeTop },
+    { r: shellTop.r, z: flangeTop },
+    // внутренняя скорлупа сверху вниз, пол скорлупы и отдушина
+    ...[...inner].reverse(),
+    { r: vent, z: floorZ + shellMm },
+  ];
+  // Лапка опускает те вершины кольца, чья ячейка сетки по углу задевает её
+  // сектор, но не меньше одного шага с каждой стороны от центра: одна
+  // опущенная вершина дала бы иглу с подошвой в линию.
+  const step = (2 * Math.PI) / nu;
+  const reach = Math.max(legHalfAngle + step / 2, step * 1.01);
+  const depthAt = (u: number): number => (legDistance(u) <= reach ? flangeZ : 0);
+  const raw = lathe(contour, nu, depthAt);
+  const mesh = { ...raw, normals: meshNormals(raw.positions, raw.indices) };
+  return mirrorZ(scaleMesh(mesh, 1 + shrinkPct / 100));
 }
