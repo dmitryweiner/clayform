@@ -600,6 +600,7 @@ if ((await page.locator('#partList li').count()) !== 1) errors.push('[press:slum
 const slumpPart = (await page.locator('#partList li').first().textContent()) ?? '';
 if (!slumpPart.includes('пуансон')) errors.push(`[press:slump] в подписи нет пуансона: "${slumpPart}"`);
 if (!(await page.locator('#slump_wall').isVisible())) errors.push('[press:slump] не видно ползунка «Пласт»');
+if (!(await page.locator('#slump_ear').isVisible())) errors.push('[press:slump] не видно ползунка «Ушки»');
 // грубо, но ловит «пуансон не построился»: матрица с пуансоном тяжелее горба
 if (thousands(slumpVerdict) <= thousands(humpVerdict)) {
   errors.push(`[press:slump] треугольников не больше, чем у горба: "${slumpVerdict}" против "${humpVerdict}"`);

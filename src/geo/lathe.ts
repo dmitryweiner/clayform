@@ -33,6 +33,14 @@ export interface LathePoint {
    * поле и ручка остаются точными.
    */
   relief?: { v: number; nr: number; nz: number };
+  /**
+   * Смещение кольца по углу в произвольную сторону — когда одной нормали
+   * мало: лапки пуансона опускают точки фланца в своих секторах вниз, а
+   * между лапками те же точки уходят внутрь, к кромке. Важнее `relief`.
+   * На каждом угле точки контура должны остаться в прежнем порядке, иначе
+   * поверхность сложится сама на себя.
+   */
+  offset?: (u: number) => { dr: number; dz: number };
 }
 
 /** Смещение вдоль нормали, мм, в точке (угол u, доля v). */
@@ -86,7 +94,7 @@ export function lathe(
 
   const positions = new Float32Array(vertexCount * 3);
   for (let m = 0; m < points.length; m++) {
-    const { r, z, relief } = points[m];
+    const { r, z, relief, offset } = points[m];
     if (axis[m]) {
       positions[base[m] * 3 + 2] = z;
       continue;
@@ -95,11 +103,12 @@ export function lathe(
       const u = (2 * Math.PI * i) / nu;
       const k = (base[m] + i) * 3;
       const depth = relief && depthAt ? depthAt(u, relief.v) : 0;
+      const shift = offset ? offset(u) : { dr: depth * (relief?.nr ?? 0), dz: depth * (relief?.nz ?? 0) };
       // не дальше оси: за ней кольцо вывернулось бы наизнанку
-      const radius = Math.max(AXIS_EPS * 10, r + depth * (relief?.nr ?? 0));
+      const radius = Math.max(AXIS_EPS * 10, r + shift.dr);
       positions[k] = radius * Math.cos(u);
       positions[k + 1] = radius * Math.sin(u);
-      positions[k + 2] = z + depth * (relief?.nz ?? 0);
+      positions[k + 2] = z + shift.dz;
     }
   }
 

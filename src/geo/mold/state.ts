@@ -13,11 +13,18 @@ export interface MoldState {
   bathWallMm: number;
   /** слой силикона над блоком, мм */
   bathClearMm: number;
+  /**
+   * Площадка ушка углублённой отминки под лапку пуансона, радиально, мм. От
+   * неё — вынос ушек матрицы и лапок пуансона за кромку.
+   */
+  earMm: number;
 }
 
 export const SHRINK_MAX_PCT = 30;
 export const PLASTER_MAX_MM = 80;
 export const SPARE_MAX_MM = 120;
+export const EAR_MIN_MM = 4;
+export const EAR_MAX_MM = 12;
 
 export function defaultMold(): MoldState {
   return {
@@ -27,6 +34,7 @@ export function defaultMold(): MoldState {
     keyMm: 7,
     bathWallMm: 3,
     bathClearMm: 12,
+    earMm: 8,
   };
 }
 
@@ -51,5 +59,6 @@ export function sanitizeMold(raw: unknown): MoldState {
     keyMm: clamp(num(source.keyMm, fallback.keyMm), 0, plasterMm / 3),
     bathWallMm: clamp(num(source.bathWallMm, fallback.bathWallMm), 1.2, 12),
     bathClearMm: clamp(num(source.bathClearMm, fallback.bathClearMm), 3, 60),
+    earMm: clamp(num(source.earMm, fallback.earMm), EAR_MIN_MM, EAR_MAX_MM),
   };
 }

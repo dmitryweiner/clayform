@@ -391,10 +391,35 @@ describe('пуансон', () => {
       // губа — на зазор от наружной грани ушка
       const lip = legs.filter((leg) => leg.z < ear.topZ - 1);
       expect(Math.min(...lip.map((leg) => leg.r)) - ear.outerMm, family).toBeGreaterThanOrEqual(PUNCH_CLEARANCE_MM - 1e-3);
-      // вне секторов низ фланца висит над кромкой на пласт
-      const flange = section(positions).filter((q) => q.r > ear.seatInMm && q.z > ear.topZ);
-      expect(Math.min(...flange.map((q) => q.z)), family).toBeCloseTo(layout.flangeZ, 3);
     }
+  });
+
+  it('между лапками фланец узкий: чуть за торец матрицы и висит над ним на пласт', () => {
+    for (const family of families) {
+      const { fit, layout, positions } = working(family);
+      // сечение u = 0 — между лапками (они на −90°, 30° и 150°)
+      expect(legDistance(0), family).toBeGreaterThan(fit.ear.reach);
+      const flange = section(positions).filter((q) => q.z > fit.rimZ);
+      const edge = Math.max(...flange.map((q) => q.r));
+      expect(edge, family).toBeGreaterThan(fit.topOuterMm);
+      expect(edge, family).toBeLessThan(fit.topOuterMm + 3);
+      const under = flange.filter((q) => q.r > fit.rimMm + 1e-3);
+      expect(Math.min(...under.map((q) => q.z)), family).toBeCloseTo(layout.flangeZ, 3);
+      // а у лапки — во всю ширину
+      expect(layout.flangeMm, family).toBeGreaterThan(edge + 5);
+    }
+  });
+
+  it('«Ушки» задают вынос ушек и лапок', () => {
+    const p = params('bowl');
+    const small = buildSlumpShell(p, hollow, shell, 0, 4);
+    const large = buildSlumpShell(p, hollow, shell, 0, 12);
+    expect(large.fit.ear.outerMm - small.fit.ear.outerMm).toBeCloseTo(8, 6);
+    const punch = buildPunch(p, hollow, shell, 0, small.fit);
+    expect(validateMesh(punch).watertight).toBe(true);
+    expect(validateMesh(punch).degenerateTriangles).toBe(0);
+    expect(punchLayout(p, hollow, shell, small.fit).flangeMm)
+      .toBeLessThan(punchLayout(p, hollow, shell, large.fit).flangeMm - 7.9);
   });
 
   it('матрицы не касается: внутри — с запасом в пласт, снаружи — дальше её края', () => {

@@ -396,7 +396,7 @@ function refresh(): void {
 /** Матрица и пуансон рядом, в печатном положении, — ровно то, что уйдёт в STL. */
 function slumpPair(params: BuildParams): SurfaceMesh[] {
   const { bathWallMm, shrinkPct } = state.mold;
-  const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct);
+  const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct, state.mold.earMm);
   const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit);
   return placeInRow([[slump.mesh], [punch]], BESIDE_GAP_MM).flat();
 }

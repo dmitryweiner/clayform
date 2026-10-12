@@ -50,8 +50,15 @@ export const PUNCH_LEG_WIDTH_MM = 14;
 export const PUNCH_CLEARANCE_MM = 0.3;
 /** На сколько верх ушка ниже кромки матрицы, мм. */
 export const EAR_DROP_MM = 10;
-/** Ширина площадки на ушке, на которую садится лапка, радиально, мм. */
-const EAR_SEAT_MM = 8;
+/** Ширина площадки на ушке под лапку по умолчанию, радиально, мм (ползунок «Ушки»). */
+export const EAR_SEAT_MM = 8;
+/**
+ * Между лапками фланец пуансона выходит за наружный край торца матрицы
+ * только на столько, мм: ему там нужно лишь прижать глину на кромке.
+ */
+const FLANGE_OVER_RIM_MM = 2;
+/** Радиальный шаг между точками фланца, сжатыми к кромке между лапками, мм. */
+const FLANGE_PACK_MM = 0.2;
 /**
  * Зазор между стенкой матрицы и лапкой сверх пласта, мм: свес глины за
  * кромку ложится между ними и не защемляется.
@@ -237,6 +244,8 @@ export interface SlumpFit {
   rimZ: number;
   /** самое широкое наружное кольцо матрицы без ушек (после fillWaists), мм */
   outerMaxMm: number;
+  /** наружный край торца матрицы — её верхнее наружное кольцо, мм */
+  topOuterMm: number;
   ear: EarFit;
 }
 
@@ -294,6 +303,7 @@ export function buildSlumpShell(
   hollow: HollowState,
   shellMm: number,
   shrinkPct: number,
+  seatMm = EAR_SEAT_MM,
 ): SlumpShell {
   const surface = vesselSurface(params);
   const { nu, nv, profile, heightMm } = surface;
@@ -331,7 +341,7 @@ export function buildSlumpShell(
   fillWaists(rings);
   spreadDuplicates(rings);
   const outerMaxMm = rings.reduce((max, ring) => Math.max(max, ring.r), 0);
-  const ears = slumpEars(rings, nu, slabThickness(hollow.wallMm, heightMm), heightMm);
+  const ears = slumpEars(rings, nu, slabThickness(hollow.wallMm, heightMm), heightMm, seatMm);
   for (let j = 0; j <= nv; j++) {
     const { r, z } = rings[j];
     for (let i = 0; i < nu; i++) {
@@ -354,6 +364,7 @@ export function buildSlumpShell(
       rimMm: radiusAt(1),
       rimZ: heightMm + shellMm,
       outerMaxMm,
+      topOuterMm: rings[nv].r,
       ear: {
         ...ears.fit,
         topZ: ears.fit.topZ + shellMm,
@@ -379,6 +390,7 @@ function slumpEars(
   nu: number,
   slabMm: number,
   heightMm: number,
+  seatMm: number,
 ): { radiusAt: (j: number, z: number, angle: number) => number; fit: EarFit } {
   const nv = rings.length - 1;
   let ring = 1;
@@ -394,7 +406,7 @@ function slumpEars(
   let face = 0;
   for (const { r, z } of rings) if (z >= faceZ && z <= topZ) face = Math.max(face, r);
   const seatInMm = above + slabMm + EAR_CLAY_GAP_MM;
-  const outerMm = Math.max(seatInMm, face) + EAR_SEAT_MM;
+  const outerMm = Math.max(seatInMm, face) + seatMm;
 
   // Лапка, пустая ячейка, щека. Ушко идёт и под щёками: иначе их низ висел
   // бы над столом, а форма печатается стоя.
@@ -577,9 +589,10 @@ function offsetPolyline(
  * центрируют пуансон. От стенки лапка отстоит на пласт и зазор: свес глины
  * за кромку ложится между ними.
  *
- * Всё — одно тело вращения (lathe), и лапки тоже: точки низа фланца на их
- * радиусах несут «рельеф» вниз, и depthAt в секторах лапок опускает их до
- * ушка — тем же механизмом, что кладёт рельеф на купол крышки. Пуансон полый,
+ * Всё — одно тело вращения (lathe), и лапки тоже: точки низа фланца несут
+ * смещение по углу (`LathePoint.offset`) — в секторах лапок вниз до ушка,
+ * между лапками внутрь, к торцу матрицы, так что широк фланец только над
+ * лапками. Пуансон полый,
  * скорлупой в борт, и с отдушиной по оси — контур оси не касается, тело —
  * тор. Печатается фланцем на стол; увеличен на усадку, как и матрица.
  */
@@ -622,31 +635,37 @@ export function buildPunch(
   const inner = offsetPolyline(surface, shellMm, floorZ + shellMm, fit.rimZ);
   const shellTop = inner[inner.length - 1];
 
-  const leg = { nr: 0, nz: -1 };
+  // Фланец и лапки. В секторах лапок точки низа фланца опускаются: подошва —
+  // на верх ушка (та же прямая, что у него, — контакт плоскостью), губа —
+  // ниже, вдоль наружной грани ушка. Между лапками те же точки сжимаются к
+  // кромке матрицы: там фланцу нужно лишь прижать глину на торце, и широкое
+  // кольцо было бы пластиком впустую.
+  const narrowMm = Math.min(fit.topOuterMm + FLANGE_OVER_RIM_MM, ear.seatInMm - PUNCH_STEP_MM);
+  const flangePoint = (r: number, z: number, k: number, drop: number): LathePoint => ({
+    r,
+    z,
+    offset: (u) => (legDistance(u) <= reach
+      ? { dr: 0, dz: -drop }
+      : { dr: narrowMm + k * FLANGE_PACK_MM - r, dz: 0 }),
+  });
   const contour: LathePoint[] = [
     // отдушина снизу и пол рабочей поверхности
     { r: vent, z: floorZ },
     ...surface,
     ...arc,
-    // Низ фланца; в секторах лапок его кольца опускаются: подошва — на
-    // верх ушка, губа — ниже, вдоль его наружной грани. v у точки — номер
-    // глубины для depthAt, а не доля дуги.
-    { r: ear.seatInMm - PUNCH_STEP_MM, z: flangeZ },
-    { r: ear.seatInMm, z: flangeZ, relief: { ...leg, v: 0 } },
-    { r: lipInMm, z: flangeZ, relief: { ...leg, v: 1 } },
-    { r: lipInMm + PUNCH_STEP_MM, z: flangeZ, relief: { ...leg, v: 2 } },
-    { r: flangeMm, z: flangeZ, relief: { ...leg, v: 2 } },
+    flangePoint(ear.seatInMm - PUNCH_STEP_MM, flangeZ, 0, 0),
+    flangePoint(ear.seatInMm, flangeZ, 1, flangeZ - earTopAt(ear, ear.seatInMm)),
+    flangePoint(lipInMm, flangeZ, 2, flangeZ - earTopAt(ear, lipInMm)),
+    flangePoint(lipInMm + PUNCH_STEP_MM, flangeZ, 3, flangeZ - lipZ),
+    flangePoint(flangeMm, flangeZ, 4, flangeZ - lipZ),
     // торец фланца — он же наружная грань лапки
-    { r: flangeMm, z: flangeTop },
+    flangePoint(flangeMm, flangeTop, 4, 0),
     { r: shellTop.r, z: flangeTop },
     // внутренняя скорлупа сверху вниз, пол скорлупы и отдушина
     ...[...inner].reverse(),
     { r: vent, z: floorZ + shellMm },
   ];
-  // подошва ложится на верх ушка по всей ширине: та же прямая, что у него
-  const depths = [flangeZ - earTopAt(ear, ear.seatInMm), flangeZ - earTopAt(ear, lipInMm), flangeZ - lipZ];
-  const depthAt = (u: number, v: number): number => (legDistance(u) <= reach ? depths[v] : 0);
-  const raw = lathe(contour, nu, depthAt);
+  const raw = lathe(contour, nu);
   const mesh = { ...raw, normals: meshNormals(raw.positions, raw.indices) };
   return mirrorZ(scaleMesh(mesh, 1 + shrinkPct / 100));
 }
