@@ -11,7 +11,9 @@ import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM, RIM_MAX_MM } from '
 // Пределы ползунков — из geo/mold/state: фасад geo/mold тянет за собой
 // csg.ts с WASM, а панели он ни к чему (весь CSG считает воркер).
 import type { MoldState } from '../geo/mold/state';
-import { SHRINK_MAX_PCT, PLASTER_MAX_MM, SPARE_MAX_MM, EAR_MIN_MM, EAR_MAX_MM } from '../geo/mold/state';
+import {
+  SHRINK_MAX_PCT, PLASTER_MAX_MM, SPARE_MAX_MM, EAR_MIN_MM, EAR_MAX_MM, VENT_MIN_MM, VENT_MAX_MM,
+} from '../geo/mold/state';
 import type { AppState, ExportMode } from '../state/schema';
 import { EXPORT_MODES, pressAllowed } from '../state/schema';
 import type { Control } from './controls';
@@ -83,6 +85,12 @@ const SLUMP_CONTROLS: Control<MoldState>[] = [
     hint: 'низ пуансона: 100 — шапка от оси, у миски почти полусфера; 0 — плоский пол. Глина в углу толще, но не тоньше пласта',
     get: (s) => s.punchRoundPct,
     set: (s, v) => ({ ...s, punchRoundPct: v }),
+  },
+  {
+    kind: 'range', key: 'vent', label: 'Отдушины', min: VENT_MIN_MM, max: VENT_MAX_MM, step: 0.5, unit: 'мм',
+    hint: 'диаметр отверстий в дне формы и по оси пуансона: выпускают воздух и снимают присос',
+    get: (s) => s.ventMm,
+    set: (s, v) => ({ ...s, ventMm: v }),
   },
 ];
 

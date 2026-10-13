@@ -594,6 +594,7 @@ if (!slumpPart.includes('пуансон')) errors.push(`[press:slump] в под�
 if (!(await page.locator('#slump_wall').isVisible())) errors.push('[press:slump] не видно ползунка «Пласт»');
 if (!(await page.locator('#slump_ear').isVisible())) errors.push('[press:slump] не видно ползунка «Ушки»');
 if (!(await page.locator('#slump_round').isVisible())) errors.push('[press:slump] не видно ползунка «Скругление дна»');
+if (!(await page.locator('#slump_vent').isVisible())) errors.push('[press:slump] не видно ползунка «Отдушины»');
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/press-slump.png` });
 await expectDownloads(1, 'slump');
 await page.check('#on_handle');

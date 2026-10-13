@@ -4,7 +4,7 @@
 
 import {
   buildSlumpShell, buildPunch, punchLayout, slabThickness, legDistance,
-  earTopAt, SLUMP_VENT_MM, PUNCH_LEG_WIDTH_MM, PUNCH_VENT_MM, PUNCH_CLEARANCE_MM, EAR_DROP_MM,
+  earTopAt, VENT_MM, PUNCH_LEG_WIDTH_MM, PUNCH_CLEARANCE_MM, EAR_DROP_MM,
 } from '../src/geo/press';
 import { defaultHollow } from '../src/geo/hollow';
 import { defaultFamilyParams, familyById, profileRadius } from '../src/geo/profiles';
@@ -292,8 +292,8 @@ describe('пуансон', () => {
           y += positions[indices[t + k] * 3 + 1] / 3;
         }
         const r = Math.hypot(x, y);
-        expect(r, family).toBeGreaterThan((SLUMP_VENT_MM / 2) * 1.1 * 0.95);
-        if (r < (SLUMP_VENT_MM / 2) * 1.1) wall++;
+        expect(r, family).toBeGreaterThan((VENT_MM / 2) * 1.1 * 0.95);
+        if (r < (VENT_MM / 2) * 1.1) wall++;
       }
       expect(wall, family).toBe(2 * params(family).nu);
     }
@@ -402,7 +402,7 @@ describe('пуансон', () => {
         x += positions[indices[t + k] * 3] / 3;
         y += positions[indices[t + k] * 3 + 1] / 3;
       }
-      expect(Math.hypot(x, y)).toBeGreaterThan((PUNCH_VENT_MM / 2) * 1.1 * 0.95);
+      expect(Math.hypot(x, y)).toBeGreaterThan((VENT_MM / 2) * 1.1 * 0.95);
     }
   });
 
@@ -451,6 +451,36 @@ describe('пуансон', () => {
       const low = Math.min(...points.map((q) => q.z));
       expect(low - (shell + layout.slabMm), family).toBeLessThan(0.1);
       expect(low, family).toBeGreaterThan(shell + layout.slabMm - 1e-3);
+    }
+  });
+
+  it('«Отдушины» задают оба отверстия — в дне формы и в пуансоне', () => {
+    const p = params('bowl');
+    const minCentroid = (mesh: { positions: Float32Array; indices: Uint32Array }): number => {
+      let min = Infinity;
+      for (let t = 0; t < mesh.indices.length; t += 3) {
+        let x = 0;
+        let y = 0;
+        for (let k = 0; k < 3; k++) {
+          x += mesh.positions[mesh.indices[t + k] * 3] / 3;
+          y += mesh.positions[mesh.indices[t + k] * 3 + 1] / 3;
+        }
+        min = Math.min(min, Math.hypot(x, y));
+      }
+      return min;
+    };
+    for (const vent of [1, 6]) {
+      const slump = buildSlumpShell(p, hollow, shell, 0, undefined, vent);
+      expect(slump.fit.ventMm).toBe(vent);
+      const punch = buildPunch(p, hollow, shell, 0, slump.fit, 100);
+      for (const mesh of [slump.mesh, punch]) {
+        const report = validateMesh(mesh);
+        expect(report.watertight, `⌀${vent}`).toBe(true);
+        expect(report.degenerateTriangles, `⌀${vent}`).toBe(0);
+        // центры граней стенки отверстия — чуть внутри окружности (хорда)
+        expect(minCentroid(mesh), `⌀${vent}`).toBeGreaterThan((vent / 2) * 0.95);
+        expect(minCentroid(mesh), `⌀${vent}`).toBeLessThan(vent / 2);
+      }
     }
   });
 

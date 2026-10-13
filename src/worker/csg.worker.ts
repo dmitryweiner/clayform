@@ -168,7 +168,7 @@ function pressParts(jobId: number, state: AppState, segments: number): JobPart[]
   const { bathWallMm, shrinkPct } = state.mold;
   const progress = new Progress(jobId, 3);
   progress.next('отминочная форма');
-  const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct, state.mold.earMm);
+  const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct, state.mold.earMm, state.mold.ventMm);
   progress.next('пуансон');
   const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit, state.mold.punchRoundPct);
   const item = {

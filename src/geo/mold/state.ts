@@ -23,12 +23,16 @@ export interface MoldState {
    * почти полусфера), 0 — плоский пол с острым углом.
    */
   punchRoundPct: number;
+  /** диаметр отдушин отминки — в дне формы и по оси пуансона, мм */
+  ventMm: number;
 }
 
 export const SHRINK_MAX_PCT = 30;
 export const PLASTER_MAX_MM = 80;
 export const SPARE_MAX_MM = 120;
 export const EAR_MIN_MM = 4;
+export const VENT_MIN_MM = 1;
+export const VENT_MAX_MM = 8;
 export const EAR_MAX_MM = 12;
 
 export function defaultMold(): MoldState {
@@ -41,6 +45,7 @@ export function defaultMold(): MoldState {
     bathClearMm: 12,
     earMm: 8,
     punchRoundPct: 100,
+    ventMm: 2.5,
   };
 }
 
@@ -67,5 +72,6 @@ export function sanitizeMold(raw: unknown): MoldState {
     bathClearMm: clamp(num(source.bathClearMm, fallback.bathClearMm), 3, 60),
     earMm: clamp(num(source.earMm, fallback.earMm), EAR_MIN_MM, EAR_MAX_MM),
     punchRoundPct: clamp(num(source.punchRoundPct, fallback.punchRoundPct), 0, 100),
+    ventMm: clamp(num(source.ventMm, fallback.ventMm), VENT_MIN_MM, VENT_MAX_MM),
   };
 }

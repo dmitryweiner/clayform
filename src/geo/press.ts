@@ -59,13 +59,12 @@ const CHEEK_MM = 5;
  */
 const CHEEK_BELOW_RIM_MM = 1.5;
 /**
- * Диаметр отдушины в дне матрицы, мм. PLA, в отличие от гипса, воду не
- * пьёт: без отдушины воздух запирается под пластом при вдавливании, а при
- * выемке держит его присосом.
+ * Диаметр отдушин по умолчанию — в дне матрицы и по оси пуансона, мм
+ * (ползунок «Отдушины»). PLA, в отличие от гипса, воду не пьёт: без отдушин
+ * воздух запирается под пластом при вдавливании, а при выемке держит его
+ * присосом — и к матрице, и к пуансону.
  */
-export const SLUMP_VENT_MM = 2.5;
-/** Диаметр отдушины по оси пуансона, мм. */
-export const PUNCH_VENT_MM = 3;
+export const VENT_MM = 2.5;
 /** Тоньше фланец не делаем: лапки на нём гуляют. */
 const PUNCH_FLANGE_MIN_MM = 3;
 /**
@@ -143,6 +142,8 @@ export interface SlumpFit {
   outerMaxMm: number;
   /** наружный край торца матрицы — её верхнее наружное кольцо, мм */
   topOuterMm: number;
+  /** диаметр отдушины в дне матрицы; у пуансона — такая же, мм */
+  ventMm: number;
   ear: EarFit;
 }
 
@@ -201,6 +202,7 @@ export function buildSlumpShell(
   shellMm: number,
   shrinkPct: number,
   seatMm = EAR_SEAT_MM,
+  ventMm = VENT_MM,
 ): SlumpShell {
   const surface = vesselSurface(params);
   const { nu, nv, profile, heightMm } = surface;
@@ -251,7 +253,9 @@ export function buildSlumpShell(
     }
   }
   const outer: Grid = { nu, nv, positions };
-  const shell = assembleHollowMesh(outer, inner.positions, [], SLUMP_VENT_MM);
+  // отдушина не шире трети донышка: дно должно остаться дном
+  const vent = clamp(ventMm, 0.5, profileRadius(profile, 0) * 0.66);
+  const shell = assembleHollowMesh(outer, inner.positions, [], vent);
   // дно — на стол
   for (let i = 2; i < shell.positions.length; i += 3) shell.positions[i] += shellMm;
   const mesh = { ...shell, normals: meshNormals(shell.positions, shell.indices) };
@@ -262,6 +266,7 @@ export function buildSlumpShell(
       rimZ: heightMm + shellMm,
       outerMaxMm,
       topOuterMm: rings[nv].r,
+      ventMm: vent,
       ear: {
         ...ears.fit,
         topZ: ears.fit.topZ + shellMm,
@@ -614,7 +619,7 @@ export function buildPunch(
   const { ear } = fit;
   const flangeTop = flangeZ + layout.flangeT;
   const radiusAt = (v: number): number => profileRadius(profile, v);
-  const vent = PUNCH_VENT_MM / 2;
+  const vent = fit.ventMm / 2;
 
   // Рабочая поверхность в координатах изделия, без потолка по венчику: у
   // отогнутого края её конец выше кромки, и оттуда идёт дуга вокруг кромки.
