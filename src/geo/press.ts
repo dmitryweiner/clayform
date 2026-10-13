@@ -51,12 +51,6 @@ export const PUNCH_LIP_MM = 10;
 const PUNCH_LIP_T_MM = 4;
 /** Отвесная наружная грань ушка длиннее губы на столько, мм; ниже — фаска 45°. */
 const EAR_FACE_SPARE_MM = 3;
-/**
- * Толщина ребра под ушком по дуге, мм. Ниже отвесной грани ушко сужается к
- * нему под 45° (печатается без поддержек), а ребро идёт до основания и
- * держит форму на столе устойчивее. Не тоньше шага сетки с каждой стороны.
- */
-const RIB_MM = 6;
 /** Ширина щеки паза по дуге, мм; не уже двух шагов сетки. */
 const CHEEK_MM = 5;
 /**
@@ -317,15 +311,29 @@ function slumpEars(
   const legReach = legSpan(outerMm, nu);
   const slotReach = legReach + step;
   const reach = slotReach + Math.max(CHEEK_MM / outerMm, step * 2.01);
-  const ribReach = Math.min(reach, Math.max(RIB_MM / 2 / outerMm + step / 2, step * 1.01));
+  // Выступ ушка от стенки на высоте низа отвесной грани: ниже он не растёт.
+  let wallAtFace = rings[0].r;
+  for (let j = 1; j <= ring; j++) {
+    const a = rings[j - 1];
+    const b = rings[j];
+    if (b.z < faceZ) continue;
+    const t = b.z > a.z ? clamp((faceZ - a.z) / (b.z - a.z), 0, 1) : 1;
+    wallAtFace = a.r + (b.r - a.r) * t;
+    break;
+  }
+  const depthMm = Math.max(0, outerMm - wallAtFace);
   return {
     radiusAt: (j, z, angle) => {
       if (angle > reach) return 0;
       if (j <= ring) {
-        const below = Math.max(0, faceZ - z);
-        // по дуге ушко сужается к ребру так же, как по радиусу, — под 45°
-        if (angle > Math.max(ribReach, reach - below / outerMm)) return 0;
-        return outerMm - below;
+        // Под отвесной гранью — фаска 45°, но не глубже, чем ушко выступало
+        // у её низа: на крутой стенке (стакан) фаска сходит на стенку и ушко
+        // кончается, на пологой (миска) идёт ребром до основания параллельно
+        // стенке. Сузить или утончить его книзу нельзя: на стенке, которая
+        // сама нависает за 45°, это дало бы грань, нависающую ещё сильнее, —
+        // под неё слайсеру нужны поддержки (на ступенчатом сужении по дуге
+        // так и вышло).
+        return Math.min(outerMm - Math.max(0, faceZ - z), rings[j].r + depthMm);
       }
       return j <= cheekRing && angle > slotReach ? outerMm : 0;
     },

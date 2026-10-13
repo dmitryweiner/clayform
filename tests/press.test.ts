@@ -199,37 +199,56 @@ describe('пуансон', () => {
     }
   });
 
-  it('ниже ушка — тонкое ребро до основания, а не ушко во всю ширину', () => {
+  it('ушки печатаются без поддержек: ни одна грань не нависает сильнее стенки', () => {
+    for (const family of families) {
+      const p = params(family);
+      const { mesh, fit } = buildSlumpShell(p, hollow, shell, 0);
+      const { positions, indices } = mesh;
+      // первые nu·nv·2 треугольников — наружная стенка формы (assembleHollowMesh)
+      const wallTris = p.nu * p.nv * 2;
+      let plain = 0;
+      let worst = 0;
+      for (let t = 0; t < wallTris * 3; t += 3) {
+        const [a, b, c] = [indices[t] * 3, indices[t + 1] * 3, indices[t + 2] * 3];
+        const ab = [positions[b] - positions[a], positions[b + 1] - positions[a + 1], positions[b + 2] - positions[a + 2]];
+        const ac = [positions[c] - positions[a], positions[c + 1] - positions[a + 1], positions[c + 2] - positions[a + 2]];
+        const n = [ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0]];
+        const len = Math.hypot(n[0], n[1], n[2]);
+        if (len < 1e-9) continue;
+        const down = -n[2] / len; // 1 — смотрит прямо вниз, нависает целиком
+        const u = Math.atan2(positions[a + 1], positions[a]);
+        if (legDistance(u) > fit.ear.reach + 0.2) plain = Math.max(plain, down);
+        worst = Math.max(worst, down);
+      }
+      // хуже стенки (или 45°, если стенка круче) не нависает ничто
+      expect(worst, family).toBeLessThan(Math.max(plain, Math.SQRT1_2) + 0.01);
+    }
+  });
+
+  it('под ушком ребро не толстеет к основанию', () => {
     const p = params('bowl');
     const { mesh, fit } = buildSlumpShell(p, hollow, shell, 0);
-    const { ear } = fit;
-    const step = (2 * Math.PI) / p.nu;
-    let checked = 0;
-    // наружная сетка — первые nu·(nv+1) вершин; угол 0 — между ушками
+    const depths: { z: number; depth: number }[] = [];
     for (let j = 0; j <= p.nv; j++) {
       const base = j * p.nu * 3;
       const z = mesh.positions[base + 2];
-      // ниже грани ушка (губа + 3 мм) и его сужения к ребру по дуге под 45°
-      if (z > ear.topZ - 13 - (ear.reach * ear.outerMm - 3) || z < 1) continue;
-      const plain = Math.hypot(mesh.positions[base], mesh.positions[base + 1]);
-      const pushed: number[] = [];
+      if (z > fit.ear.topZ) continue;
+      const plain = Math.hypot(mesh.positions[base], mesh.positions[base + 1]); // u = 0, между ушками
+      let depth = 0;
       for (let i = 0; i < p.nu; i++) {
         const k = base + i * 3;
-        if (Math.hypot(mesh.positions[k], mesh.positions[k + 1]) > plain + 0.01) {
-          pushed.push(Math.atan2(mesh.positions[k + 1], mesh.positions[k]));
-        }
+        depth = Math.max(depth, Math.hypot(mesh.positions[k], mesh.positions[k + 1]) - plain);
       }
-      if (pushed.length === 0) continue;
-      checked++;
-      const clusters = clustersOf(pushed, step);
-      expect(clusters.length, `ряд ${j}`).toBe(3);
-      for (const cluster of clusters) {
-        const width = (Math.max(...cluster) - Math.min(...cluster)) * ear.outerMm;
-        expect(width, `ряд ${j}`).toBeLessThan(6 + 2 * step * ear.outerMm);
-      }
+      depths.push({ z, depth });
     }
-    // у миски стенка положе 45°: рёбра доходят до низа
-    expect(checked).toBeGreaterThan(3);
+    // у миски стенка положе 45°: ребро идёт до основания, но не глубже, чем у ушка
+    const top = Math.max(...depths.filter((d) => d.z > fit.ear.topZ - 15).map((d) => d.depth));
+    const low = depths.filter((d) => d.z < fit.ear.topZ - 30);
+    expect(low.length).toBeGreaterThan(3);
+    for (const d of low) {
+      expect(d.depth, `z=${d.z.toFixed(1)}`).toBeGreaterThan(1);
+      expect(d.depth, `z=${d.z.toFixed(1)}`).toBeLessThan(top + 0.5);
+    }
   });
 
   it('над ушком — паз: две щеки почти до кромки, лапка проходит между ними', () => {
