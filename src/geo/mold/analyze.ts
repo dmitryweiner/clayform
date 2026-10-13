@@ -265,20 +265,14 @@ export function analyzeMold(
 }
 
 /**
- * Зацепы отминки. Изделие уходит и из углублённой формы, и с горба в
- * модельном −z относительно формы, и мешает в обоих случаях грань, смотрящая
- * вверх, — поэтому критерий один, `pullUndercut(…, 'up')`: по наружной
- * поверхности для углублённой формы, по внутренней — для горба. Это
+ * Зацепы отминки. Изделие уходит из углублённой формы вверх, и мешает грань
+ * наружной поверхности, смотрящая вверх, — `pullUndercut(…, 'up')`. Это
  * предупреждение, а не запрет: пласт гибкий, и мелкий зацеп он переживёт.
  */
-export function pressWarning(
-  surface: Pick<SurfaceMesh, 'positions' | 'indices'>,
-  mode: 'slump' | 'hump',
-): string | null {
+export function pressWarning(surface: Pick<SurfaceMesh, 'positions' | 'indices'>): string | null {
   const { fraction, worst } = pullUndercut(surface, 'up');
   if (fraction <= HALVES_TOLERANCE) return null;
   const worstDeg = (Math.asin(Math.min(1, worst)) * 180) / Math.PI;
-  const subject = mode === 'slump' ? 'Изделие не выйдет из формы' : 'Пласт не снимется с горба';
-  return `${subject}: ${(fraction * 100).toFixed(1)} % поверхности с зацепами, самый крутой подрез ` +
+  return `Изделие не выйдет из формы: ${(fraction * 100).toFixed(1)} % поверхности с зацепами, самый крутой подрез ` +
     `${worstDeg.toFixed(0)}° — возьмите открытую форму (миска, стакан) или уменьшите глубину рельефа.`;
 }

@@ -30,10 +30,9 @@ export const STATE_VERSION = 1;
  *  vessel — само изделие, полое, как его печатают глиной;
  *  master — мастер-позитив под ручную силиконовую форму;
  *  bath   — ванночки-опалубки под заливку силикона (по одной на часть);
- *  slump  — отминка в «−»: углублённая форма, пласт вдавливают внутрь;
- *  hump   — отминка в «+»: горб, пласт кладут на него.
+ *  slump  — отминка: углублённая форма и пуансон, пласт вдавливают внутрь.
  */
-export const EXPORT_MODES = ['vessel', 'master', 'bath', 'slump', 'hump'] as const;
+export const EXPORT_MODES = ['vessel', 'master', 'bath', 'slump'] as const;
 export type ExportMode = (typeof EXPORT_MODES)[number];
 
 export interface AppState {
@@ -152,7 +151,7 @@ export function sanitizeState(raw: unknown): AppState {
   return state;
 }
 
-export const isPressMode = (mode: ExportMode): boolean => mode === 'slump' || mode === 'hump';
+export const isPressMode = (mode: ExportMode): boolean => mode === 'slump';
 
 /**
  * Можно ли отминать: пласт ложится только на тело вращения (с рельефом) —

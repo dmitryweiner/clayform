@@ -18,6 +18,11 @@ export interface MoldState {
    * неё — вынос ушек матрицы и лапок пуансона за кромку.
    */
   earMm: number;
+  /**
+   * Скругление низа пуансона, % от наибольшего: 100 — шапка от оси (у миски
+   * почти полусфера), 0 — плоский пол с острым углом.
+   */
+  punchRoundPct: number;
 }
 
 export const SHRINK_MAX_PCT = 30;
@@ -35,6 +40,7 @@ export function defaultMold(): MoldState {
     bathWallMm: 3,
     bathClearMm: 12,
     earMm: 8,
+    punchRoundPct: 100,
   };
 }
 
@@ -60,5 +66,6 @@ export function sanitizeMold(raw: unknown): MoldState {
     bathWallMm: clamp(num(source.bathWallMm, fallback.bathWallMm), 1.2, 12),
     bathClearMm: clamp(num(source.bathClearMm, fallback.bathClearMm), 3, 60),
     earMm: clamp(num(source.earMm, fallback.earMm), EAR_MIN_MM, EAR_MAX_MM),
+    punchRoundPct: clamp(num(source.punchRoundPct, fallback.punchRoundPct), 0, 100),
   };
 }

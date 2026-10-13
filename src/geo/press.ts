@@ -1,18 +1,5 @@
-// Отминочные формы — обе печатаются скорлупой толщиной в борт: пласту
-// нужна только поверхность, которой он касается, а не сплошной блок.
-//
-// Отминка в «+»: горб — выпуклая форма, на которую кладут пласт глины.
-//
-// Поверхность горба — ВНУТРЕННЯЯ поверхность изделия: силуэт, отодвинутый
-// внутрь по нормали на толщину стенки (она же толщина пласта). Тогда пласт,
-// облёгший горб, даёт изделие ровно заданных наружных размеров, а не на две
-// стенки больше. Рельеф ложится на горб и оказывается внутри изделия — с
-// обратным знаком: валик на горбе — канавка в изделии.
-//
-// Горб полый, скорлупой толщиной в борт печатной детали: экономим пластик.
-// Скорлупа — ровно полое изделие, построенное по внутреннему силуэту, —
-// перевёрнутое венчиком на стол. Чистая геометрия без CSG: ~10 мс, строится
-// и в главном потоке, и в воркере.
+// Отминка: углублённая форма скорлупой толщиной в борт — пласту нужна только
+// поверхность, которой он касается, а не сплошной блок — и пуансон к ней.
 //
 // Отминка в «−»: углублённая форма, пласт вдавливают внутрь. Её рабочая
 // поверхность — НАРУЖНАЯ поверхность изделия с рельефом, а снаружи скорлупы —
@@ -22,25 +9,16 @@
 import type { Grid, SurfaceMesh } from './surface';
 import { assembleHollowMesh, mirrorZ, scaleMesh } from './surface';
 import { meshNormals } from './normals';
-import type { ProfileDef, ProfilePoint } from './profiles';
-import { buildProfile, profileRadius, MIN_RADIUS_MM } from './profiles';
+import { profileRadius, MIN_RADIUS_MM } from './profiles';
 import type { BuildParams } from './build';
-import { buildVessel, vesselGrid, vesselSurface } from './build';
+import { vesselGrid, vesselSurface } from './build';
 import type { HollowState } from './hollow';
-import { buildHollowVessel, cavityPoint, WALL_MIN_MM, WALL_MAX_MM } from './hollow';
+import { cavityPoint, WALL_MIN_MM, WALL_MAX_MM } from './hollow';
 import type { LathePoint } from './lathe';
 import { lathe } from './lathe';
 
 /** Точек выборки офсета: столько же, сколько рядов у превью, с запасом. */
 const INSET_SAMPLES = 256;
-/** Точек готового силуэта: сплайн по ним неотличим от выборки. */
-const INSET_POINTS = 96;
-
-export interface InsetProfile {
-  profile: ProfileDef;
-  /** высота внутренней поверхности: от пола до венчика */
-  heightMm: number;
-}
 
 /** Лапок у пуансона и ушек у матрицы: три опоры не качаются и центрируют без переопределения. */
 export const PUNCH_LEGS = 3;
@@ -73,6 +51,12 @@ export const PUNCH_LIP_MM = 10;
 const PUNCH_LIP_T_MM = 4;
 /** Отвесная наружная грань ушка длиннее губы на столько, мм; ниже — фаска 45°. */
 const EAR_FACE_SPARE_MM = 3;
+/**
+ * Толщина ребра под ушком по дуге, мм. Ниже отвесной грани ушко сужается к
+ * нему под 45° (печатается без поддержек), а ребро идёт до основания и
+ * держит форму на столе устойчивее. Не тоньше шага сетки с каждой стороны.
+ */
+const RIB_MM = 6;
 /** Ширина щеки паза по дуге, мм; не уже двух шагов сетки. */
 const CHEEK_MM = 5;
 /**
@@ -102,9 +86,9 @@ const PUNCH_ARC_STEPS = 6;
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 
 /**
- * Толщина пласта — она же стенка изделия — с тем зажимом, который держат обе
- * детали отминки: горб и пуансон. Один на двоих, иначе лапки пуансона
- * встанут на одну глубину, а рабочая поверхность отодвинется на другую.
+ * Толщина пласта — она же стенка изделия: не тоньше допустимой стенки и не
+ * толще 0,4 высоты. Одна на матрицу (ушки) и пуансон, иначе лапки встанут
+ * на одну глубину, а рабочая поверхность отодвинется на другую.
  */
 export function slabThickness(wallMm: number, heightMm: number): number {
   return clamp(wallMm, WALL_MIN_MM, Math.min(WALL_MAX_MM, heightMm * 0.4));
@@ -149,87 +133,6 @@ function offsetSamples(
     samples.push({ r: Math.max(MIN_RADIUS_MM, point.r), z });
   }
   return { samples, floorR: Math.max(MIN_RADIUS_MM, Number.isFinite(floorR) ? floorR : MIN_RADIUS_MM) };
-}
-
-/**
- * Силуэт, отодвинутый внутрь по нормали на `wallMm`, — поверхность полости
- * изделия с полом на высоте стенки (пласт одинаковой толщины везде, и на
- * дне тоже). Офсет — `offsetSamples` с потолком по венчику. После
- * ограничений высота монотонна, и r(z) пересэмплируется по равномерной сетке
- * высот.
- */
-export function insetProfile(profile: ProfileDef, heightMm: number, wallMm: number): InsetProfile {
-  const wall = slabThickness(wallMm, heightMm);
-  const radiusAt = (v: number): number => profileRadius(profile, v);
-  const floorZ = wall;
-  const { samples } = offsetSamples(radiusAt, heightMm, wall, floorZ, heightMm);
-
-  const innerHeight = heightMm - floorZ;
-  /** r на высоте z: линейно между соседними выборками, первая — у пола. */
-  const rAt = (z: number): number => {
-    if (samples.length === 0) return MIN_RADIUS_MM;
-    if (z <= samples[0].z) return samples[0].r;
-    for (let k = 1; k < samples.length; k++) {
-      const a = samples[k - 1];
-      const b = samples[k];
-      if (z > b.z) continue;
-      const t = b.z > a.z ? (z - a.z) / (b.z - a.z) : 1;
-      return a.r + (b.r - a.r) * t;
-    }
-    return samples[samples.length - 1].r;
-  };
-
-  const points: ProfilePoint[] = [];
-  for (let k = 0; k <= INSET_POINTS; k++) {
-    const t = k / INSET_POINTS;
-    points.push({ t, r: rAt(floorZ + t * innerHeight) });
-  }
-  return { profile: { familyId: profile.familyId, heightMm: innerHeight, points }, heightMm: innerHeight };
-}
-
-/** Параметры сборки внутренней поверхности изделия — с рельефом изделия. */
-function insetParams(params: BuildParams, wallMm: number): BuildParams {
-  const profile = params.profile ?? buildProfile(params.family, params.shape, params.heightMm);
-  const inset = insetProfile(profile, params.heightMm, wallMm);
-  return { ...params, profile: inset.profile, heightMm: inset.heightMm };
-}
-
-/**
- * Сплошная внутренняя поверхность изделия в модельной ориентации (пол
- * внизу, устье вверху). По ней меряются зацепы горба: изделие уходит с горба
- * в модельном −z, и мешает ровно та грань, что смотрит вверх, — тот же
- * критерий, что у одночастной формы (`pullUndercut(…, 'up')`).
- */
-export function humpSurface(params: BuildParams, hollow: HollowState): SurfaceMesh {
-  return buildVessel(insetParams(params, hollow.wallMm));
-}
-
-export interface HumpResult {
-  /** горб в печатном положении: венчиком на столе, z ≥ 0 */
-  mesh: SurfaceMesh;
-  /** доля узлов, где рельеф пришлось поджать: глубже борта скорлупы */
-  pinchedFraction: number;
-}
-
-/**
- * Горб: полая скорлупа по внутренней поверхности изделия, увеличенная на
- * усадку и перевёрнутая венчиком на стол. Кромку не скругляем: иначе горб
- * стал бы ниже на её радиус, а венчик лёг бы на стол не всей плоскостью.
- */
-export function buildHump(
-  params: BuildParams,
-  hollow: HollowState,
-  shellMm: number,
-  shrinkPct: number,
-): HumpResult {
-  const shell = buildHollowVessel(
-    insetParams(params, hollow.wallMm),
-    { wallMm: shellMm, baseMm: shellMm, rimRadiusMm: 0 },
-  );
-  return {
-    mesh: mirrorZ(scaleMesh(shell.mesh, 1 + shrinkPct / 100)),
-    pinchedFraction: shell.pinchedFraction,
-  };
 }
 
 /**
@@ -414,10 +317,16 @@ function slumpEars(
   const legReach = legSpan(outerMm, nu);
   const slotReach = legReach + step;
   const reach = slotReach + Math.max(CHEEK_MM / outerMm, step * 2.01);
+  const ribReach = Math.min(reach, Math.max(RIB_MM / 2 / outerMm + step / 2, step * 1.01));
   return {
     radiusAt: (j, z, angle) => {
       if (angle > reach) return 0;
-      if (j <= ring) return outerMm - Math.max(0, faceZ - z);
+      if (j <= ring) {
+        const below = Math.max(0, faceZ - z);
+        // по дуге ушко сужается к ребру так же, как по радиусу, — под 45°
+        if (angle > Math.max(ribReach, reach - below / outerMm)) return 0;
+        return outerMm - below;
+      }
       return j <= cheekRing && angle > slotReach ? outerMm : 0;
     },
     fit: {
@@ -576,6 +485,93 @@ function offsetPolyline(
   return out;
 }
 
+type RZ = { r: number; z: number };
+
+/** Расстояние от точки до ломаной в осевом сечении и ближайшая точка на ней. */
+function nearestOn(points: readonly RZ[], p: RZ): { distance: number; point: RZ; segment: number } {
+  let best = { distance: Infinity, point: points[0], segment: 0 };
+  for (let k = 0; k + 1 < points.length; k++) {
+    const a = points[k];
+    const b = points[k + 1];
+    const dr = b.r - a.r;
+    const dz = b.z - a.z;
+    const len2 = dr * dr + dz * dz;
+    const t = len2 > 0 ? clamp(((p.r - a.r) * dr + (p.z - a.z) * dz) / len2, 0, 1) : 0;
+    const q = { r: a.r + dr * t, z: a.z + dz * t };
+    const distance = Math.hypot(p.r - q.r, p.z - q.z);
+    if (distance < best.distance) best = { distance, point: q, segment: k };
+  }
+  return best;
+}
+
+/**
+ * Скругление низа пуансона — катящейся окружностью, касающейся пола и
+ * стенки рабочей поверхности. `fraction` — доля наибольшего радиуса, при
+ * котором центр окружности выходит на ось: тогда пола не остаётся вовсе, и
+ * низ — шапка, у миски почти полусфера. Пласт на дне в углу выходит толще
+ * (как у пиал с массивной ножкой), но нигде не тоньше заданного: окружность
+ * целиком внутри эквидистанты. `wall` начинается на полу, в `(floorR, floorZ)`;
+ * результат — от точки касания пола (или от края отдушины, если шапка до
+ * неё дотянулась) вверх по дуге и дальше по стенке.
+ */
+function roundBottom(wall: readonly RZ[], floorZ: number, fraction: number, ventMm: number): RZ[] {
+  if (!(fraction > 0) || wall.length < 2) return [...wall];
+  const gap = (r: number, radius: number): number =>
+    nearestOn(wall, { r, z: floorZ + radius }).distance - radius;
+
+  // наибольший радиус: окружность с центром на оси касается стенки
+  // у конической стенки он больше высоты: ~ r·sin α / (1 − cos α)
+  let lo = 0;
+  let hi = 4 * wall.reduce((max, p) => Math.max(max, p.r, p.z - floorZ), 0);
+  if (gap(0, hi) >= 0) lo = hi;
+  for (let i = 0; i < 48 && hi - lo > 1e-6; i++) {
+    const mid = (lo + hi) / 2;
+    if (gap(0, mid) >= 0) lo = mid;
+    else hi = mid;
+  }
+  const radius = lo * Math.min(1, fraction);
+  if (radius < 0.05) return [...wall];
+
+  // центр — самый дальний от оси, при котором окружность ещё не режет стенку
+  let near = 0;
+  let far = wall[0].r;
+  for (let i = 0; i < 48 && far - near > 1e-6; i++) {
+    const mid = (near + far) / 2;
+    if (gap(mid, radius) >= 0) near = mid;
+    else far = mid;
+  }
+  const center = { r: near, z: floorZ + radius };
+  const touch = nearestOn(wall, center);
+  // точка дуги: center + radius·(sin θ, −cos θ); θ = 0 — касание пола
+  const end = Math.atan2(touch.point.r - center.r, center.z - touch.point.z);
+  const start = center.r < ventMm ? Math.asin(Math.min(1, (ventMm - center.r) / radius)) : 0;
+  const steps = Math.max(4, Math.ceil((end - start) / (Math.PI / 64)));
+  const arc: RZ[] = [];
+  for (let k = 0; k <= steps; k++) {
+    const t = start + ((end - start) * k) / steps;
+    arc.push({ r: center.r + radius * Math.sin(t), z: center.z - radius * Math.cos(t) });
+  }
+  return [...arc, ...wall.slice(touch.segment + 1)];
+}
+
+/**
+ * Внутренняя скорлупа начинается от края отдушины: если офсет до неё не
+ * дошёл — горизонтальный пол до неё, если зашёл за неё — обрезается по ней.
+ */
+function fromVent(points: RZ[], ventMm: number): RZ[] {
+  if (points.length === 0 || points[0].r >= ventMm) {
+    return points.length === 0 ? points : [{ r: ventMm, z: points[0].z }, ...points];
+  }
+  for (let k = 1; k < points.length; k++) {
+    const a = points[k - 1];
+    const b = points[k];
+    if (b.r < ventMm) continue;
+    const t = (ventMm - a.r) / (b.r - a.r);
+    return [{ r: ventMm, z: a.z + (b.z - a.z) * t }, ...points.slice(k)];
+  }
+  return points;
+}
+
 /**
  * Пуансон к углублённой отминке: входит в матрицу сверху и прижимает пласт к
  * её рабочей поверхности так, что между ними везде ровно толщина пласта.
@@ -602,6 +598,7 @@ export function buildPunch(
   shellMm: number,
   shrinkPct: number,
   fit: SlumpFit,
+  roundPct = 0,
 ): SurfaceMesh {
   const { profile, heightMm, nu } = vesselSurface(params);
   const layout = punchLayout(params, hollow, shellMm, fit);
@@ -615,8 +612,9 @@ export function buildPunch(
   // отогнутого края её конец выше кромки, и оттуда идёт дуга вокруг кромки.
   const work = offsetSamples(radiusAt, heightMm, slabMm, slabMm, Infinity);
   const lift = (p: { r: number; z: number }): { r: number; z: number } => ({ r: p.r, z: p.z + shellMm });
-  const surface = [{ r: work.floorR, z: slabMm }, ...work.samples].map(lift);
+  const wall = [{ r: work.floorR, z: slabMm }, ...work.samples].map(lift);
   const floorZ = shellMm + slabMm;
+  const surface = roundBottom(wall, floorZ, roundPct / 100, vent);
 
   // Дуга радиусом в пласт вокруг кромки матрицы: честный офсет угла
   // «стенка–венчик», глина в углу той же толщины, что везде.
@@ -632,7 +630,7 @@ export function buildPunch(
 
   // Внутренняя скорлупа — офсет рабочей поверхности ещё на борт, до кромки;
   // выше неё — вертикаль до верха фланца.
-  const inner = offsetPolyline(surface, shellMm, floorZ + shellMm, fit.rimZ);
+  const inner = fromVent(offsetPolyline(surface, shellMm, floorZ + shellMm, fit.rimZ), vent);
   const shellTop = inner[inner.length - 1];
 
   // Фланец и лапки. В секторах лапок точки низа фланца опускаются: подошва —
@@ -650,7 +648,8 @@ export function buildPunch(
   });
   const contour: LathePoint[] = [
     // отдушина снизу и пол рабочей поверхности
-    { r: vent, z: floorZ },
+    // отдушина снизу; пол рабочей поверхности, если скругление его оставило
+    ...(surface[0].r > vent ? [{ r: vent, z: floorZ }] : []),
     ...surface,
     ...arc,
     flangePoint(ear.seatInMm - PUNCH_STEP_MM, flangeZ, 0, 0),
@@ -661,9 +660,8 @@ export function buildPunch(
     // торец фланца — он же наружная грань лапки
     flangePoint(flangeMm, flangeTop, 4, 0),
     { r: shellTop.r, z: flangeTop },
-    // внутренняя скорлупа сверху вниз, пол скорлупы и отдушина
+    // внутренняя скорлупа сверху вниз до отдушины
     ...[...inner].reverse(),
-    { r: vent, z: floorZ + shellMm },
   ];
   const raw = lathe(contour, nu);
   const mesh = { ...raw, normals: meshNormals(raw.positions, raw.indices) };

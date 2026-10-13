@@ -89,8 +89,8 @@ describe('toBuildParams', () => {
 
 describe('отминка', () => {
   it('доступна только телу без ручки, носика и крышки', () => {
-    const plain = sanitizeState({ ...defaultState(), exportMode: 'hump' });
-    expect(plain.exportMode).toBe('hump');
+    const plain = sanitizeState({ ...defaultState(), exportMode: 'slump' });
+    expect(plain.exportMode).toBe('slump');
     expect(pressAllowed(plain)).toBe(true);
     for (const extra of [
       { handle: { on: true } },
@@ -98,7 +98,7 @@ describe('отминка', () => {
       { spout: { on: true, kind: 'applied' } },
       { lid: { on: true } },
     ]) {
-      for (const exportMode of ['slump', 'hump']) {
+      for (const exportMode of ['slump']) {
         const state = sanitizeState({ ...defaultState(), ...extra, exportMode });
         expect(state.exportMode, JSON.stringify(extra)).toBe('vessel');
         expect(sanitizeState(state)).toEqual(state);

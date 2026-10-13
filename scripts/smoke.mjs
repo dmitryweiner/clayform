@@ -584,14 +584,6 @@ label('press');
 await page.locator('#familyGrid .family-btn').nth(1).click();
 await page.waitForTimeout(150);
 if (!(await page.locator('#pressTabs').isVisible())) errors.push('[press] у миски нет табов отминки');
-await page.click('#tabHump');
-const humpVerdict = await auditVerdict(page);
-if (!humpVerdict.includes('замкнуто ✓')) errors.push(`[press:hump] audit="${humpVerdict}"`);
-const pressWarnings = (await page.locator('#warnings').textContent()).trim();
-if (pressWarnings) errors.push(`[press:hump] у миски предупреждения: "${pressWarnings}"`);
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/press-hump.png` });
-await expectDownloads(1, 'hump');
-const thousands = (verdict) => Number(verdict.match(/(\d+) тыс/)?.[1] ?? 0);
 await page.click('#tabSlump');
 const slumpVerdict = await auditVerdict(page);
 if (!slumpVerdict.includes('замкнуто ✓')) errors.push(`[press:slump] audit="${slumpVerdict}"`);
@@ -601,10 +593,7 @@ const slumpPart = (await page.locator('#partList li').first().textContent()) ?? 
 if (!slumpPart.includes('пуансон')) errors.push(`[press:slump] в подписи нет пуансона: "${slumpPart}"`);
 if (!(await page.locator('#slump_wall').isVisible())) errors.push('[press:slump] не видно ползунка «Пласт»');
 if (!(await page.locator('#slump_ear').isVisible())) errors.push('[press:slump] не видно ползунка «Ушки»');
-// грубо, но ловит «пуансон не построился»: матрица с пуансоном тяжелее горба
-if (thousands(slumpVerdict) <= thousands(humpVerdict)) {
-  errors.push(`[press:slump] треугольников не больше, чем у горба: "${slumpVerdict}" против "${humpVerdict}"`);
-}
+if (!(await page.locator('#slump_round').isVisible())) errors.push('[press:slump] не видно ползунка «Скругление дна»');
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/press-slump.png` });
 await expectDownloads(1, 'slump');
 await page.check('#on_handle');

@@ -1,16 +1,15 @@
-// Отминка: горб по внутренней поверхности изделия и углублённая форма по
-// наружной. Проверяем то, от чего зависит, снимется ли пласт и выйдет ли
-// изделие заданного размера.
+// Отминка: углублённая форма по наружной поверхности изделия и пуансон к ней.
+// Проверяем то, от чего зависит, выйдет ли изделие заданного размера и
+// сядет ли пуансон.
 
 import {
-  insetProfile, buildHump, humpSurface, buildSlumpShell, buildPunch, punchLayout, slabThickness, legDistance,
+  buildSlumpShell, buildPunch, punchLayout, slabThickness, legDistance,
   earTopAt, SLUMP_VENT_MM, PUNCH_LEG_WIDTH_MM, PUNCH_VENT_MM, PUNCH_CLEARANCE_MM, EAR_DROP_MM,
 } from '../src/geo/press';
-import { cavityPoint, defaultHollow } from '../src/geo/hollow';
-import { buildProfile, defaultFamilyParams, familyById, profileRadius } from '../src/geo/profiles';
+import { defaultHollow } from '../src/geo/hollow';
+import { defaultFamilyParams, familyById, profileRadius } from '../src/geo/profiles';
 import { defaultBuildParams, buildVessel, vesselSurface } from '../src/geo/build';
 import { validateMesh, signedVolume } from '../src/geo/validate';
-import { pullUndercut } from '../src/geo/mold/analyze';
 
 const params = (family: string) => ({
   ...defaultBuildParams(),
@@ -19,111 +18,6 @@ const params = (family: string) => ({
   heightMm: familyById(family).defaultHeightMm,
   nu: 96,
   nv: 96,
-});
-
-describe('insetProfile', () => {
-  it('внутренняя поверхность: пол на высоте стенки, венчик на месте', () => {
-    const p = params('cup');
-    const profile = buildProfile('cup', p.shape, p.heightMm);
-    const inset = insetProfile(profile, p.heightMm, 4);
-    expect(inset.heightMm).toBeCloseTo(p.heightMm - 4, 6);
-  });
-
-  it('радиус меньше исходного ровно на стенку по нормали', () => {
-    for (const family of ['cup', 'bowl', 'pot']) {
-      const p = params(family);
-      const profile = buildProfile(family, p.shape, p.heightMm);
-      const wall = 3;
-      const inset = insetProfile(profile, p.heightMm, wall);
-      for (const v of [0.35, 0.5, 0.65]) {
-        const point = cavityPoint((t) => profileRadius(profile, t), p.heightMm, wall, v);
-        const t = (point.z - wall) / inset.heightMm;
-        expect(profileRadius(inset.profile, t), `${family} v=${v}`).toBeCloseTo(point.r, 0);
-      }
-    }
-  });
-});
-
-describe('горб', () => {
-  const hollow = { ...defaultHollow(), wallMm: 5 };
-
-  it('замкнут, снаружи нормали, стоит венчиком на столе', () => {
-    for (const family of ['bowl', 'cup', 'pot', 'vase']) {
-      const { mesh } = buildHump(params(family), hollow, 2, 0);
-      const report = validateMesh(mesh);
-      expect(report.watertight, family).toBe(true);
-      expect(signedVolume(mesh.positions, mesh.indices), family).toBeGreaterThan(0);
-      expect(report.bbox.min[2], family).toBeCloseTo(0, 4);
-    }
-  });
-
-  it('наибольший радиус — венчик внутренней поверхности, увеличенный на усадку', () => {
-    const p = params('bowl');
-    const profile = buildProfile('bowl', p.shape, p.heightMm);
-    const inset = insetProfile(profile, p.heightMm, hollow.wallMm);
-    const { mesh } = buildHump(p, hollow, 2, 10);
-    const report = validateMesh(mesh);
-    expect(report.extents[0] / 2).toBeCloseTo(profileRadius(inset.profile, 1) * 1.1, 0);
-    expect(report.extents[2]).toBeCloseTo(inset.heightMm * 1.1, 0);
-  });
-
-  it('скорлупа, а не сплошной: объём ≈ площадь × борт, и снизу открыт', () => {
-    const p = params('bowl');
-    const shell = 2;
-    const { mesh } = buildHump(p, hollow, shell, 0);
-    const solid = humpSurface(p, hollow);
-    const solidVolume = signedVolume(solid.positions, solid.indices);
-    const volume = signedVolume(mesh.positions, mesh.indices);
-    expect(volume).toBeLessThan(solidVolume * 0.3);
-
-    // площадь наружной поверхности горба ≈ площадь сплошного тела без крышки
-    // устья; объём скорлупы должен быть около неё × борт
-    let area = 0;
-    let rim = 0;
-    const pos = solid.positions;
-    for (let i = 0; i < pos.length; i += 3) rim = Math.max(rim, Math.hypot(pos[i], pos[i + 1]));
-    for (let t = 0; t < solid.indices.length; t += 3) {
-      const [a, b, c] = [solid.indices[t] * 3, solid.indices[t + 1] * 3, solid.indices[t + 2] * 3];
-      const ab = [pos[b] - pos[a], pos[b + 1] - pos[a + 1], pos[b + 2] - pos[a + 2]];
-      const ac = [pos[c] - pos[a], pos[c + 1] - pos[a + 1], pos[c + 2] - pos[a + 2]];
-      area += 0.5 * Math.hypot(
-        ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0],
-      );
-    }
-    area -= Math.PI * rim * rim;
-    expect(volume / (area * shell)).toBeGreaterThan(0.7);
-    expect(volume / (area * shell)).toBeLessThan(1.1);
-
-    // открыт снизу: у стола внутри кольца венчика нет ни одной грани
-    const { positions, indices } = mesh;
-    for (let t = 0; t < indices.length; t += 3) {
-      let z = 0;
-      let r = 0;
-      for (let k = 0; k < 3; k++) {
-        const v = indices[t + k] * 3;
-        z += positions[v + 2] / 3;
-        r += Math.hypot(positions[v], positions[v + 1]) / 3;
-      }
-      if (z < shell * 0.5) expect(r).toBeGreaterThan(rim - shell - 0.5);
-    }
-  });
-
-  it('с миски пласт снимается, с горшка с узким горлом — нет', () => {
-    const bowl = pullUndercut(humpSurface(params('bowl'), hollow), 'up').fraction;
-    const pot = pullUndercut(humpSurface(params('pot'), hollow), 'up').fraction;
-    expect(bowl).toBeLessThan(0.002);
-    expect(pot).toBeGreaterThan(0.05);
-  });
-
-  it('рельеф глубже борта поджимается и об этом сообщается', () => {
-    const p = {
-      ...params('bowl'),
-      relief: { ...params('bowl').relief, wave: { ...params('bowl').relief.wave, on: true, ampMm: 4 } },
-    };
-    // волна уходит внутрь на 4 мм, а скорлупе в 1,2 мм позволено лишь 0,6
-    expect(buildHump(p, hollow, 1.2, 0).pinchedFraction).toBeGreaterThan(0.1);
-    expect(buildHump(p, hollow, 8, 0).pinchedFraction).toBe(0);
-  });
 });
 
 describe('углублённая форма', () => {
@@ -305,6 +199,39 @@ describe('пуансон', () => {
     }
   });
 
+  it('ниже ушка — тонкое ребро до основания, а не ушко во всю ширину', () => {
+    const p = params('bowl');
+    const { mesh, fit } = buildSlumpShell(p, hollow, shell, 0);
+    const { ear } = fit;
+    const step = (2 * Math.PI) / p.nu;
+    let checked = 0;
+    // наружная сетка — первые nu·(nv+1) вершин; угол 0 — между ушками
+    for (let j = 0; j <= p.nv; j++) {
+      const base = j * p.nu * 3;
+      const z = mesh.positions[base + 2];
+      // ниже грани ушка (губа + 3 мм) и его сужения к ребру по дуге под 45°
+      if (z > ear.topZ - 13 - (ear.reach * ear.outerMm - 3) || z < 1) continue;
+      const plain = Math.hypot(mesh.positions[base], mesh.positions[base + 1]);
+      const pushed: number[] = [];
+      for (let i = 0; i < p.nu; i++) {
+        const k = base + i * 3;
+        if (Math.hypot(mesh.positions[k], mesh.positions[k + 1]) > plain + 0.01) {
+          pushed.push(Math.atan2(mesh.positions[k + 1], mesh.positions[k]));
+        }
+      }
+      if (pushed.length === 0) continue;
+      checked++;
+      const clusters = clustersOf(pushed, step);
+      expect(clusters.length, `ряд ${j}`).toBe(3);
+      for (const cluster of clusters) {
+        const width = (Math.max(...cluster) - Math.min(...cluster)) * ear.outerMm;
+        expect(width, `ряд ${j}`).toBeLessThan(6 + 2 * step * ear.outerMm);
+      }
+    }
+    // у миски стенка положе 45°: рёбра доходят до низа
+    expect(checked).toBeGreaterThan(3);
+  });
+
   it('над ушком — паз: две щеки почти до кромки, лапка проходит между ними', () => {
     for (const family of families) {
       const p = params(family);
@@ -473,9 +400,57 @@ describe('пуансон', () => {
     expect(Array.from(wavy.indices)).toEqual(Array.from(plain.indices));
   });
 
-  it('один зажим пласта на горб и пуансон', () => {
+  it('скруглённый низ: глина нигде не тоньше пласта, у оси — ровно пласт', () => {
+    for (const family of families) {
+      const p = params(family);
+      const { fit } = buildSlumpShell(p, hollow, shell, 0);
+      const layout = punchLayout(p, hollow, shell, fit);
+      const flat = buildPunch(p, hollow, shell, 0, fit, 0);
+      const round = buildPunch(p, hollow, shell, 0, fit, 100);
+      const report = validateMesh(round);
+      expect(report.watertight, family).toBe(true);
+      expect(report.degenerateTriangles, family).toBe(0);
+      // скругление снимает материал пуансона — пласту достаётся больше
+      expect(signedVolume(round.positions, round.indices), family)
+        .toBeLessThan(signedVolume(flat.positions, flat.indices));
+
+      const top = layout.flangeZ + layout.flangeT;
+      const points = section(new Float32Array(round.positions).map((x, i) => (i % 3 === 2 ? top - x : x)));
+      const { profile, heightMm } = vesselSurface(p);
+      const matrix: { r: number; z: number }[] = [];
+      for (let k = 0; k <= 400; k++) {
+        matrix.push({ r: profileRadius(profile, k / 400), z: (k / 400) * heightMm + shell });
+      }
+      const r0 = profileRadius(profile, 0);
+      for (let k = 0; k <= 100; k++) matrix.push({ r: (r0 * k) / 100, z: shell });
+      for (const q of points) {
+        if (q.z > fit.rimZ) continue;
+        const gap = Math.min(...matrix.map((m) => Math.hypot(m.r - q.r, m.z - q.z)));
+        expect(gap, `${family} r=${q.r.toFixed(1)} z=${q.z.toFixed(1)}`).toBeGreaterThan(layout.slabMm - 0.05);
+      }
+      // у оси шапка касается пола: дно изделия по центру — ровно пласт
+      const low = Math.min(...points.map((q) => q.z));
+      expect(low - (shell + layout.slabMm), family).toBeLessThan(0.1);
+      expect(low, family).toBeGreaterThan(shell + layout.slabMm - 1e-3);
+    }
+  });
+
+  it('у миски низ — почти полусфера, а не пол с углом', () => {
+    const p = params('bowl');
+    const { fit } = buildSlumpShell(p, hollow, shell, 0);
+    const layout = punchLayout(p, hollow, shell, fit);
+    const round = buildPunch(p, hollow, shell, 0, fit, 100);
+    const top = layout.flangeZ + layout.flangeT;
+    const points = section(new Float32Array(round.positions).map((x, i) => (i % 3 === 2 ? top - x : x)));
+    const floor = shell + layout.slabMm;
+    // на полпути к стенке поверхность уже заметно поднялась над полом
+    const r0 = profileRadius(vesselSurface(p).profile, 0);
+    const mid = points.filter((q) => Math.abs(q.r - r0 * 0.5) < 1.5 && q.z < fit.rimZ * 0.6);
+    expect(Math.min(...mid.map((q) => q.z))).toBeGreaterThan(floor + 1);
+  });
+
+  it('пласт зажат: не толще 0,4 высоты', () => {
     expect(slabThickness(60, 50)).toBe(20);
-    const profile = buildProfile('cup', params('cup').shape, 50);
-    expect(insetProfile(profile, 50, 60).heightMm).toBeCloseTo(50 - 20, 6);
+    expect(slabThickness(0.1, 50)).toBeGreaterThan(0.5);
   });
 });

@@ -12,7 +12,7 @@ import { mergeMeshes } from '../geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from '../geo/layout';
 import type { VesselSurface } from '../geo/build';
 import { vesselSurface } from '../geo/build';
-import { buildHump, buildSlumpShell, buildPunch } from '../geo/press';
+import { buildSlumpShell, buildPunch } from '../geo/press';
 import { buildProfile, profileRadius } from '../geo/profiles';
 import type { LidFit } from '../geo/lid';
 import { lidFit, lidSeat, lidHeightMm, buildLidMesh, buildLidSolid } from '../geo/lid';
@@ -82,7 +82,6 @@ function run(csg: CsgApi, jobId: number, job: CsgJob): JobPart[] {
       case 'vessel':
         return vesselParts(csg, jobId, state, state.resolution);
       case 'slump':
-      case 'hump':
         return pressParts(jobId, state, state.resolution);
       default:
         return moldParts(csg, jobId, state, state.resolution, true);
@@ -160,37 +159,23 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
 }
 
 /**
- * Отминочная форма: скорлупа по наружной поверхности (углублённая, с
- * пуансоном рядом) или по внутренней (горб). Чистая геометрия без CSG — в воркере только ради общего
- * пути экспорта с проверкой меша и прогрессом.
+ * Отминочная форма с пуансоном рядом, одним файлом: две замкнутые компоненты
+ * в одном меше. Чистая геометрия без CSG — в воркере только ради общего пути
+ * экспорта с проверкой меша и прогрессом.
  */
 function pressParts(jobId: number, state: AppState, segments: number): JobPart[] {
   const params = toBuildParams(state, segments);
   const { bathWallMm, shrinkPct } = state.mold;
-  let item: { id: string; label: string; mesh: SurfaceMesh };
-  let progress: Progress;
-  if (state.exportMode === 'hump') {
-    progress = new Progress(jobId, 2);
-    progress.next('горб');
-    item = {
-      id: 'hump',
-      label: 'Горб',
-      mesh: buildHump(params, state.hollow, bathWallMm, shrinkPct).mesh,
-    };
-  } else {
-    // Матрица и пуансон одним файлом, как изделие с крышкой рядом: две
-    // замкнутые компоненты в одном меше.
-    progress = new Progress(jobId, 3);
-    progress.next('отминочная форма');
-    const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct, state.mold.earMm);
-    progress.next('пуансон');
-    const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit);
-    item = {
-      id: 'slump',
-      label: 'Форма + пуансон',
-      mesh: mergeMeshes(placeInRow([[slump.mesh], [punch]], LID_BESIDE_GAP_MM).flat()),
-    };
-  }
+  const progress = new Progress(jobId, 3);
+  progress.next('отминочная форма');
+  const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct, state.mold.earMm);
+  progress.next('пуансон');
+  const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit, state.mold.punchRoundPct);
+  const item = {
+    id: 'slump',
+    label: 'Форма + пуансон',
+    mesh: mergeMeshes(placeInRow([[slump.mesh], [punch]], LID_BESIDE_GAP_MM).flat()),
+  };
   progress.next('проверка меша');
   return [part(
     item.id, item.label, sizeNote(item.mesh), item.mesh,

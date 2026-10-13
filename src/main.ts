@@ -30,7 +30,7 @@ import { buildAppliedSpout } from './geo/spout';
 // ним и WASM-обвязку manifold. Здесь она не нужна ни строчкой — весь CSG
 // живёт в воркере, и путь импорта это подтверждает.
 import { analyzeMold, pressWarning } from './geo/mold/analyze';
-import { buildHump, humpSurface, buildSlumpShell, buildPunch } from './geo/press';
+import { buildSlumpShell, buildPunch } from './geo/press';
 import { buildHollowVessel } from './geo/hollow';
 import { lidFit, lidSeat, buildLidMesh, lidHeightMm, lidDomeContext } from './geo/lid';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
@@ -70,14 +70,10 @@ const AUDIT_DELAY_MS = 220;
  * изделия с ручкой и носиком. Ждём паузы подольше, чем проверки меша.
  */
 const CSG_DELAY_MS = 400;
-/** Подписи под табами отминки — вместо схемы разъёма. */
-const PRESS_NOTES = {
-  slump: 'Углублённая форма: пласт вдавливают внутрь, рельеф ложится снаружи изделия, '
-    + 'наружные размеры — ровно заданные. Рядом — пуансон: он входит в форму на трёх лапках '
-    + 'и прижимает пласт к ней ровно на толщину. Обе детали — скорлупой толщиной в борт.',
-  hump: 'Горб — внутренняя поверхность изделия: пласт кладут сверху, рельеф оказывается внутри. '
-    + 'Знак рельефа обратный: валик на горбе — канавка в изделии. Пласт — это стенка изделия.',
-} as const;
+/** Подпись под табом отминки — вместо схемы разъёма. */
+const SLUMP_NOTE = 'Углублённая форма: пласт вдавливают внутрь, рельеф ложится снаружи изделия, '
+  + 'наружные размеры — ровно заданные. Рядом — пуансон: он садится лапками на ушки формы '
+  + 'и прижимает пласт к ней ровно на толщину. Обе детали — скорлупой толщиной в борт.';
 
 /** Зазор между деталями в «разнесённом» превью, мм. */
 const EXPLODE_GAP_MM = 20;
@@ -173,7 +169,6 @@ const exportPanel = renderExportPanel(
     master: el('tabMaster', HTMLButtonElement),
     bath: el('tabBath', HTMLButtonElement),
     slump: el('tabSlump', HTMLButtonElement),
-    hump: el('tabHump', HTMLButtonElement),
   },
   el('pressTabs', HTMLDivElement),
   exportParams,
@@ -284,27 +279,14 @@ function refresh(): void {
     hasPlug: Boolean(fit && fit.recessMm > 0),
   });
   const press = isPressMode(state.exportMode);
-  // Горб — чистая геометрия, строится здесь же, без воркера; заодно по его
-  // внутренней поверхности меряются зацепы.
-  const hump = state.exportMode === 'hump'
-    ? buildHump(buildParams, state.hollow, state.mold.bathWallMm, state.mold.shrinkPct)
-    : null;
-  // Обе отминочные формы — скорлупы без CSG, пуансон — тело вращения:
-  // строятся сразу, без воркера. Пуансон стоит рядом с матрицей.
-  const pressMeshes = hump ? [hump.mesh] : state.exportMode === 'slump' ? slumpPair(buildParams) : null;
-  exportPanel.setSchemeNote(press ? PRESS_NOTES[state.exportMode === 'hump' ? 'hump' : 'slump'] : scheme.reason);
+  // Отминочная форма — скорлупа без CSG, пуансон — тело вращения: строятся
+  // сразу, без воркера. Пуансон стоит рядом с матрицей.
+  const pressMeshes = press ? slumpPair(buildParams) : null;
+  exportPanel.setSchemeNote(press ? SLUMP_NOTE : scheme.reason);
 
   if (press) {
-    const undercut = hump
-      ? pressWarning(humpSurface(buildParams, state.hollow), 'hump')
-      : pressWarning(outer, 'slump');
+    const undercut = pressWarning(outer);
     baseWarnings = undercut ? [undercut] : [];
-    if (hump && hump.pinchedFraction > 0) {
-      baseWarnings.push(
-        `Рельеф уходит в горб глубже борта на ${(hump.pinchedFraction * 100).toFixed(1)} % поверхности — ` +
-        'там рельеф поджат. Увеличьте борт или уменьшите глубину рельефа.',
-      );
-    }
   } else {
     baseWarnings = [...scheme.warnings];
   }
@@ -381,7 +363,7 @@ function refresh(): void {
   } else if (pressMeshes) {
     // отминочная форма готова сразу — ни задержки, ни воркера
     scene.setMeshes(pressMeshes);
-    exportPanel.setParts([{ label: hump ? 'Горб' : 'Форма + пуансон', note: sizeNote(pressMeshes) }]);
+    exportPanel.setParts([{ label: 'Форма + пуансон', note: sizeNote(pressMeshes) }]);
     exportBtn.textContent = 'Экспорт формы';
     auditEl.textContent = 'проверка…';
     auditTimer = setTimeout(() => audit(pressMeshes, false), AUDIT_DELAY_MS);
@@ -397,7 +379,7 @@ function refresh(): void {
 function slumpPair(params: BuildParams): SurfaceMesh[] {
   const { bathWallMm, shrinkPct } = state.mold;
   const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct, state.mold.earMm);
-  const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit);
+  const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit, state.mold.punchRoundPct);
   return placeInRow([[slump.mesh], [punch]], BESIDE_GAP_MM).flat();
 }
 

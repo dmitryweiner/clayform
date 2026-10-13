@@ -3,8 +3,8 @@
 //   Изделие  — полый сосуд, как его печатают глиной;
 //   Мастер   — позитив с литейной горловиной под ручную силиконовую форму;
 //   Ванночки — печатные опалубки под заливку силикона, по одной на часть;
-//   Отминка  — форма под пласт: углублённая («−») или горб («+»). Только
-//              для тела без ручки, носика и крышки.
+//   Отминка  — углублённая форма под пласт и пуансон к ней. Только для тела
+//              без ручки, носика и крышки.
 
 import type { HollowState } from '../geo/hollow';
 import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM, RIM_MAX_MM } from '../geo/hollow';
@@ -78,28 +78,21 @@ const SLUMP_CONTROLS: Control<MoldState>[] = [
     get: (s) => s.earMm,
     set: (s, v) => ({ ...s, earMm: v }),
   },
-];
-
-/**
- * Толщина пласта — это стенка изделия: горб и пуансон строятся по его
- * внутренней поверхности. Один массив на оба таба.
- */
-const SLAB_CONTROLS: Control<HollowState>[] = [
   {
-    kind: 'range', key: 'wall', label: 'Пласт', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1, unit: 'мм',
-    hint: 'толщина пласта — стенка изделия; на неё горб меньше изделия, а пуансон — формы',
-    get: (s) => s.wallMm,
-    set: (s, v) => ({ ...s, wallMm: v }),
+    kind: 'range', key: 'round', label: 'Скругление дна', min: 0, max: 100, step: 5, unit: '%',
+    hint: 'низ пуансона: 100 — шапка от оси, у миски почти полусфера; 0 — плоский пол. Глина в углу толще, но не тоньше пласта',
+    get: (s) => s.punchRoundPct,
+    set: (s, v) => ({ ...s, punchRoundPct: v }),
   },
 ];
 
-const HUMP_CONTROLS: Control<MoldState>[] = [
-  SHRINK,
+/** Толщина пласта — это стенка изделия: пуансон строится по его внутренней поверхности. */
+const SLAB_CONTROLS: Control<HollowState>[] = [
   {
-    kind: 'range', key: 'bathWall', label: 'Борт', min: 1.2, max: 12, step: 0.2, unit: 'мм',
-    hint: 'толщина скорлупы горба: он полый, чтобы не тратить пластик',
-    get: (s) => s.bathWallMm,
-    set: (s, v) => ({ ...s, bathWallMm: v }),
+    kind: 'range', key: 'wall', label: 'Пласт', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1, unit: 'мм',
+    hint: 'толщина пласта — стенка изделия; пуансон меньше формы ровно на неё',
+    get: (s) => s.wallMm,
+    set: (s, v) => ({ ...s, wallMm: v }),
   },
 ];
 
@@ -161,9 +154,8 @@ export function renderExportPanel(
   const masterHost = make('div');
   const bathHost = make('div');
   const slumpHost = make('div');
-  const humpHost = make('div');
   paramsHost.textContent = '';
-  paramsHost.append(hollowHost, masterHost, bathHost, slumpHost, humpHost);
+  paramsHost.append(hollowHost, masterHost, bathHost, slumpHost);
 
   const hollowRows = renderControls(hollowHost, HOLLOW_CONTROLS, readHollow, onHollow, 'print');
   const besideHost = make('div');
@@ -176,11 +168,6 @@ export function renderExportPanel(
   slumpHost.append(slumpMoldHost, slumpSlabHost);
   const slumpRows = renderControls(slumpMoldHost, SLUMP_CONTROLS, readMold, onMold, 'slump');
   const slumpSlabRows = renderControls(slumpSlabHost, SLAB_CONTROLS, readHollow, onHollow, 'slump');
-  const slabHost = make('div');
-  const humpMoldHost = make('div');
-  humpHost.append(slabHost, humpMoldHost);
-  const slabRows = renderControls(slabHost, SLAB_CONTROLS, readHollow, onHollow, 'hump');
-  const humpRows = renderControls(humpMoldHost, HUMP_CONTROLS, readMold, onMold, 'hump');
 
   return {
     sync(state): void {
@@ -192,12 +179,9 @@ export function renderExportPanel(
       masterHost.hidden = mode !== 'master';
       bathHost.hidden = mode !== 'bath';
       slumpHost.hidden = mode !== 'slump';
-      humpHost.hidden = mode !== 'hump';
       pressRow.hidden = !pressAllowed(state);
       slumpRows.sync(mold);
       slumpSlabRows.sync(hollow);
-      slabRows.sync(hollow);
-      humpRows.sync(mold);
       hollowRows.sync(hollow);
       besideRows.sync(state);
       masterRows.sync(mold);
