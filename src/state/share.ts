@@ -13,7 +13,7 @@ export function b64urlEncode(text: string): string {
 /** Бросает на нечитаемом токене — decodeStateToken это и ловит. */
 export function b64urlDecode(token: string): string {
   const bytes = decodeBase64(token, 'url');
-  if (!bytes) throw new Error('токен не base64url');
+  if (!bytes) throw new Error('token is not base64url');
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 

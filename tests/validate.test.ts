@@ -69,7 +69,7 @@ describe('export assessment', () => {
     const report = validateMesh(mesh);
     expect(report.indicesValid).toBe(false);
     expect(report.watertight).toBe(false);
-    expect(assessExport(report, true).blocking.some((s) => s.includes('indices'))).toBe(true);
+    expect(assessExport(report, true).blocking.some((m) => m.code === 'mesh.badIndices')).toBe(true);
   });
 
   it('молчит про единичные слив-треугольники, но блокирует их россыпь', () => {
@@ -82,12 +82,12 @@ describe('export assessment', () => {
     expect(assessExport(withSlivers(2, 80000), true).warnings).toEqual([]);
     expect(assessExport(withSlivers(2, 80000), true).blocking).toEqual([]);
     // десятки — уже стоит сказать
-    expect(assessExport(withSlivers(40, 80000), true).warnings.some((s) => s.includes('degenerate')))
+    expect(assessExport(withSlivers(40, 80000), true).warnings.some((m) => m.code === 'mesh.degenerate'))
       .toBe(true);
     // проценты — меш сломан, выпускать нельзя, и на мелком меше это те же
     // единицы штук
     expect(assessExport(withSlivers(10), true).blocking
-      .some((s) => s.includes('degenerate'))).toBe(true);
+      .some((m) => m.code === 'mesh.degenerate')).toBe(true);
   });
 
   it('checks normals for non-finite values', () => {

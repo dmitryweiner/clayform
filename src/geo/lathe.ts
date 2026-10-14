@@ -80,9 +80,9 @@ export function lathe(
   nu: number,
   depthAt?: LatheDepth,
 ): Omit<SurfaceMesh, 'normals'> {
-  if (!Number.isFinite(nu) || nu < 3) throw new Error(`lathe: мало сегментов по кругу: ${nu}`);
+  if (!Number.isFinite(nu) || nu < 3) throw new Error(`lathe: too few segments around: ${nu}`);
   const points = compact(contour);
-  if (points.length < 3) throw new Error(`lathe: в контуре ${points.length} точек, нужно хотя бы 3`);
+  if (points.length < 3) throw new Error(`lathe: the contour has ${points.length} points, at least 3 needed`);
 
   const axis = points.map((point) => point.r <= AXIS_EPS);
   const base: number[] = [];

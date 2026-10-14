@@ -18,6 +18,7 @@ import { defaultSpout } from '../src/geo/spout';
 import { sanitizeRelief } from '../src/geo/relief';
 import { sanitizeRoulette, defaultBand } from '../src/geo/roulette';
 import { revolveMesh } from './helpers';
+import { hasKey } from '../src/i18n';
 
 let csg: CsgApi;
 beforeAll(async () => {
@@ -69,7 +70,7 @@ describe('analyzeMold — выбор схемы', () => {
     const report = analyzeMold(buildVessel(params('bowl')), { hasHandle: false });
     expect(report.scheme).toBe('dropout');
     expect(report.parts).toHaveLength(1);
-    expect(report.reason).toMatch(/вверх/i);
+    expect(report.reason.map((m) => m.code)).toEqual(['mold.dropout']);
   });
 
   it('прямая чашка, расширяющаяся кверху, тоже вынимается вверх', () => {
@@ -100,7 +101,7 @@ describe('analyzeMold — выбор схемы', () => {
     const mesh = buildSolidVessel(csg, params('cup'), sanitizeHandle({ on: true }), defaultSpout());
     const report = analyzeMold(mesh, { hasHandle: true });
     expect(report.scheme).not.toBe('dropout');
-    expect(report.reason).toMatch(/ручк/i);
+    expect(report.reason[0].code).toBe('mold.whyHandle');
   });
 
   it('широкое плоское дно уводит в схему с отдельной донной плитой', () => {
@@ -116,10 +117,10 @@ describe('analyzeMold — выбор схемы', () => {
     expect(report.parts.map((p) => p.id)).toEqual(['half-A', 'half-B']);
   });
 
-  it('у каждой части есть человекочитаемое имя', () => {
+  it('у каждой части есть имя в словаре', () => {
     for (const family of ['pot', 'bowl', 'cup', 'vase']) {
       for (const part of analyzeMold(buildVessel(params(family)), { hasHandle: false }).parts) {
-        expect(part.label.length, `${family}/${part.id}`).toBeGreaterThan(2);
+        expect(hasKey(`part.${part.id}`), `${family}/${part.id}`).toBe(true);
       }
     }
   });
@@ -143,7 +144,7 @@ describe('рельеф и поднутрения разъёма', () => {
     // себя, и половина формы за неё цепляется.
     const report = analyzeMold(ringWave(3), { hasHandle: false });
     expect(report.halvesUndercut).toBeGreaterThan(0.05);
-    expect(report.warnings.join(' ')).toMatch(/поднутрен/i);
+    expect(report.warnings.map((m) => m.code)).toEqual(['mold.undercutsRadial']);
   });
 
   it('глубокая накатка режет по углу — у плоскости разъёма появляются зацепы', () => {
@@ -154,7 +155,7 @@ describe('рельеф и поднутрения разъёма', () => {
     }));
     const report = analyzeMold(mesh, { hasHandle: false });
     expect(report.halvesUndercut).toBeGreaterThan(0.02);
-    expect(report.warnings.join(' ')).toMatch(/поднутрен/i);
+    expect(report.warnings.map((m) => m.code)).toEqual(['mold.undercutsRadial']);
   });
 
   const withPattern = (pattern: string, depthMm: number, bandWidthMm: number) =>

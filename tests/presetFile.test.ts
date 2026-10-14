@@ -8,8 +8,9 @@ describe('файл пресета', () => {
   it('раунд-трип сохраняет имя и состояние', () => {
     for (const preset of PRESETS) {
       const state = preset.build();
-      const decoded = decodePresetFile(encodePresetFile(preset.name, state));
-      expect(decoded?.name).toBe(preset.name);
+      const name = `Пресет «${preset.id}»`;
+      const decoded = decodePresetFile(encodePresetFile(name, state));
+      expect(decoded?.name).toBe(name);
       expect(decoded?.state).toEqual(state);
     }
   });

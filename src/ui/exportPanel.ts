@@ -22,19 +22,19 @@ import { make } from './dom';
 
 const HOLLOW_CONTROLS: Control<HollowState>[] = [
   {
-    kind: 'range', key: 'wall', label: 'Стенка', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1, unit: 'мм',
-    hint: 'толщина меряется по нормали к поверхности',
+    kind: 'range', key: 'wall', label: 'export.wall', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1,
+    hint: 'export.wall.hint',
     get: (s) => s.wallMm,
     set: (s, v) => ({ ...s, wallMm: v }),
   },
   {
-    kind: 'range', key: 'base', label: 'Дно', min: BASE_MIN_MM, max: BASE_MAX_MM, step: 0.5, unit: 'мм',
+    kind: 'range', key: 'base', label: 'export.base', min: BASE_MIN_MM, max: BASE_MAX_MM, step: 0.5,
     get: (s) => s.baseMm,
     set: (s, v) => ({ ...s, baseMm: v }),
   },
   {
-    kind: 'range', key: 'rim', label: 'Радиус края', min: 0, max: RIM_MAX_MM, step: 0.1, unit: 'мм',
-    hint: '0 — плоский срез; больше половины стенки не бывает — это уже поднутрение',
+    kind: 'range', key: 'rim', label: 'export.rim', min: 0, max: RIM_MAX_MM, step: 0.1,
+    hint: 'export.rim.hint',
     get: (s) => s.rimRadiusMm,
     set: (s, v) => ({ ...s, rimRadiusMm: v }),
   },
@@ -43,8 +43,8 @@ const HOLLOW_CONTROLS: Control<HollowState>[] = [
 /** Над всем состоянием: флажок зависит от того, включена ли крышка. */
 const LID_BESIDE: Control<AppState>[] = [
   {
-    kind: 'check', key: 'lidBeside', label: 'Крышка рядом',
-    hint: 'крышка юбкой вниз рядом с изделием и одним файлом — печатать за один заход',
+    kind: 'check', key: 'lidBeside', label: 'export.lidBeside',
+    hint: 'export.lidBeside.hint',
     when: (s) => s.lid.on,
     get: (s) => s.lidBeside,
     set: (s, v) => ({ ...s, lidBeside: v }),
@@ -52,15 +52,15 @@ const LID_BESIDE: Control<AppState>[] = [
 ];
 
 const SHRINK: Control<MoldState> = {
-  kind: 'range', key: 'shrink', label: 'Усадка', min: 0, max: SHRINK_MAX_PCT, step: 0.5, unit: '%',
-  hint: 'шликер садится при сушке и обжиге — на столько увеличивается модель',
+  kind: 'range', key: 'shrink', label: 'export.shrink', min: 0, max: SHRINK_MAX_PCT, step: 0.5,
+  hint: 'export.shrink.hint',
   get: (s) => s.shrinkPct,
   set: (s, v) => ({ ...s, shrinkPct: v }),
 };
 
 const SPARE: Control<MoldState> = {
-  kind: 'range', key: 'spare', label: 'Горловина', min: 0, max: SPARE_MAX_MM, step: 1, unit: 'мм',
-  hint: 'воротник над венчиком, куда доливают шликер',
+  kind: 'range', key: 'spare', label: 'export.spare', min: 0, max: SPARE_MAX_MM, step: 1,
+  hint: 'export.spare.hint',
   get: (s) => s.spareMm,
   set: (s, v) => ({ ...s, spareMm: v }),
 };
@@ -70,25 +70,26 @@ const MASTER_CONTROLS: Control<MoldState>[] = [SHRINK, SPARE];
 const SLUMP_CONTROLS: Control<MoldState>[] = [
   SHRINK,
   {
-    kind: 'range', key: 'bathWall', label: 'Борт', min: 1.2, max: 12, step: 0.2, unit: 'мм',
-    hint: 'толщина скорлупы формы и пуансона: печатается только поверхность, которой касается пласт',
+    kind: 'range', key: 'bathWall', label: 'ctl.wall', min: 1.2, max: 12, step: 0.2,
+    hint: 'export.slumpWall.hint',
     get: (s) => s.bathWallMm,
     set: (s, v) => ({ ...s, bathWallMm: v }),
-  },  {
-    kind: 'range', key: 'ear', label: 'Ушки', min: EAR_MIN_MM, max: EAR_MAX_MM, step: 0.5, unit: 'мм',
-    hint: 'площадка ушка формы под лапку пуансона: на столько ушки и лапки выходят дальше',
+  },
+  {
+    kind: 'range', key: 'ear', label: 'export.ear', min: EAR_MIN_MM, max: EAR_MAX_MM, step: 0.5,
+    hint: 'export.ear.hint',
     get: (s) => s.earMm,
     set: (s, v) => ({ ...s, earMm: v }),
   },
   {
-    kind: 'range', key: 'round', label: 'Скругление дна', min: 0, max: 100, step: 5, unit: '%',
-    hint: 'низ пуансона: 100 — шапка от оси, у миски почти полусфера; 0 — плоский пол. Глина в углу толще, но не тоньше пласта',
+    kind: 'range', key: 'round', label: 'export.round', min: 0, max: 100, step: 5,
+    hint: 'export.round.hint',
     get: (s) => s.punchRoundPct,
     set: (s, v) => ({ ...s, punchRoundPct: v }),
   },
   {
-    kind: 'range', key: 'vent', label: 'Отдушины', min: VENT_MIN_MM, max: VENT_MAX_MM, step: 0.5, unit: 'мм',
-    hint: 'диаметр отверстий в дне формы и по оси пуансона: выпускают воздух и снимают присос',
+    kind: 'range', key: 'vent', label: 'export.vent', min: VENT_MIN_MM, max: VENT_MAX_MM, step: 0.5,
+    hint: 'export.vent.hint',
     get: (s) => s.ventMm,
     set: (s, v) => ({ ...s, ventMm: v }),
   },
@@ -97,8 +98,8 @@ const SLUMP_CONTROLS: Control<MoldState>[] = [
 /** Толщина пласта — это стенка изделия: пуансон строится по его внутренней поверхности. */
 const SLAB_CONTROLS: Control<HollowState>[] = [
   {
-    kind: 'range', key: 'wall', label: 'Пласт', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1, unit: 'мм',
-    hint: 'толщина пласта — стенка изделия; пуансон меньше формы ровно на неё',
+    kind: 'range', key: 'wall', label: 'export.slab', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1,
+    hint: 'export.slab.hint',
     get: (s) => s.wallMm,
     set: (s, v) => ({ ...s, wallMm: v }),
   },
@@ -108,26 +109,26 @@ const BATH_CONTROLS: Control<MoldState>[] = [
   SHRINK,
   SPARE,
   {
-    kind: 'range', key: 'plaster', label: 'Гипс', min: 5, max: PLASTER_MAX_MM, step: 1, unit: 'мм',
-    hint: 'толщина гипса вокруг полости',
+    kind: 'range', key: 'plaster', label: 'export.plaster', min: 5, max: PLASTER_MAX_MM, step: 1,
+    hint: 'export.plaster.hint',
     get: (s) => s.plasterMm,
     set: (s, v) => ({ ...s, plasterMm: v }),
   },
   {
-    kind: 'range', key: 'key', label: 'Ключи', min: 0, max: 25, step: 0.5, unit: 'мм',
-    hint: 'радиус замков на плоскости разъёма; 0 — без них',
+    kind: 'range', key: 'key', label: 'export.key', min: 0, max: 25, step: 0.5,
+    hint: 'export.key.hint',
     get: (s) => s.keyMm,
     set: (s, v) => ({ ...s, keyMm: v }),
   },
   {
-    kind: 'range', key: 'silicone', label: 'Силикон', min: 3, max: 60, step: 1, unit: 'мм',
-    hint: 'слой силикона над блоком',
+    kind: 'range', key: 'silicone', label: 'export.silicone', min: 3, max: 60, step: 1,
+    hint: 'export.silicone.hint',
     get: (s) => s.bathClearMm,
     set: (s, v) => ({ ...s, bathClearMm: v }),
   },
   {
-    kind: 'range', key: 'bathWall', label: 'Борт', min: 1.2, max: 12, step: 0.2, unit: 'мм',
-    hint: 'толщина стенки печатной опалубки',
+    kind: 'range', key: 'bathWall', label: 'ctl.wall', min: 1.2, max: 12, step: 0.2,
+    hint: 'export.bathWall.hint',
     get: (s) => s.bathWallMm,
     set: (s, v) => ({ ...s, bathWallMm: v }),
   },
@@ -154,8 +155,10 @@ export function renderExportPanel(
   const onHollow = (hollow: HollowState): void => onChange({ ...read(), hollow });
   const onMold = (mold: MoldState): void => onChange({ ...read(), mold });
 
+  // Свойством, а не addEventListener: панель перерисовывается на смене
+  // языка, а табы — статическая разметка, и обработчики копились бы.
   for (const mode of EXPORT_MODES) {
-    tabs[mode].addEventListener('click', () => onMode(mode));
+    tabs[mode].onclick = () => onMode(mode);
   }
 
   const hollowHost = make('div');

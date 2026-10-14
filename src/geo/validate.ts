@@ -1,6 +1,7 @@
 // Чистые проверки меша. Валидатор сообщает, не блокирует (см. план).
 
 import type { SurfaceMesh } from './surface';
+import type { Message } from './message';
 
 export interface MeshReport {
   /** все позиции и нормали конечны */
@@ -20,8 +21,8 @@ export interface MeshReport {
 }
 
 export interface ExportAssessment {
-  blocking: string[];
-  warnings: string[];
+  blocking: Message[];
+  warnings: Message[];
 }
 
 /**
@@ -33,19 +34,22 @@ const SLIVER_NOISE = 8;
 
 /** Central export gate shared by the UI and tests. */
 export function assessExport(report: MeshReport, shouldBeClosed: boolean): ExportAssessment {
-  const blocking: string[] = [];
-  const warnings: string[] = [];
-  if (!report.finite) blocking.push('Mesh contains non-finite coordinates or normals.');
-  if (!report.indicesValid) blocking.push('Mesh contains invalid triangle indices.');
-  if (report.triangleCount === 0 || report.vertexCount === 0) blocking.push('Mesh is empty.');
+  const blocking: Message[] = [];
+  const warnings: Message[] = [];
+  if (!report.finite) blocking.push({ code: 'mesh.nonFinite' });
+  if (!report.indicesValid) blocking.push({ code: 'mesh.badIndices' });
+  if (report.triangleCount === 0 || report.vertexCount === 0) blocking.push({ code: 'mesh.empty' });
   if (report.extents.some((extent) => !Number.isFinite(extent) || extent <= 1e-9)) {
-    blocking.push('Mesh has zero extent on at least one axis.');
+    blocking.push({ code: 'mesh.flat' });
   }
-  if (shouldBeClosed && !report.watertight) blocking.push('Solid mesh is not watertight.');
-  if (shouldBeClosed && report.volume < 0) blocking.push('Solid mesh is oriented inside-out.');
+  if (shouldBeClosed && !report.watertight) blocking.push({ code: 'mesh.open' });
+  if (shouldBeClosed && report.volume < 0) blocking.push({ code: 'mesh.inverted' });
   if (report.degenerateTriangles > 0) {
     const ratio = report.triangleCount > 0 ? report.degenerateTriangles / report.triangleCount : 1;
-    const message = `${report.degenerateTriangles} degenerate triangle(s) (${(ratio * 100).toFixed(2)}%).`;
+    const message: Message = {
+      code: 'mesh.degenerate',
+      params: { count: report.degenerateTriangles, pct: (ratio * 100).toFixed(2) },
+    };
     // Единичные вырожденные треугольники оставляет любая булева операция: там,
     // где поверхности пересекаются по касательной, слив-треугольник неизбежен.
     // Печати они не мешают, а в предупреждениях приучают их не читать.

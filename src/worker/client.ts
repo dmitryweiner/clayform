@@ -94,8 +94,8 @@ export class CsgClient {
     if (!this.worker) {
       const worker = new Worker(new URL('./csg.worker.ts', import.meta.url), { type: 'module' });
       worker.addEventListener('message', (event) => this.receive(event.data));
-      worker.addEventListener('error', (event) => this.broke(event.message || 'воркер не запустился'));
-      worker.addEventListener('messageerror', () => this.broke('ответ воркера не читается'));
+      worker.addEventListener('error', (event) => this.broke(event.message || 'the worker failed to start'));
+      worker.addEventListener('messageerror', () => this.broke('the worker reply is unreadable'));
       this.worker = worker;
     }
     return this.worker;

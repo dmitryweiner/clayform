@@ -10,7 +10,8 @@
 // Флаги:
 //   --out <path>          куда сохранить (обязателен)
 //   --family <id>         pot | bowl | cup | vase
-//   --preset <name>       встроенный пресет по имени
+//   --preset <id>         встроенный пресет по id (teapot, amphora, …)
+//   --lang ru|en          язык интерфейса (по умолчанию ru)
 //   Действия (--check/--uncheck/--set/--upload/--click) выполняются в порядке
 //   командной строки — клик может открыть ползунок, который следом ставится.
 //   --set <id>=<value>    любой input/select по id элемента (повторяемый)
@@ -33,7 +34,7 @@ import { parseArgs, openApp } from './lib/harness.mjs';
 
 const flags = parseArgs(
   process.argv.slice(2),
-  ['out', 'family', 'preset', 'wait', 'width', 'height', 'url', 'clip', 'orbit'],
+  ['out', 'family', 'preset', 'wait', 'width', 'height', 'url', 'clip', 'orbit', 'lang'],
   ['set', 'check', 'uncheck', 'click', 'upload'],
 );
 
@@ -50,6 +51,7 @@ const app = await openApp({
   preview: flags.has('preview'),
   width: Number(flags.get('width') ?? 1280),
   height: Number(flags.get('height') ?? 860),
+  locale: flags.get('lang') === 'en' ? 'en-US' : 'ru-RU',
 });
 const { page, errors, label } = app;
 

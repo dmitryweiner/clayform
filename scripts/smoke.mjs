@@ -8,6 +8,9 @@
 //   node scripts/smoke.mjs --res 384          # экспорт на предельной сетке
 //   node scripts/smoke.mjs --slow             # главный поток ×6 на шагах полосы прогресса
 //
+// Браузер открывается в ru-RU: проверки читают русский текст. Английский
+// интерфейс проверяет отдельный шаг «lang» (переключение и чистый en-US).
+//
 // Время каждой выгрузки печатается всегда — этим и меряется, во что обходится
 // экспорт на той или иной детализации.
 //
@@ -158,7 +161,7 @@ label('roulette-image');
 await page.selectOption('#roul0_pattern', 'image');
 await page.setInputFiles('#roul0_image', 'tests/fixtures/ornament.png');
 await page.waitForFunction(
-  () => (document.querySelector('#card_roulette .band-box .fcard-desc')?.textContent ?? '').includes('оттисков'),
+  () => (document.querySelector('#card_roulette .band-box .fcard-desc')?.textContent ?? '').includes('по ⌀'),
   { timeout: 5000 },
 ).catch(() => errors.push('[image] картинка не легла на полосу'));
 const imageVerdict = await auditVerdict(page);
@@ -459,7 +462,7 @@ await expectDownloads(1, 'vessel');
 // полостью торцами и сквозным носиком. Отличить одно от другого можно по
 // числу треугольников в вердикте: оно обязано смениться.
 label('exact-preview');
-await pickPreset('b:Чайник');
+await pickPreset('b:teapot');
 const quickVerdict = await auditVerdict(page);
 const exactStarted = Date.now();
 try {
@@ -534,7 +537,7 @@ for (const [family, index, tab, expected] of [
 // самую тяжёлую сборку, она идёт дольше задержки появления полосы и на M1.
 // (CDP под --slow замедляет только главный поток, воркер считает как есть.)
 label('mold-progress');
-await pickPreset('b:Чайник');
+await pickPreset('b:teapot');
 await expectPreviewProgress('mold', () => page.click('#tabBath'), true);
 
 // утопленная крышка: форме нужна пробка горловины — на деталь больше
@@ -615,7 +618,100 @@ await page.waitForFunction(
 );
 await expectDownloads(3, 'mold', true);
 
-/** Открывает список пресетов и выбирает строку по её ref ('b:Чайник', 'u:…'). */
+/** Видимый текст приложения, где кириллица — непереведённое. Имена своих пресетов не в счёт. */
+async function cyrillicLeft(target) {
+  return target.evaluate(() => {
+    const own = new Set([...document.querySelectorAll('#presetList [data-preset^="u:"]')].map((n) => n.textContent));
+    const texts = [document.title];
+    const walk = document.createTreeWalker(document.querySelector('#app'), NodeFilter.SHOW_TEXT);
+    while (walk.nextNode()) {
+      const node = walk.currentNode;
+      const text = node.textContent.trim();
+      // скрытые строки тоже должны быть переведены — пользователь их откроет
+      if (text && !own.has(text) && node.parentElement?.id !== 'presetBtn') texts.push(text);
+    }
+    for (const node of document.querySelectorAll('#app [title], #app [aria-label]')) {
+      texts.push(node.getAttribute('title') ?? '', node.getAttribute('aria-label') ?? '');
+    }
+    for (const node of document.querySelectorAll('#app option')) texts.push(node.textContent);
+    return texts.filter((text) => /[А-Яа-яЁё]/.test(text) && text !== 'Русский');
+  });
+}
+
+async function checkLanguage() {
+  // Всё показываем разом: карточки раскрыты, полосы накатки на теле и на
+  // крышке есть, список пресетов открыт — чтобы непереведённому негде было
+  // спрятаться.
+  await page.locator('#familyGrid .family-btn').nth(0).click();
+  await page.click('#tabVessel');
+  for (const id of ['wave', 'wave2', 'roulette', 'handle', 'spout', 'lid']) await page.check(`#on_${id}`);
+  await page.locator('#card_roulette .fcard-body button', { hasText: 'Полоса' }).click();
+  await page.locator('#card_lid .fcard-body button', { hasText: 'Полоса' }).click();
+  await page.waitForTimeout(900); // дольше склейки истории
+  await page.uncheck('#on_wave2');
+  await page.locator('#card_wave2 .fcard-head').click(); // выключенная, но раскрытая руками
+  await page.waitForTimeout(900);
+  const digits = (text) => (text ?? '').replace(/[^\d]/g, '');
+  const statusBefore = digits(await page.locator('#status').textContent());
+  const undoBefore = await page.locator('#undoBtn').isDisabled();
+  const wave2Open = !(await page.locator('#card_wave2').getAttribute('class')).includes('collapsed');
+  if (!wave2Open) errors.push('[lang] не удалось раскрыть выключенную карточку');
+
+  await page.click('#langBtn');
+  await page.waitForTimeout(300);
+  if ((await page.evaluate(() => document.documentElement.lang)) !== 'en') errors.push('[lang] <html lang> не en');
+  if ((await page.locator('#langBtn').textContent()).trim() !== 'RU') errors.push('[lang] на кнопке не «RU»');
+  if (!(await auditVerdict(page)).includes('watertight ✓')) errors.push('[lang] вердикт меша не по-английски');
+  if (digits(await page.locator('#status').textContent()) !== statusBefore) {
+    errors.push('[lang] смена языка поменяла изделие');
+  }
+  if ((await page.locator('#undoBtn').isDisabled()) !== undoBefore) errors.push('[lang] история отмены сбилась');
+  if ((await page.locator('#card_wave2').getAttribute('class')).includes('collapsed')) {
+    errors.push('[lang] раскрытая руками карточка свернулась');
+  }
+  await page.click('#presetBtn');
+  const left = await cyrillicLeft(page);
+  if (left.length) errors.push(`[lang] непереведённое: ${left.slice(0, 8).join(' | ')}`);
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/lang-en.png` });
+  await page.keyboard.press('Escape');
+
+  // оснастка и отминка — свои тексты: схема разъёма, детали, прогресс
+  for (const tab of ['#tabMaster', '#tabBath']) {
+    await page.click(tab);
+    await page.waitForFunction(
+      () => !(document.querySelector('#audit')?.textContent ?? '').includes('building'),
+      { timeout: 60000 },
+    );
+    const moldLeft = await cyrillicLeft(page);
+    if (moldLeft.length) errors.push(`[lang:${tab}] непереведённое: ${moldLeft.slice(0, 8).join(' | ')}`);
+  }
+  await page.click('#tabVessel');
+
+  // выбор языка помнится
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0);
+  if ((await page.evaluate(() => document.documentElement.lang)) !== 'en') {
+    errors.push('[lang] после перезагрузки язык не сохранился');
+  }
+  await page.click('#langBtn');
+  await page.waitForTimeout(300);
+  if ((await page.evaluate(() => document.documentElement.lang)) !== 'ru') errors.push('[lang] обратно на ru не вышло');
+  if (!(await auditVerdict(page)).includes('замкнуто ✓')) errors.push('[lang] вердикт меша не по-русски');
+
+  // чистый браузер на английском — английский интерфейс сразу
+  const fresh = await app.browser.newPage({ locale: 'en-US' });
+  fresh.on('pageerror', (e) => errors.push(`[lang:en-US] ${String(e)}`));
+  await fresh.goto(app.base, { waitUntil: 'load' });
+  await fresh.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0);
+  if ((await fresh.evaluate(() => document.documentElement.lang)) !== 'en') errors.push('[lang:en-US] интерфейс не английский');
+  const freshLeft = await cyrillicLeft(fresh);
+  if (freshLeft.length) errors.push(`[lang:en-US] непереведённое: ${freshLeft.slice(0, 8).join(' | ')}`);
+  await fresh.close();
+
+  for (const id of ['wave', 'roulette', 'handle', 'spout', 'lid']) await page.uncheck(`#on_${id}`);
+}
+
+/** Открывает список пресетов и выбирает строку по её ref ('b:teapot', 'u:…'). */
 async function pickPreset(ref) {
   await page.click('#presetBtn');
   await page.click(`#presetList [data-preset="${ref}"]`);
@@ -697,6 +793,12 @@ async function expectDownloads(count, tag, watchProgress = false) {
     if (size < 84 + 50 * 1000) errors.push(`[${tag}] подозрительно маленький STL: ${size} байт`);
   }
 }
+
+// язык: кнопка в шапке переключает интерфейс на месте — изделие, история
+// отмены и свёрнутость карточек остаются; выбор переживает перезагрузку.
+// Чистый браузер en-US сразу получает английский.
+label('lang');
+await checkLanguage();
 
 // мобильный режим: панель — нижний лист; тап по канвасу прячет её,
 // «Настройки» внизу возвращают

@@ -4,6 +4,7 @@
 
 import type { ProfileDef } from '../geo/profiles';
 import { profileRadius } from '../geo/profiles';
+import { t } from '../i18n';
 
 const FILL = 'rgba(217, 139, 95, 0.20)';
 const STROKE = '#d98b5f';
@@ -71,5 +72,5 @@ export function drawProfileGraph(canvas: HTMLCanvasElement, def: ProfileDef): vo
   ctx.fillStyle = LABEL;
   ctx.font = '11px system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(`⌀${Math.round(rMax * 2)} × ${Math.round(def.heightMm)} мм`, cx, h - 3);
+  ctx.fillText(t('size.round', { d: Math.round(rMax * 2), h: Math.round(def.heightMm) }), cx, h - 3);
 }

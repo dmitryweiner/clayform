@@ -5,6 +5,7 @@
 import type { FamilyDef } from '../geo/profiles';
 import { FAMILIES, buildProfile, profileRadius } from '../geo/profiles';
 import { make } from './dom';
+import { tDynamic } from '../i18n';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ICON_W = 30;
@@ -49,7 +50,7 @@ export function renderFamilyPicker(
   for (const family of FAMILIES) {
     const btn = make('button', 'family-btn');
     btn.type = 'button';
-    btn.title = family.examples;
+    btn.title = tDynamic(`family.${family.id}.examples`);
     btn.setAttribute('aria-pressed', String(family.id === active));
 
     const svg = document.createElementNS(SVG_NS, 'svg');
@@ -59,7 +60,7 @@ export function renderFamilyPicker(
     path.setAttribute('d', silhouettePath(family));
     svg.append(path);
 
-    btn.append(svg, make('span', undefined, family.label));
+    btn.append(svg, make('span', undefined, tDynamic(`family.${family.id}`)));
     btn.addEventListener('click', () => onPick(family.id));
     container.append(btn);
     buttons.set(family.id, btn);

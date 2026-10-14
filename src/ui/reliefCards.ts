@@ -7,104 +7,103 @@ import {
   BAND_MAX_MM, DEPTH_MAX_MM, GAP_MAX_MM, MAX_BANDS,
   ROULETTE_PATTERNS, MEANDER_KINDS, defaultBand, isContinuous,
 } from '../geo/roulette';
-import type { Control } from './controls';
+import type { Control, SelectOption } from './controls';
 import { renderControls } from './controls';
 import { createCard } from './card';
 import { make } from './dom';
+import { t } from '../i18n';
 
-const AXIS_OPTIONS = [
-  { value: 'z', label: 'по высоте' },
-  { value: 'theta', label: 'вокруг оси' },
-  { value: 'spiral', label: 'по спирали' },
+const AXIS_OPTIONS: SelectOption[] = [
+  { value: 'z', label: 'axis.z' },
+  { value: 'theta', label: 'axis.theta' },
+  { value: 'spiral', label: 'axis.spiral' },
 ];
 
-const SHAPE_OPTIONS = [
-  { value: 'sin', label: 'синус' },
-  { value: 'tri', label: 'треугольник' },
-  { value: 'square', label: 'меандр' },
-  { value: 'rounded', label: 'валики' },
+const SHAPE_OPTIONS: SelectOption[] = [
+  { value: 'sin', label: 'shape.sin' },
+  { value: 'tri', label: 'shape.tri' },
+  { value: 'square', label: 'shape.square' },
+  { value: 'rounded', label: 'shape.rounded' },
 ];
 
-const PATTERN_OPTIONS = [
-  { value: 'band', label: 'полоса' },
-  { value: 'rope', label: 'верёвочка' },
-  { value: 'meander', label: 'греческий меандр' },
-  { value: 'zigzag', label: 'зигзаг' },
-  { value: 'dots', label: 'точки' },
-  { value: 'diamonds', label: 'ромбы' },
-  { value: 'dashes', label: 'насечки' },
-  { value: 'lattice', label: 'сетка' },
-  { value: 'image', label: 'картинка' },
+const PATTERN_OPTIONS: SelectOption[] = [
+  { value: 'band', label: 'pattern.band' },
+  { value: 'rope', label: 'pattern.rope' },
+  { value: 'meander', label: 'pattern.meander' },
+  { value: 'zigzag', label: 'pattern.zigzag' },
+  { value: 'dots', label: 'pattern.dots' },
+  { value: 'diamonds', label: 'pattern.diamonds' },
+  { value: 'dashes', label: 'pattern.dashes' },
+  { value: 'lattice', label: 'pattern.lattice' },
+  { value: 'image', label: 'pattern.image' },
 ];
 
 /** Виды меандра — с references/meander-variants.png. */
-const MEANDER_OPTIONS = [
-  { value: 'classic', label: 'ключ' },
-  { value: 'framed', label: 'ключ в рамке' },
-  { value: 'spiral', label: 'спираль' },
-  { value: 'hooks', label: 'крючки' },
-  { value: 'tee', label: 'Т-зубцы' },
-  { value: 'wave', label: 'П-волна' },
+const MEANDER_OPTIONS: SelectOption[] = [
+  { value: 'classic', label: 'meander.classic' },
+  { value: 'framed', label: 'meander.framed' },
+  { value: 'spiral', label: 'meander.spiral' },
+  { value: 'hooks', label: 'meander.hooks' },
+  { value: 'tee', label: 'meander.tee' },
+  { value: 'wave', label: 'meander.wave' },
 ];
 
-const MODE_OPTIONS = [
-  { value: 'weave', label: 'плетение (w₁ × w₂)' },
-  { value: 'modulate', label: 'модуляция (w₂ гнёт w₁)' },
+const MODE_OPTIONS: SelectOption[] = [
+  { value: 'weave', label: 'mode.weave' },
+  { value: 'modulate', label: 'mode.modulate' },
 ];
-
-const SPIRAL_HINT = 'работает при оси «по спирали»';
 
 const WAVE_CONTROLS: Control<ReliefState>[] = [
   {
-    kind: 'check', key: 'onLid', label: 'И на крышке тоже',
-    hint: 'волна идёт и по куполу крышки; высота там — доля дуги купола от поля до ножки',
+    kind: 'check', key: 'onLid', label: 'ctl.onLid',
+    hint: 'wave.onLid.hint',
     get: (s) => s.wave.onLid,
     set: (s, v) => ({ ...s, wave: { ...s.wave, onLid: v } }),
   },
   {
-    kind: 'select', key: 'axis', label: 'Куда бежит', options: AXIS_OPTIONS,
+    kind: 'select', key: 'axis', label: 'ctl.axis', options: AXIS_OPTIONS,
     get: (s) => s.wave.axis,
     set: (s, v) => ({ ...s, wave: { ...s.wave, axis: axis(v) } }),
   },
   {
-    kind: 'select', key: 'shape', label: 'Форма', options: SHAPE_OPTIONS,
+    kind: 'select', key: 'shape', label: 'ctl.shape', options: SHAPE_OPTIONS,
     get: (s) => s.wave.shape,
     set: (s, v) => ({ ...s, wave: { ...s.wave, shape: shape(v) } }),
   },
   {
-    kind: 'range', key: 'freq', label: 'Гребней', min: 0, max: FREQ_MAX, step: 1,
+    kind: 'range', key: 'freq', label: 'ctl.freq', min: 0, max: FREQ_MAX, step: 1,
     get: (s) => s.wave.freq,
     set: (s, v) => ({ ...s, wave: { ...s.wave, freq: v } }),
   },
   {
-    kind: 'range', key: 'amp', label: 'Глубина', min: -AMP_MAX_MM, max: AMP_MAX_MM, step: 0.1, unit: 'мм',
+    kind: 'range', key: 'amp', label: 'ctl.depth', min: -AMP_MAX_MM, max: AMP_MAX_MM, step: 0.1,
     get: (s) => s.wave.ampMm,
     set: (s, v) => ({ ...s, wave: { ...s.wave, ampMm: v } }),
   },
   {
-    kind: 'range', key: 'phase', label: 'Фаза', min: -1, max: 1, step: 0.01,
+    kind: 'range', key: 'phase', label: 'ctl.phase', min: -1, max: 1, step: 0.01,
     get: (s) => s.wave.phase,
     set: (s, v) => ({ ...s, wave: { ...s.wave, phase: v } }),
   },
   {
-    kind: 'range', key: 'spiralK', label: 'Шаг спирали', min: -SPIRAL_K_MAX, max: SPIRAL_K_MAX, step: 0.05,
-    hint: SPIRAL_HINT,
+    kind: 'range', key: 'spiralK', label: 'ctl.spiralK', min: -SPIRAL_K_MAX, max: SPIRAL_K_MAX, step: 0.05,
+    hint: 'ctl.spiralK.hint',
     get: (s) => s.wave.spiralK,
     set: (s, v) => ({ ...s, wave: { ...s.wave, spiralK: v } }),
   },
   {
-    kind: 'range', key: 'zoneFrom', label: 'Зона снизу', min: 0, max: 1, step: 0.01,
-    hint: 'ниже этой доли высоты рельефа нет',
+    kind: 'range', key: 'zoneFrom', label: 'wave.zoneFrom', min: 0, max: 1, step: 0.01,
+    hint: 'wave.zoneFrom.hint',
     get: (s) => s.zone.from,
     set: (s, v) => ({ ...s, zone: { ...s.zone, from: v } }),
   },
   {
-    kind: 'range', key: 'zoneTo', label: 'Зона сверху', min: 0, max: 1, step: 0.01,
+    kind: 'range', key: 'zoneTo', label: 'wave.zoneTo', min: 0, max: 1, step: 0.01,
     get: (s) => s.zone.to,
     set: (s, v) => ({ ...s, zone: { ...s.zone, to: v } }),
   },
   {
-    kind: 'range', key: 'zoneFade', label: 'Растушёвка', min: 0, max: 0.5, step: 0.01,
+    kind: 'range', key: 'zoneFade', label: 'wave.zoneFade', min: 0, max: 0.5, step: 0.01,
     get: (s) => s.zone.fade,
     set: (s, v) => ({ ...s, zone: { ...s.zone, fade: v } }),
   },
@@ -112,40 +111,40 @@ const WAVE_CONTROLS: Control<ReliefState>[] = [
 
 const WAVE2_CONTROLS: Control<ReliefState>[] = [
   {
-    kind: 'check', key: 'onLid', label: 'И на крышке тоже',
-    hint: 'действует, только если и первая волна идёт на крышку',
+    kind: 'check', key: 'onLid', label: 'ctl.onLid',
+    hint: 'wave2.onLid.hint',
     get: (s) => s.wave2.onLid,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, onLid: v } }),
   },
   {
-    kind: 'select', key: 'mode', label: 'Как связаны', options: MODE_OPTIONS,
-    hint: 'плетение — простое произведение волн: корзинка, вафля',
+    kind: 'select', key: 'mode', label: 'wave2.mode', options: MODE_OPTIONS,
+    hint: 'wave2.mode.hint',
     get: (s) => s.wave2.mode,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, mode: v === 'modulate' ? 'modulate' : 'weave' } }),
   },
   {
-    kind: 'select', key: 'axis2', label: 'Куда бежит', options: AXIS_OPTIONS,
+    kind: 'select', key: 'axis2', label: 'ctl.axis', options: AXIS_OPTIONS,
     get: (s) => s.wave2.axis,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, axis: axis(v) } }),
   },
   {
-    kind: 'select', key: 'shape2', label: 'Форма', options: SHAPE_OPTIONS,
+    kind: 'select', key: 'shape2', label: 'ctl.shape', options: SHAPE_OPTIONS,
     get: (s) => s.wave2.shape,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, shape: shape(v) } }),
   },
   {
-    kind: 'range', key: 'freq2', label: 'Гребней', min: 0, max: FREQ_MAX, step: 1,
+    kind: 'range', key: 'freq2', label: 'ctl.freq', min: 0, max: FREQ_MAX, step: 1,
     get: (s) => s.wave2.freq,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, freq: v } }),
   },
   {
-    kind: 'range', key: 'phase2', label: 'Фаза', min: -1, max: 1, step: 0.01,
+    kind: 'range', key: 'phase2', label: 'ctl.phase', min: -1, max: 1, step: 0.01,
     get: (s) => s.wave2.phase,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, phase: v } }),
   },
   {
-    kind: 'range', key: 'spiralK2', label: 'Шаг спирали', min: -SPIRAL_K_MAX, max: SPIRAL_K_MAX, step: 0.05,
-    hint: SPIRAL_HINT,
+    kind: 'range', key: 'spiralK2', label: 'ctl.spiralK', min: -SPIRAL_K_MAX, max: SPIRAL_K_MAX, step: 0.05,
+    hint: 'ctl.spiralK.hint',
     get: (s) => s.wave2.spiralK,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, spiralK: v } }),
   },
@@ -154,14 +153,14 @@ const WAVE2_CONTROLS: Control<ReliefState>[] = [
 /** Ползунки, которые работают только в режиме модуляции. */
 const MODULATE_CONTROLS: Control<ReliefState>[] = [
   {
-    kind: 'range', key: 'fm', label: 'Гнёт фазу', min: -1, max: 1, step: 0.01,
-    hint: 'вторая волна сдвигает гребни первой',
+    kind: 'range', key: 'fm', label: 'wave2.fm', min: -1, max: 1, step: 0.01,
+    hint: 'wave2.fm.hint',
     get: (s) => s.wave2.fm,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, fm: v } }),
   },
   {
-    kind: 'range', key: 'am', label: 'Гнёт глубину', min: 0, max: 1, step: 0.01,
-    hint: 'вторая волна то усиливает, то гасит первую',
+    kind: 'range', key: 'am', label: 'wave2.am', min: 0, max: 1, step: 0.01,
+    hint: 'wave2.am.hint',
     get: (s) => s.wave2.am,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, am: v } }),
   },
@@ -178,57 +177,57 @@ function bandControls(index: number): Control<RouletteState>[] {
 
   return [
     {
-      kind: 'select', key: 'pattern', label: 'Узор', options: PATTERN_OPTIONS,
+      kind: 'select', key: 'pattern', label: 'band.pattern', options: PATTERN_OPTIONS,
       get: (s) => at(s).pattern,
       set: (s, v) => put(s, { ...at(s), pattern: pattern(v) }),
     },
     {
-      kind: 'select', key: 'meander', label: 'Вид', options: MEANDER_OPTIONS,
-      hint: 'ширина пояска — высота рисунка; линия и просвет всегда в клетку',
+      kind: 'select', key: 'meander', label: 'band.meander', options: MEANDER_OPTIONS,
+      hint: 'band.meander.hint',
       when: (s) => at(s).pattern === 'meander',
       get: (s) => at(s).meander,
       set: (s, v) => put(s, { ...at(s), meander: meanderKind(v) }),
     },
     {
-      kind: 'range', key: 'bandCenter', label: 'Высота пояса', min: 0, max: 1, step: 0.01,
+      kind: 'range', key: 'bandCenter', label: 'band.center', min: 0, max: 1, step: 0.01,
       get: (s) => at(s).bandCenter,
       set: (s, v) => put(s, { ...at(s), bandCenter: v }),
     },
     {
-      kind: 'range', key: 'bandWidth', label: 'Ширина', min: 1, max: BAND_MAX_MM, step: 1, unit: 'мм',
+      kind: 'range', key: 'bandWidth', label: 'ctl.width', min: 1, max: BAND_MAX_MM, step: 1,
       get: (s) => at(s).bandWidthMm,
       set: (s, v) => put(s, { ...at(s), bandWidthMm: v }),
     },
     {
-      kind: 'range', key: 'depth', label: 'Глубина', min: -DEPTH_MAX_MM, max: DEPTH_MAX_MM, step: 0.1, unit: 'мм',
-      hint: '> 0 — выпуклый узор, < 0 — вдавленный',
+      kind: 'range', key: 'depth', label: 'ctl.depth', min: -DEPTH_MAX_MM, max: DEPTH_MAX_MM, step: 0.1,
+      hint: 'band.depth.hint',
       get: (s) => at(s).depthMm,
       set: (s, v) => put(s, { ...at(s), depthMm: v }),
     },
     {
-      kind: 'range', key: 'gap', label: 'Просвет', min: 0, max: GAP_MAX_MM, step: 0.5, unit: 'мм',
-      hint: 'между соседними оттисками; элемент — квадрат в ширину пояска',
+      kind: 'range', key: 'gap', label: 'band.gap', min: 0, max: GAP_MAX_MM, step: 0.5,
+      hint: 'band.gap.hint',
       // у непрерывной ленты оттисков нет — и просвета между ними тоже
       when: (s) => !isContinuous(at(s).pattern),
       get: (s) => at(s).gapMm,
       set: (s, v) => put(s, { ...at(s), gapMm: v }),
     },
     {
-      kind: 'range', key: 'angle', label: 'Наклон', min: -2, max: 2, step: 0.05,
+      kind: 'range', key: 'angle', label: 'band.angle', min: -2, max: 2, step: 0.05,
       get: (s) => at(s).angle,
       set: (s, v) => put(s, { ...at(s), angle: v }),
     },
     {
-      kind: 'image', key: 'image', label: 'Картинка',
-      hint: 'белое — на всю глубину; мельче шага сетки не видно — на экспорте поднимите детализацию',
+      kind: 'image', key: 'image', label: 'band.image',
+      hint: 'band.image.hint',
       when: (s) => at(s).pattern === 'image',
       get: (s) => at(s).image,
       // инверсия переживает смену картинки
       set: (s, image) => put(s, { ...at(s), image: { ...image, invert: at(s).image?.invert ?? false } }),
     },
     {
-      kind: 'check', key: 'invert', label: 'Инверсия',
-      hint: 'чёрное — на всю глубину: рисунок и фон меняются местами',
+      kind: 'check', key: 'invert', label: 'band.invert',
+      hint: 'band.invert.hint',
       when: (s) => at(s).pattern === 'image' && Boolean(at(s).image),
       get: (s) => at(s).image?.invert ?? false,
       set: (s, v) => {
@@ -280,7 +279,7 @@ export function renderBandList(
   let notes: HTMLElement[] = [];
   let built = -1;
 
-  const addBtn = make('button', 'tb-btn', '+ Полоса');
+  const addBtn = make('button', 'tb-btn', t('band.add'));
   addBtn.type = 'button';
   addBtn.addEventListener('click', () => {
     const bands = read().bands;
@@ -303,10 +302,10 @@ export function renderBandList(
     for (let index = 0; index < count; index++) {
       const box = make('div', 'band-box');
       const head = make('div', 'band-head');
-      head.append(make('span', undefined, `Полоса ${index + 1}`));
+      head.append(make('span', undefined, t('band.title', { n: index + 1 })));
       const remove = make('button', 'adj-btn band-del', '✕');
       remove.type = 'button';
-      remove.title = 'Убрать полосу';
+      remove.title = t('band.remove');
       remove.addEventListener('click', () => {
         onChange({ bands: read().bands.filter((_, i) => i !== index) });
       });
@@ -349,8 +348,8 @@ export function renderReliefCards(
 
   const waveCard = createCard(container, {
     id: 'wave',
-    title: 'Волна',
-    desc: 'Смещает поверхность вдоль нормали. Глубина — в миллиметрах.',
+    title: 'wave.title',
+    desc: 'wave.desc',
     enabled: readRelief().wave.on,
     onToggle: (on) => onRelief({ ...readRelief(), wave: { ...readRelief().wave, on } }),
   });
@@ -358,9 +357,9 @@ export function renderReliefCards(
 
   const wave2Card = createCard(container, {
     id: 'wave2',
-    title: 'Волна волны',
-    tag: '2-й порядок',
-    desc: 'Плетение — произведение двух волн: корзинка, вафля. Модуляция — вторая волна гнёт первую.',
+    title: 'wave2.title',
+    tag: 'wave2.tag',
+    desc: 'wave2.desc',
     enabled: readRelief().wave2.on,
     onToggle: (on) => onRelief({ ...readRelief(), wave2: { ...readRelief().wave2, on } }),
   });
@@ -371,8 +370,8 @@ export function renderReliefCards(
 
   const rouletteCard = createCard(container, {
     id: 'roulette',
-    title: 'Накатка роликом',
-    desc: 'Колесо-штамп прокатывается по пояску. За оборот всегда укладывается целое число оттисков.',
+    title: 'roulette.title',
+    desc: 'roulette.desc',
     enabled: readRoulette().bands.some((band) => band.on),
     // Тумблер карточки — общий выключатель: полосы остаются на месте со
     // своими настройками, но перестают действовать.

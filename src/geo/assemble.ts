@@ -25,7 +25,7 @@ import { buildHollowVessel } from './hollow';
 
 /** Объединение нескольких замкнутых мешей в один. */
 export function unionAll(csg: CsgApi, meshes: SurfaceMesh[]): SurfaceMesh {
-  if (meshes.length === 0) throw new Error('unionAll: нечего объединять');
+  if (meshes.length === 0) throw new Error('unionAll: nothing to unite');
   if (meshes.length === 1) return meshes[0];
   const scope = new CsgScope();
   try {

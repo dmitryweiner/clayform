@@ -12,26 +12,27 @@
 // картину только рельеф, меняющийся по углу: накатка и волна вокруг оси.
 
 import type { SurfaceMesh } from '../surface';
+import type { Message } from '../message';
 
 export type MoldScheme = 'dropout' | 'halves' | 'halves-bottom';
 
 export type PullMode = 'up' | 'sides';
 
+/** Часть формы. Название — в словаре интерфейса по `id` (`part.<id>`). */
 export interface MoldPart {
   id: string;
-  label: string;
 }
 
 export interface MoldReport {
   scheme: MoldScheme;
   parts: MoldPart[];
-  /** почему выбрана эта схема — показывается пользователю */
-  reason: string;
+  /** почему выбрана эта схема — показывается пользователю, фразами подряд */
+  reason: Message[];
   /** доля площади с зацепами при вытяжке вверх */
   dropoutUndercut: number;
   /** доля площади с зацепами при разъёме на половины */
   halvesUndercut: number;
-  warnings: string[];
+  warnings: Message[];
 }
 
 export interface AnalyzeOptions {
@@ -187,26 +188,21 @@ const HALVES_TOLERANCE = 0.02;
  */
 const WIDE_BASE_SHARE = 0.55;
 
-const HALF_A: MoldPart = { id: 'half-A', label: 'Половина A' };
-const HALF_B: MoldPart = { id: 'half-B', label: 'Половина B' };
-const BOTTOM: MoldPart = { id: 'bottom', label: 'Донная плита' };
-const SINGLE: MoldPart = { id: 'single', label: 'Форма целиком' };
-const PLUG: MoldPart = { id: 'plug', label: 'Пробка горловины' };
+const HALF_A: MoldPart = { id: 'half-A' };
+const HALF_B: MoldPart = { id: 'half-B' };
+const BOTTOM: MoldPart = { id: 'bottom' };
+const SINGLE: MoldPart = { id: 'single' };
+const PLUG: MoldPart = { id: 'plug' };
 
 /**
  * Почему форму придётся разнимать вдоль оси. Причин три, и пользователю
  * важна именно та, которая сработала: у ручки и носика это их собственная
  * геометрия, а у голого силуэта — поднутрения, которые можно и убрать.
  */
-function whyAlongAxis(options: AnalyzeOptions, dropoutFraction: number): string {
-  if (options.hasHandle) {
-    return 'Ручка делает в теле сквозное отверстие — вверх изделие не вынуть, нужен разъём вдоль оси.';
-  }
-  if (options.hasSpout) {
-    return 'Приставной носик торчит вбок — вверх изделие не вынуть, нужен разъём вдоль оси.';
-  }
-  return `Изделие где-то шире, чем выше (${(dropoutFraction * 100).toFixed(0)} % поверхности с зацепами) — `
-    + 'вверх не вынуть, нужен разъём вдоль оси.';
+function whyAlongAxis(options: AnalyzeOptions, dropoutFraction: number): Message {
+  if (options.hasHandle) return { code: 'mold.whyHandle' };
+  if (options.hasSpout) return { code: 'mold.whySpout' };
+  return { code: 'mold.whyWider', params: { pct: (dropoutFraction * 100).toFixed(0) } };
 }
 
 export function analyzeMold(
@@ -215,26 +211,23 @@ export function analyzeMold(
 ): MoldReport {
   const dropout = pullUndercut(mesh, 'up');
   const halves = pullUndercut(mesh, 'sides');
-  const warnings: string[] = [];
+  const warnings: Message[] = [];
   const plug = options.hasPlug ? [PLUG] : [];
 
   if (halves.fraction > HALVES_TOLERANCE) {
     const worstDeg = (Math.asin(Math.min(1, halves.worst)) * 180) / Math.PI;
-    const advice = options.angularRelief
-      ? 'Рельеф идёт под углом к плоскости разъёма — такую форму пришлось бы вывинчивать. ' +
-        'Разверните волну по высоте (кольцевые валики форма отпускает свободно) или уменьшите глубину.'
-      : 'Уменьшите глубину рельефа: при таком шаге валики заворачиваются по радиусу.';
-    warnings.push(
-      `Поднутрения: ${(halves.fraction * 100).toFixed(1)} % поверхности, самый крутой подрез ` +
-      `${worstDeg.toFixed(0)}°. ${advice}`,
-    );
+    // угловой рельеф — совет развернуть волну, кольцевой — только уменьшить глубину
+    warnings.push({
+      code: options.angularRelief ? 'mold.undercutsAngular' : 'mold.undercutsRadial',
+      params: { pct: (halves.fraction * 100).toFixed(1), deg: worstDeg.toFixed(0) },
+    });
   }
 
   if (!options.hasHandle && !options.hasSpout && dropout.fraction <= DROPOUT_TOLERANCE) {
     return {
       scheme: 'dropout',
       parts: [SINGLE, ...plug],
-      reason: 'Изделие нигде не шире, чем выше: вынимается вверх, форма нужна из одной части.',
+      reason: [{ code: 'mold.dropout' }],
       dropoutUndercut: dropout.fraction,
       halvesUndercut: halves.fraction,
       warnings,
@@ -247,7 +240,7 @@ export function analyzeMold(
     return {
       scheme: 'halves-bottom',
       parts: [HALF_A, HALF_B, BOTTOM, ...plug],
-      reason: `${reason} Дно широкое и плоское: шов через него зачищать труднее всего, поэтому дно отливается отдельной плитой.`,
+      reason: [reason, { code: 'mold.wideBase' }],
       dropoutUndercut: dropout.fraction,
       halvesUndercut: halves.fraction,
       warnings,
@@ -257,7 +250,7 @@ export function analyzeMold(
   return {
     scheme: 'halves',
     parts: [HALF_A, HALF_B, ...plug],
-    reason: `${reason} Дно узкое, отдельная плита не нужна.`,
+    reason: [reason, { code: 'mold.narrowBase' }],
     dropoutUndercut: dropout.fraction,
     halvesUndercut: halves.fraction,
     warnings,
@@ -269,10 +262,9 @@ export function analyzeMold(
  * наружной поверхности, смотрящая вверх, — `pullUndercut(…, 'up')`. Это
  * предупреждение, а не запрет: пласт гибкий, и мелкий зацеп он переживёт.
  */
-export function pressWarning(surface: Pick<SurfaceMesh, 'positions' | 'indices'>): string | null {
+export function pressWarning(surface: Pick<SurfaceMesh, 'positions' | 'indices'>): Message | null {
   const { fraction, worst } = pullUndercut(surface, 'up');
   if (fraction <= HALVES_TOLERANCE) return null;
   const worstDeg = (Math.asin(Math.min(1, worst)) * 180) / Math.PI;
-  return `Изделие не выйдет из формы: ${(fraction * 100).toFixed(1)} % поверхности с зацепами, самый крутой подрез ` +
-    `${worstDeg.toFixed(0)}° — возьмите открытую форму (миска, стакан) или уменьшите глубину рельефа.`;
+  return { code: 'press.undercut', params: { pct: (fraction * 100).toFixed(1), deg: worstDeg.toFixed(0) } };
 }

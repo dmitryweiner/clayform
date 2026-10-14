@@ -3,13 +3,15 @@
 // разрастается неиспользуемыми параметрами.
 
 import { make } from './dom';
+import type { Key } from '../i18n';
+import { t } from '../i18n';
 
 export interface CardOptions {
   id: string;
-  title: string;
+  title: Key;
   /** короткая приписка справа от названия */
-  tag?: string;
-  desc?: string;
+  tag?: Key;
+  desc?: Key;
   enabled: boolean;
   onToggle(on: boolean): void;
 }
@@ -33,20 +35,19 @@ export function createCard(container: HTMLElement, options: CardOptions): CardHa
   toggle.type = 'checkbox';
   toggle.checked = options.enabled;
   toggle.id = `on_${options.id}`;
-  const title = make('span', 'fcard-title', options.title);
+  const title = make('span', 'fcard-title', t(options.title));
   const caret = make('span', 'fcard-caret', options.enabled ? '▾' : '▸');
   head.append(toggle, title);
-  if (options.tag) head.append(make('span', 'fcard-tag', options.tag));
+  if (options.tag) head.append(make('span', 'fcard-tag', t(options.tag)));
   head.append(caret);
 
   const body = make('div', 'fcard-body');
-  if (options.desc) body.append(make('p', 'fcard-desc', options.desc));
+  if (options.desc) body.append(make('p', 'fcard-desc', t(options.desc)));
   const controls = make('div');
   body.append(controls);
 
   function setCollapsed(collapsed: boolean): void {
-    card.classList.toggle('collapsed', collapsed);
-    caret.textContent = collapsed ? '▸' : '▾';
+    showCollapsed(card, collapsed);
   }
   setCollapsed(!options.enabled);
 
@@ -74,4 +75,30 @@ export function createCard(container: HTMLElement, options: CardOptions): CardHa
       }
     },
   };
+}
+
+function showCollapsed(card: Element, collapsed: boolean): void {
+  card.classList.toggle('collapsed', collapsed);
+  const caret = card.querySelector('.fcard-caret');
+  if (caret) caret.textContent = collapsed ? '▸' : '▾';
+}
+
+/**
+ * Какие карточки свёрнуты — до перерисовки панели (смена языка). Свёрнутость
+ * по умолчанию следует тумблеру, а раскрытую руками выключенную карточку
+ * перерисовка иначе схлопнула бы.
+ */
+export function snapshotCards(root: ParentNode): Map<string, boolean> {
+  const collapsed = new Map<string, boolean>();
+  for (const card of root.querySelectorAll('.fcard')) {
+    collapsed.set(card.id, card.classList.contains('collapsed'));
+  }
+  return collapsed;
+}
+
+export function restoreCards(root: ParentNode, collapsed: Map<string, boolean>): void {
+  for (const card of root.querySelectorAll('.fcard')) {
+    const value = collapsed.get(card.id);
+    if (value !== undefined) showCollapsed(card, value);
+  }
 }

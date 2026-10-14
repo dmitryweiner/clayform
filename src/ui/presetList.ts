@@ -10,9 +10,10 @@
 // а промахнуться пальцем по соседней строке на телефоне проще простого.
 
 import { make } from './dom';
+import { t } from '../i18n';
 
 export interface PresetRow {
-  /** 'u:<имя>' — свой, 'b:<имя>' — встроенный */
+  /** 'u:<имя>' — свой, 'b:<id>' — встроенный */
   ref: string;
   name: string;
   /** подсказка: чем пресет интересен */
@@ -39,13 +40,13 @@ export function renderPresetList(
   const mine = rows.filter((row) => row.mine);
   const builtin = rows.filter((row) => !row.mine);
 
-  root.append(make('p', 'preset-group', 'Мои'));
+  root.append(make('p', 'preset-group', t('presets.mine')));
   if (mine.length === 0) {
-    root.append(make('p', 'preset-empty', 'Пока пусто — 💾 сохраняет текущее изделие сюда.'));
+    root.append(make('p', 'preset-empty', t('presets.empty')));
   }
   for (const row of mine) root.append(presetRow(row, current, handlers));
 
-  root.append(make('p', 'preset-group', 'Готовые'));
+  root.append(make('p', 'preset-group', t('presets.builtin')));
   for (const row of builtin) root.append(presetRow(row, current, handlers));
 }
 
@@ -66,8 +67,8 @@ function presetRow(row: PresetRow, current: string, handlers: PresetListHandlers
     const del = make('button', 'preset-del', '🗑');
     del.type = 'button';
     del.dataset.del = row.ref;
-    del.title = `Удалить «${row.name}»`;
-    del.setAttribute('aria-label', `Удалить ${row.name}`);
+    del.title = t('presets.delete.title', { name: row.name });
+    del.setAttribute('aria-label', t('presets.delete.aria', { name: row.name }));
     let timer: ReturnType<typeof setTimeout> | null = null;
     del.addEventListener('click', () => {
       if (del.classList.contains('armed')) {
@@ -76,7 +77,7 @@ function presetRow(row: PresetRow, current: string, handlers: PresetListHandlers
         return;
       }
       del.classList.add('armed');
-      del.textContent = 'Удалить?';
+      del.textContent = t('presets.delete.confirm');
       timer = setTimeout(() => {
         del.classList.remove('armed');
         del.textContent = '🗑';

@@ -1,66 +1,70 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <meta name="theme-color" content="#17130f" />
-    <title>ClayForm — посуда и литейные формы для 3D-печати</title>
+    <title>ClayForm — pottery and slip-casting molds for 3D printing</title>
   </head>
   <body>
     <div id="app">
       <header id="topbar">
         <span id="brand">ClayForm</span>
-        <button id="presetBtn" class="tb-btn preset-btn" title="Готовые и свои пресеты">Пресеты…</button>
-        <button id="saveBtn" class="tb-btn" title="Сохранить как пресет">💾</button>
-        <button id="fileOpenBtn" class="tb-btn" title="Открыть пресет из файла (или перетащите файл на окно)">📂</button>
-        <button id="fileSaveBtn" class="tb-btn" title="Сохранить пресет в файл">⬇️</button>
+        <button id="presetBtn" class="tb-btn preset-btn" data-i18n="topbar.presets" data-i18n-title="topbar.presets.title" title="Built-in and saved presets">Presets…</button>
+        <button id="saveBtn" class="tb-btn" data-i18n-title="topbar.save.title" title="Save as a preset">💾</button>
+        <button id="fileOpenBtn" class="tb-btn" data-i18n-title="topbar.fileOpen.title" title="Open a preset file (or drop the file onto the window)">📂</button>
+        <button id="fileSaveBtn" class="tb-btn" data-i18n-title="topbar.fileSave.title" title="Save the preset to a file">⬇️</button>
         <input type="file" id="fileInput" accept=".json,application/json" hidden />
-        <button id="shareBtn" class="tb-btn" title="Скопировать ссылку">🔗</button>
-        <button id="undoBtn" class="tb-btn" title="Отменить (Ctrl/Cmd+Z)" disabled>↩️</button>
-        <button id="redoBtn" class="tb-btn" title="Повторить (Ctrl/Cmd+Shift+Z)" disabled>↪️</button>
+        <button id="shareBtn" class="tb-btn" data-i18n-title="topbar.share.title" title="Copy link">🔗</button>
+        <button id="undoBtn" class="tb-btn" data-i18n-title="topbar.undo.title" title="Undo (Ctrl/Cmd+Z)" disabled>↩️</button>
+        <button id="redoBtn" class="tb-btn" data-i18n-title="topbar.redo.title" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↪️</button>
         <span class="tb-spacer"></span>
-        <button id="panelBtn" class="tb-btn" title="Настройки" hidden>⚙ Настройки</button>
-        <label id="heightLab">Высота <input type="number" id="heightMm" min="20" max="400" step="1" value="140" /> мм</label>
+        <button id="panelBtn" class="tb-btn" data-i18n="topbar.panel" data-i18n-title="topbar.panel.title" title="Settings" hidden>⚙ Settings</button>
+        <label id="heightLab"><span data-i18n="topbar.height">Height</span> <input type="number" id="heightMm" min="20" max="400" step="1" value="140" /> <span data-i18n="unit.mm">mm</span></label>
+        <button id="langBtn" class="tb-btn lang-btn" data-i18n="lang.switch" data-i18n-title="lang.switch.title">RU</button>
       </header>
       <div id="content">
         <div id="panelBackdrop"></div>
         <aside id="panel" class="open">
           <section class="card">
-            <h2>Форма</h2>
+            <h2 data-i18n="panel.shape">Shape</h2>
             <div id="familyGrid" class="family-grid"></div>
             <div id="shapeParams"></div>
             <canvas id="profileGraph"></canvas>
           </section>
 
-          <h3 class="group-title">Рельеф</h3>
+          <h3 class="group-title" data-i18n="panel.relief">Relief</h3>
           <div id="reliefCards"></div>
 
-          <h3 class="group-title">Ручка, носик, крышка</h3>
+          <h3 class="group-title" data-i18n="panel.attach">Handle, spout, lid</h3>
           <div id="attachCards"></div>
 
-          <h3 class="group-title">Экспорт STL</h3>
+          <h3 class="group-title" data-i18n="panel.export">STL export</h3>
           <section class="card">
             <div class="tabs" role="tablist">
-              <button class="tab" id="tabVessel" role="tab" aria-selected="true">Изделие</button>
+              <button class="tab" id="tabVessel" role="tab" aria-selected="true" data-i18n="export.tab.vessel">Piece</button>
               <button class="tab" id="tabMaster" role="tab" aria-selected="false"
-                      title="Позитив с горловиной под ручную форму">Мастер</button>
+                      data-i18n="export.tab.master" data-i18n-title="export.tab.master.title"
+                      title="Master model with a spare, for a hand-made mold">Master</button>
               <button class="tab" id="tabBath" role="tab" aria-selected="false"
-                      title="Опалубки под заливку силикона">Ванночки</button>
+                      data-i18n="export.tab.bath" data-i18n-title="export.tab.bath.title"
+                      title="Printed boxes to pour silicone into">Mold boxes</button>
             </div>
             <div class="tabs" id="pressTabs" role="tablist" hidden>
-              <span class="tabs-label">Отминка:</span>
+              <span class="tabs-label" data-i18n="export.press">Press molding:</span>
               <button class="tab" id="tabSlump" role="tab" aria-selected="false"
-                      title="Углублённая форма: пласт вдавливают внутрь, рельеф снаружи изделия">форма и пуансон</button>
+                      data-i18n="export.tab.slump" data-i18n-title="export.tab.slump.title"
+                      title="Slump mold: the slab is pressed in, the relief ends up on the outside of the piece">slump mold and plunger</button>
             </div>
             <div id="exportParams"></div>
             <p id="schemeNote" class="scheme-note"></p>
             <ul id="partList" class="part-list"></ul>
-            <button id="exportBtn" class="tb-btn primary" style="width: 100%">Экспорт STL</button>
+            <button id="exportBtn" class="tb-btn primary" style="width: 100%">Export STL</button>
           </section>
 
           <label class="row">
-            <span>Детализация</span>
+            <span data-i18n="panel.resolution">Resolution</span>
             <select id="resolution">
               <option value="128">128 × 128</option>
               <option value="192" selected>192 × 192</option>
@@ -78,8 +82,8 @@
           <canvas id="view"></canvas>
           <div id="presets" hidden>
             <div id="presetsBox" role="dialog" aria-labelledby="presetsTitle">
-              <button id="presetsClose" class="panel-close" type="button" title="Закрыть (Esc)" aria-label="Закрыть">✕</button>
-              <h2 id="presetsTitle">Пресеты</h2>
+              <button id="presetsClose" class="panel-close" type="button" data-i18n-title="presets.close.title" data-i18n-aria="presets.close" title="Close (Esc)" aria-label="Close">✕</button>
+              <h2 id="presetsTitle" data-i18n="presets.title">Presets</h2>
               <div id="presetList"></div>
             </div>
           </div>

@@ -263,7 +263,7 @@ describe('unionAll', () => {
   });
 
   it('пустой список — ошибка, а не молча пустой меш', () => {
-    expect(() => unionAll(csg, [])).toThrow(/нечего объединять/);
+    expect(() => unionAll(csg, [])).toThrow(/nothing to unite/);
   });
 });
 
@@ -568,7 +568,7 @@ describe('приставной носик', () => {
     expect(analyzeMold(bowl, { hasHandle: false }).scheme).toBe('dropout');
     const report = analyzeMold(bowl, { hasHandle: false, hasSpout: true });
     expect(report.scheme).not.toBe('dropout');
-    expect(report.reason).toMatch(/носик/i);
+    expect(report.reason[0].code).toBe('mold.whySpout');
   });
 });
 

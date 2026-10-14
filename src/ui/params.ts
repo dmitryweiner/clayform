@@ -4,6 +4,8 @@
 
 import type { ParamSpec, Params } from '../geo/profiles';
 import { make } from './dom';
+import type { Key } from '../i18n';
+import { hasKey, t } from '../i18n';
 
 export interface ParamRowsHandle {
   /** обновляет значения, не пересоздавая DOM (сохраняет фокус и перетаскивание) */
@@ -12,8 +14,21 @@ export interface ParamRowsHandle {
 
 function format(spec: ParamSpec, value: number): string {
   if (spec.unit === 'mm') return `${Math.round(value)}`;
-  if (spec.unit === 'deg') return value > 0 ? `${Math.round(value)}°` : 'авто';
+  if (spec.unit === 'deg') return value > 0 ? `${Math.round(value)}°` : t('param.auto');
   return value.toFixed(2);
+}
+
+/**
+ * Ключ подписи параметра: сперва свой у семейства (`param.pot.rimFlare` —
+ * «Отгиб венчика», у миски тот же ключ — «Отгиб края»), затем общий
+ * (`param.baseFillet`). `suffix` — '.hint' для подсказки. Нет ни того, ни
+ * другого — null; для подписи это ошибка, её ловит tests/i18n.test.ts.
+ */
+export function paramKey(family: string, key: string, suffix = ''): Key | null {
+  for (const candidate of [`param.${family}.${key}${suffix}`, `param.${key}${suffix}`]) {
+    if (hasKey(candidate)) return candidate;
+  }
+  return null;
 }
 
 /**
@@ -23,6 +38,7 @@ function format(spec: ParamSpec, value: number): string {
  */
 export function renderParams(
   container: HTMLElement,
+  family: string,
   specs: ParamSpec[],
   values: Params,
   onInput: (key: string, value: number) => void,
@@ -34,8 +50,10 @@ export function renderParams(
 
   for (const spec of specs) {
     const row = make('label', 'row');
-    const name = make('span', undefined, spec.label);
-    if (spec.hint) name.title = spec.hint;
+    const label = paramKey(family, spec.key);
+    const hint = paramKey(family, spec.key, '.hint');
+    const name = make('span', undefined, label ? t(label) : spec.key);
+    if (hint) name.title = t(hint);
 
     const slider = make('input');
     slider.type = 'range';

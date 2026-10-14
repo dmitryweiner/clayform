@@ -2,8 +2,13 @@
 // и как записать значение, а рендер строк, форматирование и синхронизацию
 // берёт на себя этот модуль. Тем же кодом рисуются карточки рельефа, накатки,
 // ручки и параметров формы.
+//
+// Подписи, подсказки и пункты списков — ключи словаря, а не текст: перевод
+// делается при отрисовке, и смена языка — это просто повторная отрисовка.
 
 import { make } from './dom';
+import type { Key } from '../i18n';
+import { t } from '../i18n';
 import type { RouletteImage } from '../geo/roulette';
 import { imageFromFile, drawOrnament } from './ornament';
 
@@ -17,24 +22,28 @@ type Visibility<T> = (state: T) => boolean;
 export interface RangeControl<T> {
   kind: 'range';
   key: string;
-  label: string;
+  label: Key;
   min: number;
   max: number;
   step: number;
-  /** приписка к числу: 'мм', '°', … */
-  unit?: string;
-  hint?: string;
+  hint?: Key;
   when?: Visibility<T>;
   get(state: T): number;
   set(state: T, value: number): T;
 }
 
+/** Пункт списка: значение и ключ его подписи. */
+export interface SelectOption {
+  value: string;
+  label: Key;
+}
+
 export interface SelectControl<T> {
   kind: 'select';
   key: string;
-  label: string;
-  options: readonly { value: string; label: string }[];
-  hint?: string;
+  label: Key;
+  options: readonly SelectOption[];
+  hint?: Key;
   when?: Visibility<T>;
   get(state: T): string;
   set(state: T, value: string): T;
@@ -43,8 +52,8 @@ export interface SelectControl<T> {
 export interface CheckControl<T> {
   kind: 'check';
   key: string;
-  label: string;
-  hint?: string;
+  label: Key;
+  hint?: Key;
   when?: Visibility<T>;
   get(state: T): boolean;
   set(state: T, value: boolean): T;
@@ -54,8 +63,8 @@ export interface CheckControl<T> {
 export interface ImageControl<T> {
   kind: 'image';
   key: string;
-  label: string;
-  hint?: string;
+  label: Key;
+  hint?: Key;
   when?: Visibility<T>;
   get(state: T): RouletteImage | undefined;
   set(state: T, image: RouletteImage): T;
@@ -75,8 +84,7 @@ function decimals(step: number): number {
 }
 
 function format<T>(control: RangeControl<T>, value: number): string {
-  const text = value.toFixed(decimals(control.step));
-  return control.unit ? `${text}` : text;
+  return value.toFixed(decimals(control.step));
 }
 
 export function renderControls<T>(
@@ -91,8 +99,8 @@ export function renderControls<T>(
 
   for (const control of controls) {
     const row = make('label', 'row');
-    const name = make('span', undefined, control.label);
-    if (control.hint) name.title = control.hint;
+    const name = make('span', undefined, t(control.label));
+    if (control.hint) name.title = t(control.hint);
     row.append(name);
 
     if (control.kind === 'image') {
@@ -101,7 +109,7 @@ export function renderControls<T>(
       input.accept = 'image/*';
       input.id = `${idPrefix}_${control.key}`;
       input.hidden = true;
-      const button = make('button', 'tb-btn', 'Файл…');
+      const button = make('button', 'tb-btn', t('image.file'));
       button.type = 'button';
       button.addEventListener('click', () => input.click());
       const thumb = make('canvas', 'ornament-thumb');
@@ -115,7 +123,7 @@ export function renderControls<T>(
         imageFromFile(file).then(
           (image) => onChange(control.set(read(), image)),
           () => {
-            note.textContent = 'не картинка';
+            note.textContent = t('image.notImage');
           },
         );
       });
@@ -124,7 +132,7 @@ export function renderControls<T>(
         const image = control.get(state);
         drawOrnament(thumb, image);
         thumb.hidden = !image;
-        note.textContent = image ? `${image.w}×${image.h}` : 'загрузите картинку';
+        note.textContent = image ? `${image.w}×${image.h}` : t('image.load');
       };
       show(read());
       syncers.push(show);
@@ -143,7 +151,7 @@ export function renderControls<T>(
       const select = make('select');
       select.id = `${idPrefix}_${control.key}`;
       for (const option of control.options) {
-        const node = make('option', undefined, option.label);
+        const node = make('option', undefined, t(option.label));
         node.value = option.value;
         select.append(node);
       }

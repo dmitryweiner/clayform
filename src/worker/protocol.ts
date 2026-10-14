@@ -8,6 +8,7 @@
 // localStorage.
 
 import type { AppState } from '../state/schema';
+import type { Message } from '../geo/message';
 
 /**
  * Задача воркеру. Все три — про булевы операции, ради которых он и заведён:
@@ -19,17 +20,19 @@ export type CsgJob =
   | { kind: 'mold-preview'; state: AppState; segments: number }
   | { kind: 'export'; state: AppState };
 
-/** Готовая деталь: меш плюс всё, что о ней показывает панель. */
+/**
+ * Готовая деталь: меш плюс всё, что о ней показывает панель. Название панель
+ * выводит из `id` сама — воркер языка не знает.
+ */
 export interface JobPart {
   id: string;
-  label: string;
-  /** приписка в списке деталей — габарит; пусто, если нечего сказать */
+  /** габарит «Ш×Г×В» в мм, без единиц (их подпишет панель); пусто, если нечего сказать */
   note: string;
   positions: Float32Array;
   indices: Uint32Array;
   normals: Float32Array;
   /** что мешает выгрузить деталь в STL; у превью всегда пусто */
-  blocking: string[];
+  blocking: Message[];
 }
 
 /**
@@ -43,7 +46,7 @@ export interface JobProgress {
   /** сколько их всего; после анализа разъёма может уточниться в меньшую сторону */
   total: number;
   /** что делается прямо сейчас */
-  label: string;
+  label: Message;
 }
 
 export interface WorkerIn {

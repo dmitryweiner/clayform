@@ -627,9 +627,29 @@ input[type='number'] {
     max-width: none;
   }
 
-  /* шапка в две строки: бренд и пресеты, затем кнопки и высота */
+  /*
+   * Шапка в две строки: бренд, пресеты и язык, затем кнопки и высота.
+   * Перенос делает ::after на всю ширину — по order он встаёт сразу за
+   * кнопкой языка; отрицательный отступ гасит лишний row-gap его пустой строки.
+   */
   #topbar .tb-spacer {
     display: none;
+  }
+
+  #brand,
+  #presetBtn {
+    order: -2;
+  }
+
+  #langBtn {
+    order: -1;
+  }
+
+  #topbar::after {
+    content: '';
+    order: -1;
+    flex-basis: 100%;
+    margin-top: -6px;
   }
 
   #heightLab {
@@ -696,4 +716,16 @@ input[type='number'] {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+/* После правил узкого экрана: те же селекторы, поэтому важен порядок. */
+@media (max-width: 400px) {
+  /* самые узкие телефоны: кнопки и высота обязаны уместиться во второй строке */
+  #topbar .tb-btn {
+    padding: 4px 5px;
+  }
+
+  #heightLab input {
+    width: 54px;
+  }
 }

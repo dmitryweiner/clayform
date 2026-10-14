@@ -70,14 +70,17 @@ export async function ensureServer(preview) {
 /**
  * Открывает страницу и начинает копить ошибки. `label(text)` помечает,
  * на каком шаге сценария они случились.
+ *
+ * `locale` — язык браузера: по нему приложение выбирает язык интерфейса.
+ * По умолчанию русский — проверки смоука читают русский текст.
  */
-export async function openApp({ preview = false, width = 1280, height = 860 } = {}) {
+export async function openApp({ preview = false, width = 1280, height = 860, locale = 'ru-RU' } = {}) {
   const { base, proc } = await ensureServer(preview);
   // В облачном контейнере Playwright ищет свою сборку chromium, а
   // предустановлена другая — путь к ней даёт CLAYFORM_BROWSER. Пустая
   // переменная — браузер Playwright по умолчанию.
   const browser = await chromium.launch({ executablePath: process.env.CLAYFORM_BROWSER || undefined });
-  const page = await browser.newPage({ viewport: { width, height }, acceptDownloads: true });
+  const page = await browser.newPage({ viewport: { width, height }, acceptDownloads: true, locale });
   const errors = [];
   let context = 'app';
   let cdp = null;
@@ -88,6 +91,8 @@ export async function openApp({ preview = false, width = 1280, height = 860 } = 
   await page.goto(base, { waitUntil: 'load' });
   return {
     page,
+    browser,
+    base,
     errors,
     label: (text) => {
       context = text;

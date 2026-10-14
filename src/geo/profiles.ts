@@ -23,23 +23,23 @@ export interface ProfileDef {
 
 export type Params = Record<string, number>;
 
+/**
+ * Параметр семейства. Подписи и подсказки — в словарях интерфейса
+ * (`param.<семейство>.<key>`, src/i18n): ядро языка не знает.
+ */
 export interface ParamSpec {
   key: string;
-  label: string;
   min: number;
   max: number;
   step: number;
   default: number;
   /** 'mm' — миллиметры, 'x' — доля/коэффициент (без единиц), 'deg' — градусы */
   unit: 'mm' | 'x' | 'deg';
-  hint?: string;
 }
 
 export interface FamilyDef {
+  /** название и примеры — в словаре: `family.<id>`, `family.<id>.examples` */
   id: string;
-  label: string;
-  /** что попадает в это семейство — подсказка в UI */
-  examples: string;
   defaultHeightMm: number;
   params: ParamSpec[];
   /** контрольные точки силуэта; параметры уже зажаты clampFamilyParams */
@@ -57,13 +57,10 @@ export interface FamilyDef {
  * только у тех, у кого есть ножка.
  */
 const BASE_FILLET: ParamSpec = {
-  key: 'baseFillet', label: 'Скругление дна', min: 0, max: 15, step: 0.5, default: 0, unit: 'mm',
-  hint: 'радиус кромки, где стенка (или ножка) встречается с основанием: острая кромка отбивается, '
-    + 'а глину из острого угла формы не достать',
+  key: 'baseFillet', min: 0, max: 15, step: 0.5, default: 0, unit: 'mm',
 };
 const FOOT_FILLET: ParamSpec = {
-  key: 'footFillet', label: 'Скругление ножки', min: 0, max: 20, step: 0.5, default: 0, unit: 'mm',
-  hint: 'радиус перехода от ножки к телу: в остром внутреннем углу керамика трескается',
+  key: 'footFillet', min: 0, max: 20, step: 0.5, default: 0, unit: 'mm',
 };
 
 /** Тоньше глина всё равно не держится; страхует и от нулевого радиуса. */
@@ -109,18 +106,15 @@ const WALL_SAMPLES = 128;
 
 const POT: FamilyDef = {
   id: 'pot',
-  label: 'Горшок',
-  examples: 'горшок, крынка, корчага, канопка',
   defaultHeightMm: 150,
   params: [
-    { key: 'dBelly', label: 'Тулово', min: 40, max: 320, step: 1, default: 170, unit: 'mm' },
-    { key: 'dNeck', label: 'Горло', min: 20, max: 300, step: 1, default: 108, unit: 'mm' },
-    { key: 'dFoot', label: 'Дно', min: 20, max: 300, step: 1, default: 104, unit: 'mm' },
-    { key: 'bellyAt', label: 'Высота тулова', min: 0.25, max: 0.8, step: 0.01, default: 0.52, unit: 'x' },
-    { key: 'shoulder', label: 'Плечо', min: 0, max: 1, step: 0.01, default: 0.45, unit: 'x',
-      hint: 'резкость перехода тулово → горло' },
-    { key: 'neckH', label: 'Высота горла', min: 0, max: 0.4, step: 0.01, default: 0.16, unit: 'x' },
-    { key: 'rimFlare', label: 'Отгиб венчика', min: -0.1, max: 0.6, step: 0.01, default: 0.18, unit: 'x' },
+    { key: 'dBelly', min: 40, max: 320, step: 1, default: 170, unit: 'mm' },
+    { key: 'dNeck', min: 20, max: 300, step: 1, default: 108, unit: 'mm' },
+    { key: 'dFoot', min: 20, max: 300, step: 1, default: 104, unit: 'mm' },
+    { key: 'bellyAt', min: 0.25, max: 0.8, step: 0.01, default: 0.52, unit: 'x' },
+    { key: 'shoulder', min: 0, max: 1, step: 0.01, default: 0.45, unit: 'x' },
+    { key: 'neckH', min: 0, max: 0.4, step: 0.01, default: 0.16, unit: 'x' },
+    { key: 'rimFlare', min: -0.1, max: 0.6, step: 0.01, default: 0.18, unit: 'x' },
     BASE_FILLET,
   ],
   points(p, _heightMm) {
@@ -147,20 +141,16 @@ const POT: FamilyDef = {
 
 const BOWL: FamilyDef = {
   id: 'bowl',
-  label: 'Миска',
-  examples: 'миска, тарелка, пиала, килик',
   defaultHeightMm: 80,
   params: [
-    { key: 'dRim', label: 'Верх', min: 60, max: 400, step: 1, default: 210, unit: 'mm' },
-    { key: 'dFoot', label: 'Дно', min: 20, max: 300, step: 1, default: 92, unit: 'mm' },
-    { key: 'curvature', label: 'Округлость', min: 0, max: 1, step: 0.01, default: 0.6, unit: 'x',
-      hint: '0 — прямой конус, 1 — полусфера' },
-    { key: 'baseAngle', label: 'Угол у дна', min: 0, max: 90, step: 1, default: 0, unit: 'deg',
-      hint: 'под каким углом к столу стенка отходит от дна, °; 0 — авто: как велит округлость' },
-    { key: 'footH', label: 'Ножка', min: 0, max: 60, step: 1, default: 8, unit: 'mm' },
+    { key: 'dRim', min: 60, max: 400, step: 1, default: 210, unit: 'mm' },
+    { key: 'dFoot', min: 20, max: 300, step: 1, default: 92, unit: 'mm' },
+    { key: 'curvature', min: 0, max: 1, step: 0.01, default: 0.6, unit: 'x' },
+    { key: 'baseAngle', min: 0, max: 90, step: 1, default: 0, unit: 'deg' },
+    { key: 'footH', min: 0, max: 60, step: 1, default: 8, unit: 'mm' },
     FOOT_FILLET,
     BASE_FILLET,
-    { key: 'rimFlare', label: 'Отгиб края', min: -0.08, max: 0.4, step: 0.01, default: 0, unit: 'x' },
+    { key: 'rimFlare', min: -0.08, max: 0.4, step: 0.01, default: 0, unit: 'x' },
   ],
   footZ: (p, heightMm) => clamp(p.footH / Math.max(1, heightMm), 0, 0.45) * heightMm,
   points(p, heightMm) {
@@ -244,15 +234,12 @@ function bowlWall(
 
 const CUP: FamilyDef = {
   id: 'cup',
-  label: 'Чашка',
-  examples: 'чашка, стакан, кружка, скифос',
   defaultHeightMm: 95,
   params: [
-    { key: 'dRim', label: 'Верх', min: 30, max: 220, step: 1, default: 84, unit: 'mm' },
-    { key: 'dFoot', label: 'Дно', min: 25, max: 200, step: 1, default: 66, unit: 'mm' },
-    { key: 'barrel', label: 'Бочка', min: -0.25, max: 0.35, step: 0.01, default: 0.06, unit: 'x',
-      hint: '>0 — выпуклые бока, <0 — талия' },
-    { key: 'rimFlare', label: 'Отгиб края', min: -0.08, max: 0.4, step: 0.01, default: 0, unit: 'x' },
+    { key: 'dRim', min: 30, max: 220, step: 1, default: 84, unit: 'mm' },
+    { key: 'dFoot', min: 25, max: 200, step: 1, default: 66, unit: 'mm' },
+    { key: 'barrel', min: -0.25, max: 0.35, step: 0.01, default: 0.06, unit: 'x' },
+    { key: 'rimFlare', min: -0.08, max: 0.4, step: 0.01, default: 0, unit: 'x' },
     BASE_FILLET,
   ],
   points(p, _heightMm) {
@@ -268,21 +255,18 @@ const CUP: FamilyDef = {
 
 const VASE: FamilyDef = {
   id: 'vase',
-  label: 'Ваза',
-  examples: 'ваза, амфора, кувшин, бутылка, лекиф',
   defaultHeightMm: 260,
   params: [
-    { key: 'dBelly', label: 'Тулово', min: 40, max: 320, step: 1, default: 156, unit: 'mm' },
-    { key: 'dNeck', label: 'Горло', min: 12, max: 200, step: 1, default: 54, unit: 'mm' },
-    { key: 'dRim', label: 'Устье', min: 14, max: 260, step: 1, default: 76, unit: 'mm' },
-    { key: 'dFoot', label: 'Дно', min: 18, max: 260, step: 1, default: 78, unit: 'mm' },
-    { key: 'bellyAt', label: 'Высота тулова', min: 0.2, max: 0.7, step: 0.01, default: 0.4, unit: 'x' },
-    { key: 'neckAt', label: 'Высота горла', min: 0.5, max: 0.95, step: 0.01, default: 0.79, unit: 'x' },
-    { key: 'footH', label: 'Ножка', min: 0, max: 90, step: 1, default: 12, unit: 'mm' },
+    { key: 'dBelly', min: 40, max: 320, step: 1, default: 156, unit: 'mm' },
+    { key: 'dNeck', min: 12, max: 200, step: 1, default: 54, unit: 'mm' },
+    { key: 'dRim', min: 14, max: 260, step: 1, default: 76, unit: 'mm' },
+    { key: 'dFoot', min: 18, max: 260, step: 1, default: 78, unit: 'mm' },
+    { key: 'bellyAt', min: 0.2, max: 0.7, step: 0.01, default: 0.4, unit: 'x' },
+    { key: 'neckAt', min: 0.5, max: 0.95, step: 0.01, default: 0.79, unit: 'x' },
+    { key: 'footH', min: 0, max: 90, step: 1, default: 12, unit: 'mm' },
     FOOT_FILLET,
     BASE_FILLET,
-    { key: 'rimFlare', label: 'Отгиб венчика', min: -0.2, max: 0.8, step: 0.01, default: 0, unit: 'x',
-      hint: 'раструб сверх диаметра устья' },
+    { key: 'rimFlare', min: -0.2, max: 0.8, step: 0.01, default: 0, unit: 'x' },
   ],
   footZ: (p, heightMm) => {
     const bellyAt = clamp(p.bellyAt, 0.12, 0.72);

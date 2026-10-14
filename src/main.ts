@@ -20,6 +20,12 @@ import { drawProfileGraph } from './ui/graph';
 import { createProgress } from './ui/progress';
 import { renderPresetList } from './ui/presetList';
 import type { PresetRow } from './ui/presetList';
+import { snapshotCards, restoreCards } from './ui/card';
+import { applyStaticText } from './ui/staticText';
+import type { Lang } from './i18n';
+import {
+  initLang, lang, setLang, onLangChange, t, tm, tDynamic, lowerFirst, autoPresetPrefixes,
+} from './i18n';
 import type { SurfaceMesh } from './geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from './geo/layout';
 import type { BuildParams } from './geo/build';
@@ -43,11 +49,11 @@ import {
   defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, isPressMode, lidRelief,
   RESOLUTIONS,
 } from './state/schema';
-import { PRESETS, presetByName } from './state/presets';
+import { PRESETS, presetById } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
 import { encodePresetFile, decodePresetFile, presetFileName } from './state/presetFile';
 import type { UserPreset } from './state/userPresets';
-import { loadUserPresets, saveUserPresets, nextPresetNumber, PRESET_NAME_PREFIX } from './state/userPresets';
+import { loadUserPresets, saveUserPresets, nextPresetNumber } from './state/userPresets';
 import { History } from './state/history';
 import type { JobPart } from './worker/protocol';
 import { CsgClient } from './worker/client';
@@ -70,11 +76,6 @@ const AUDIT_DELAY_MS = 220;
  * изделия с ручкой и носиком. Ждём паузы подольше, чем проверки меша.
  */
 const CSG_DELAY_MS = 400;
-/** Подпись под табом отминки — вместо схемы разъёма. */
-const SLUMP_NOTE = 'Углублённая форма: пласт вдавливают внутрь, рельеф ложится снаружи изделия, '
-  + 'наружные размеры — ровно заданные. Рядом — пуансон: он садится лапками на ушки формы '
-  + 'и прижимает пласт к ней ровно на толщину. Обе детали — скорлупой толщиной в борт.';
-
 /** Зазор между деталями в «разнесённом» превью, мм. */
 const EXPLODE_GAP_MM = 20;
 /** Зазор между изделием и крышкой рядом — тот же, что воркер кладёт в STL. */
@@ -90,6 +91,10 @@ const HISTORY_DELAY_MS = 500;
  * стоит и у настоящих чайников — на это ругаться незачем.
  */
 const SPOUT_BELOW_RIM = 0.8;
+
+// Язык — раньше всякой отрисовки: панель строится сразу на нём.
+initLang();
+applyStaticText(document);
 
 const view = el('view', HTMLCanvasElement);
 const panel = el('panel', HTMLElement);
@@ -134,52 +139,64 @@ function startingState(): AppState {
   return (token && decodeStateToken(token)) || defaultState();
 }
 
-const picker = renderFamilyPicker(familyGrid, state.family, (id) => {
-  applyState(stateForFamily(id, state));
-});
 setupAdjustmentButtons(panel);
 
-let paramRows = renderShapeParams();
+// Панель целиком: строится при старте и заново на каждой смене языка —
+// подписи переводятся при отрисовке. Состояние при этом не трогается.
+let picker: ReturnType<typeof renderFamilyPicker>;
+let paramRows: ReturnType<typeof renderParams>;
+let reliefRows: ReturnType<typeof renderReliefCards>;
+let attachRows: ReturnType<typeof renderAttachCards>;
+let exportPanel: ReturnType<typeof renderExportPanel>;
 
-const reliefRows = renderReliefCards(
-  reliefCards,
-  () => state.relief,
-  () => state.roulette,
-  (relief) => applyState({ ...state, relief }),
-  (roulette) => applyState({ ...state, roulette }),
-);
+function renderPanel(): void {
+  picker = renderFamilyPicker(familyGrid, state.family, (id) => {
+    applyState(stateForFamily(id, state));
+  });
 
-const attachRows = renderAttachCards(
-  attachCards,
-  {
-    handle: () => state.handle,
-    spout: () => state.spout,
-    lid: () => state.lid,
-  },
-  {
-    handle: (handle) => applyState({ ...state, handle }),
-    spout: (spout) => applyState({ ...state, spout }),
-    lid: (lid) => applyState({ ...state, lid }),
-  },
-);
+  paramRows = renderShapeParams();
 
-const exportPanel = renderExportPanel(
-  {
-    vessel: el('tabVessel', HTMLButtonElement),
-    master: el('tabMaster', HTMLButtonElement),
-    bath: el('tabBath', HTMLButtonElement),
-    slump: el('tabSlump', HTMLButtonElement),
-  },
-  el('pressTabs', HTMLDivElement),
-  exportParams,
-  el('schemeNote', HTMLParagraphElement),
-  el('partList', HTMLUListElement),
-  () => state,
-  (next) => applyState(next),
-);
+  reliefRows = renderReliefCards(
+    reliefCards,
+    () => state.relief,
+    () => state.roulette,
+    (relief) => applyState({ ...state, relief }),
+    (roulette) => applyState({ ...state, roulette }),
+  );
+
+  attachRows = renderAttachCards(
+    attachCards,
+    {
+      handle: () => state.handle,
+      spout: () => state.spout,
+      lid: () => state.lid,
+    },
+    {
+      handle: (handle) => applyState({ ...state, handle }),
+      spout: (spout) => applyState({ ...state, spout }),
+      lid: (lid) => applyState({ ...state, lid }),
+    },
+  );
+
+  exportPanel = renderExportPanel(
+    {
+      vessel: el('tabVessel', HTMLButtonElement),
+      master: el('tabMaster', HTMLButtonElement),
+      bath: el('tabBath', HTMLButtonElement),
+      slump: el('tabSlump', HTMLButtonElement),
+    },
+    el('pressTabs', HTMLDivElement),
+    exportParams,
+    el('schemeNote', HTMLParagraphElement),
+    el('partList', HTMLUListElement),
+    () => state,
+    (next) => applyState(next),
+  );
+}
+renderPanel();
 
 function renderShapeParams(): ReturnType<typeof renderParams> {
-  return renderParams(shapeParams, familyById(state.family).params, state.shape, (key, value) => {
+  return renderParams(shapeParams, state.family, familyById(state.family).params, state.shape, (key, value) => {
     applyState({ ...state, shape: { ...state.shape, [key]: value } });
   });
 }
@@ -194,9 +211,13 @@ function applyState(next: AppState, record = true): void {
   if (familyChanged) {
     picker.setActive(state.family);
     paramRows = renderShapeParams();
-  } else {
-    paramRows.setValues(state.shape);
   }
+  syncPanel();
+}
+
+/** Значения панели — из состояния; плюс пересчёт всего, что от него зависит. */
+function syncPanel(): void {
+  paramRows.setValues(state.shape);
   reliefRows.sync(state.relief, state.roulette);
   attachRows.sync(state.handle, state.spout, state.lid);
   exportPanel.sync(state);
@@ -282,30 +303,22 @@ function refresh(): void {
   // Отминочная форма — скорлупа без CSG, пуансон — тело вращения: строятся
   // сразу, без воркера. Пуансон стоит рядом с матрицей.
   const pressMeshes = press ? slumpPair(buildParams) : null;
-  exportPanel.setSchemeNote(press ? SLUMP_NOTE : scheme.reason);
+  exportPanel.setSchemeNote(press ? t('export.slumpNote') : scheme.reason.map(tm).join(' '));
 
   if (press) {
     const undercut = pressWarning(outer);
-    baseWarnings = undercut ? [undercut] : [];
+    baseWarnings = undercut ? [tm(undercut)] : [];
   } else {
-    baseWarnings = [...scheme.warnings];
+    baseWarnings = scheme.warnings.map(tm);
   }
   if (hasAppliedSpout() && state.spout.tipAt < SPOUT_BELOW_RIM) {
-    baseWarnings.push(
-      'Кончик носика ниже венчика: наполнить изделие выше носика не выйдет.',
-    );
+    baseWarnings.push(t('warn.spoutLow'));
   }
   if (hollow.pinchedFraction > 0 && !press) {
-    baseWarnings.push(
-      `Рельеф уходит внутрь глубже стенки на ${(hollow.pinchedFraction * 100).toFixed(1)} % поверхности — ` +
-      'там стенка тоньше заданной. Уменьшите глубину волны или увеличьте стенку.',
-    );
+    baseWarnings.push(t('warn.pinched', { pct: (hollow.pinchedFraction * 100).toFixed(1) }));
   }
   if (fit?.tooNarrow) {
-    baseWarnings.push(
-      `Горловина узка для крышки: посадка вышла ⌀${(fit.seatMm * 2).toFixed(0)} мм. ` +
-      'Расширьте горло, уменьшите полочку или стенку.',
-    );
+    baseWarnings.push(t('warn.lidNarrow', { d: (fit.seatMm * 2).toFixed(0) }));
   }
   warningsEl.textContent = baseWarnings.join('\n');
 
@@ -315,9 +328,9 @@ function refresh(): void {
   const clayMl = [hollow.mesh, ...lidMeshes]
     .reduce((sum, mesh) => sum + signedVolume(mesh.positions, mesh.indices), 0) / 1000;
   statusEl.textContent = [
-    `⌀${widthMm.toFixed(0)} × ${state.heightMm.toFixed(0)} мм`,
-    `вместимость ${formatVolume(hollow.capacityMl)}`,
-    `глины ${formatVolume(clayMl)}`,
+    t('size.round', { d: widthMm.toFixed(0), h: state.heightMm.toFixed(0) }),
+    t('status.capacity', { v: formatVolume(hollow.capacityMl) }),
+    t('status.clay', { v: formatVolume(clayMl) }),
   ].join(' · ');
 
   if (moldTimer) clearTimeout(moldTimer);
@@ -342,16 +355,16 @@ function refresh(): void {
     const lids = beside ? placeInRow([body, lidMeshes], BESIDE_GAP_MM)[1] : lidMeshes;
     scene.setMeshes([...body, ...lids]);
     const lidNote = fit
-      ? `⌀${(fit.fieldMm * 2).toFixed(0)} × ${lidHeightMm(fit, state.lid).toFixed(0)} мм`
+      ? t('size.round', { d: (fit.fieldMm * 2).toFixed(0), h: lidHeightMm(fit, state.lid).toFixed(0) })
       : '';
     exportPanel.setParts(beside
-      ? [{ label: 'Изделие + крышка', note: 'одним файлом' }]
+      ? [{ label: t('part.vesselLid'), note: t('part.oneFile') }]
       : [
-        { label: 'Изделие', note: `${(clayMl / 1000).toFixed(2)} л глины` },
-        ...(fit ? [{ label: 'Крышка', note: lidNote }] : []),
+        { label: t('part.vessel'), note: t('part.clay', { v: (clayMl / 1000).toFixed(2) }) },
+        ...(fit ? [{ label: t('part.lid'), note: lidNote }] : []),
       ]);
-    exportBtn.textContent = 'Экспорт STL';
-    auditEl.textContent = 'проверка…';
+    exportBtn.textContent = t('export.button.vessel');
+    auditEl.textContent = t('audit.checking');
     // Быстрый вердикт — по оболочке: он приходит через четверть секунды и
     // почти всегда окончательный. Если есть приставные детали, следом
     // подъезжает точная сборка из воркера и перепроверяет уже её — то самое,
@@ -363,14 +376,14 @@ function refresh(): void {
   } else if (pressMeshes) {
     // отминочная форма готова сразу — ни задержки, ни воркера
     scene.setMeshes(pressMeshes);
-    exportPanel.setParts([{ label: 'Форма + пуансон', note: sizeNote(pressMeshes) }]);
-    exportBtn.textContent = 'Экспорт формы';
-    auditEl.textContent = 'проверка…';
+    exportPanel.setParts([{ label: t('part.slump'), note: sizeNote(pressMeshes) }]);
+    exportBtn.textContent = t('export.button.slump');
+    auditEl.textContent = t('audit.checking');
     auditTimer = setTimeout(() => audit(pressMeshes, false), AUDIT_DELAY_MS);
   } else {
-    exportPanel.setParts(scheme.parts.map((part) => ({ label: part.label })));
-    exportBtn.textContent = state.exportMode === 'master' ? 'Экспорт мастера' : 'Экспорт ванночек';
-    auditEl.textContent = 'собираю оснастку…';
+    exportPanel.setParts(scheme.parts.map((part) => ({ label: partLabel(part.id) })));
+    exportBtn.textContent = t(state.exportMode === 'master' ? 'export.button.master' : 'export.button.bath');
+    auditEl.textContent = t('audit.molding');
     moldTimer = setTimeout(() => void showMold(stamp), CSG_DELAY_MS);
   }
 }
@@ -394,7 +407,7 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
     // построенная здесь она уже стоит в сцене — надетой и точной.
     const parts = await progress.track(
       (onProgress) => csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS }, onProgress),
-      { label: 'точная сборка изделия…', indeterminate: true },
+      { label: 'progress.exact', indeterminate: true },
     );
     if (!parts || stamp !== generation) return;
     const mesh = toMesh(parts[0]);
@@ -405,7 +418,7 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
     // Молчать об этом нельзя, на экране осталось бы приблизительное превью.
     if (stamp !== generation) return;
     auditEl.textContent = '';
-    blockersEl.textContent = `Изделие собрать не удалось: ${message(error)}`;
+    blockersEl.textContent = t('error.vessel', { error: message(error) });
     exportBtn.disabled = true;
   }
 }
@@ -423,25 +436,28 @@ async function showMold(stamp: number): Promise<void> {
           // «собираю» в строке остаётся всё время сборки: по нему и человек, и
           // смоук понимают, что ответа ещё нет.
           if (stamp === generation) {
-            auditEl.textContent = `собираю: ${step.label} (${step.step + 1} из ${step.total})`;
+            auditEl.textContent = t('audit.step', { step: tm(step.label), i: step.step + 1, n: step.total });
           }
         },
       ),
-      { label: 'сборка оснастки…' },
+      { label: 'progress.mold' },
     );
     // null — задачу вытеснила более свежая; stamp — её обогнал ответ.
     if (!parts || stamp !== generation) return;
 
     scene.setMeshes(placeInRow(parts.map((part) => [toMesh(part)]), EXPLODE_GAP_MM).flat());
-    exportPanel.setParts(parts.map((part) => ({ label: part.label, note: part.note })));
+    exportPanel.setParts(parts.map((part) => ({
+      label: partLabel(part.id),
+      note: part.note ? t('size.box', { dims: part.note }) : '',
+    })));
     const triangles = parts.reduce((sum, part) => sum + part.indices.length / 3, 0);
-    auditEl.textContent = `${parts.length} дет. · ${Math.round(triangles / 1000)} тыс. треугольников`;
+    auditEl.textContent = t('audit.parts', { n: parts.length, k: Math.round(triangles / 1000) });
     blockersEl.textContent = '';
     exportBtn.disabled = false;
   } catch (error) {
     if (stamp !== generation) return;
     auditEl.textContent = '';
-    blockersEl.textContent = `Оснастку собрать не удалось: ${message(error)}`;
+    blockersEl.textContent = t('error.mold', { error: message(error) });
     exportBtn.disabled = true;
   }
 }
@@ -466,15 +482,15 @@ function audit(meshes: SurfaceMesh[], printedInClay = true): void {
   const overhang = printedInClay ? overhangFraction(meshes[0], 60) : 0;
 
   auditEl.textContent = reports.every((report) => report.watertight)
-    ? `замкнуто ✓ · ${Math.round(triangles / 1000)} тыс. треугольников`
-    : 'меш не замкнут';
+    ? t('audit.watertight', { k: Math.round(triangles / 1000) })
+    : t('audit.open');
 
-  const extra = assessments.flatMap((assessment) => assessment.warnings);
+  const extra = assessments.flatMap((assessment) => assessment.warnings).map(tm);
   if (printedInClay && overhang > 0.15) {
-    extra.push(`Свесы круче 60° на ${(overhang * 100).toFixed(0)} % поверхности — печать глиной потребует опор.`);
+    extra.push(t('warn.overhang', { pct: (overhang * 100).toFixed(0) }));
   }
   warningsEl.textContent = [...baseWarnings, ...extra].join('\n');
-  blockersEl.textContent = blocking.join('\n');
+  blockersEl.textContent = blocking.map(tm).join('\n');
   exportBtn.disabled = blocking.length > 0;
 }
 
@@ -500,11 +516,25 @@ function hasAngularRelief(): boolean {
 
 /** Подпись полосы накатки: сколько оттисков ляжет за оборот и с каким шагом. */
 function describeBand(band: RouletteBand, ctx: RouletteContext): string {
-  if (band.pattern === 'image' && !band.image) return 'Загрузите картинку: пока её нет, полоса не действует.';
+  if (band.pattern === 'image' && !band.image) return t('band.noImage');
   const layout = bandLayout(band, ctx);
-  const head = `${layout.repeats} оттисков по ⌀${(layout.circumferenceMm / Math.PI).toFixed(0)} мм: `
-    + `шаг ${layout.stepMm.toFixed(1)} мм`;
-  return isContinuous(band.pattern) ? `${head}.` : `${head}, просвет ${layout.gapMm.toFixed(1)} мм.`;
+  const params = {
+    n: layout.repeats,
+    d: (layout.circumferenceMm / Math.PI).toFixed(0),
+    step: layout.stepMm.toFixed(1),
+    gap: layout.gapMm.toFixed(1),
+  };
+  return t(isContinuous(band.pattern) ? 'band.continuous' : 'band.discrete', params);
+}
+
+/**
+ * Название детали оснастки по её `id`: `lid-…` — деталь формы крышки,
+ * `bath-…` — ванночка под часть, остальное — сама часть (`part.<id>`).
+ */
+function partLabel(id: string): string {
+  if (id.startsWith('lid-')) return t('part.lidOf', { part: lowerFirst(partLabel(id.slice(4))) });
+  if (id.startsWith('bath-')) return t('part.bath', { part: lowerFirst(partLabel(id.slice(5))) });
+  return tDynamic(`part.${id}`);
 }
 
 /** Габарит меша, «Ш×Г×В мм». */
@@ -519,7 +549,7 @@ function sizeNote(meshes: readonly SurfaceMesh[]): string {
       }
     }
   }
-  return `${max.map((value, axis) => Math.round(value - min[axis])).join('×')} мм`;
+  return t('size.box', { dims: max.map((value, axis) => Math.round(value - min[axis])).join('×') });
 }
 
 function outerWidth(positions: Float32Array): number {
@@ -531,7 +561,9 @@ function outerWidth(positions: Float32Array): number {
 }
 
 function formatVolume(millilitres: number): string {
-  return millilitres >= 1000 ? `${(millilitres / 1000).toFixed(2)} л` : `${millilitres.toFixed(0)} мл`;
+  return millilitres >= 1000
+    ? t('volume.l', { v: (millilitres / 1000).toFixed(2) })
+    : t('volume.ml', { v: millilitres.toFixed(0) });
 }
 
 function message(error: unknown): string {
@@ -560,20 +592,20 @@ exportBtn.addEventListener('click', () => {
 async function runExport(): Promise<void> {
   const label = exportBtn.textContent;
   exportBtn.disabled = true;
-  exportBtn.textContent = 'Собираю…';
+  exportBtn.textContent = t('export.busy');
   try {
     // Экспортная детализация — до 384 сегментов; в главном потоке это
     // подвешивало вкладку на секунды, поэтому считает воркер, а полоса
     // показывает, что он не умер.
     const files = await progress.track(
       (onProgress) => csg.run({ kind: 'export', state }, onProgress),
-      { label: 'сборка…', delayMs: 0 },
+      { label: 'progress.export', delayMs: 0 },
     );
     if (!files) return;
 
     const blocking = files.flatMap((file) => file.blocking);
     if (blocking.length > 0) {
-      blockersEl.textContent = blocking.join('\n');
+      blockersEl.textContent = blocking.map(tm).join('\n');
       return;
     }
     blockersEl.textContent = '';
@@ -584,7 +616,7 @@ async function runExport(): Promise<void> {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   } catch (error) {
-    blockersEl.textContent = `Сборка не удалась: ${message(error)}`;
+    blockersEl.textContent = t('error.export', { error: message(error) });
   } finally {
     exportBtn.textContent = label;
     exportBtn.disabled = false;
@@ -606,13 +638,23 @@ let userPresets: UserPreset[] = loadUserPresets();
 /** Имя последнего открытого пресета — подсказка имени при сохранении в файл. */
 let presetName = '';
 
-/** Какой пресет открыт: 'b:<имя>', 'u:<имя>' или пусто — его подсвечивает список. */
+/** Какой пресет открыт: 'b:<id>', 'u:<имя>' или пусто — его подсвечивает список. */
 let presetRef = '';
+
+/** Имя встроенного пресета — на текущем языке. */
+function builtinName(id: string): string {
+  return tDynamic(`preset.${id}`);
+}
 
 function presetRows(): PresetRow[] {
   return [
     ...userPresets.map((preset) => ({ ref: `u:${preset.name}`, name: preset.name, mine: true })),
-    ...PRESETS.map((preset) => ({ ref: `b:${preset.name}`, name: preset.name, note: preset.note, mine: false })),
+    ...PRESETS.map((preset) => ({
+      ref: `b:${preset.id}`,
+      name: builtinName(preset.id),
+      note: tDynamic(`preset.${preset.id}.note`),
+      mine: false,
+    })),
   ];
 }
 
@@ -620,8 +662,13 @@ function presetRows(): PresetRow[] {
 function setPresetRef(ref: string, name: string): void {
   presetRef = ref;
   presetName = name;
-  presetBtn.textContent = name || 'Пресеты…';
+  presetBtn.textContent = name || t('topbar.presets');
   if (!presetsPanel.hidden) renderPresets();
+}
+
+/** Автоимя «Изделие N» / «Piece N»: номер общий для всех языков. */
+function autoPresetName(): string {
+  return t('presets.auto', { n: nextPresetNumber(userPresets, autoPresetPrefixes()) });
 }
 
 function renderPresets(): void {
@@ -641,22 +688,23 @@ function openPreset(ref: string): void {
   closePresets();
   const name = ref.slice(2);
   if (ref.startsWith('b:')) {
-    const preset = presetByName(name);
+    const preset = presetById(name);
     if (!preset) return;
     applyState(preset.build());
+    setPresetRef(ref, builtinName(name));
   } else {
     const preset = userPresets.find((item) => item.name === name);
     if (!preset) return;
     applyState(preset.state);
+    setPresetRef(ref, name);
   }
-  setPresetRef(ref, name);
 }
 
 function deletePreset(ref: string): void {
   const name = ref.slice(2);
   const next = userPresets.filter((item) => item.name !== name);
   if (!saveUserPresets(next)) {
-    blockersEl.textContent = 'Не удалось удалить пресет: браузер запретил доступ к хранилищу.';
+    blockersEl.textContent = t('error.presetDelete');
     return;
   }
   userPresets = next;
@@ -681,8 +729,8 @@ window.addEventListener('keydown', (event) => {
 // --- пресет файлом ---
 
 fileSaveBtn.addEventListener('click', () => {
-  const suggested = presetName || `${PRESET_NAME_PREFIX} ${nextPresetNumber(userPresets)}`;
-  const name = prompt('Имя пресета', suggested)?.trim();
+  const suggested = presetName || autoPresetName();
+  const name = prompt(t('presets.prompt'), suggested)?.trim();
   if (!name) return;
   download(encodePresetFile(name, state), presetFileName(name), 'application/json');
   setPresetRef(presetRef, name);
@@ -716,7 +764,7 @@ document.addEventListener('drop', (event) => {
 async function openPresetFile(file: File): Promise<void> {
   const decoded = decodePresetFile(await file.text().catch(() => ''));
   if (!decoded) {
-    blockersEl.textContent = `Файл «${file.name}» — не пресет ClayForm.`;
+    blockersEl.textContent = t('error.notPreset', { name: file.name });
     return;
   }
   applyState(decoded.state);
@@ -726,15 +774,15 @@ async function openPresetFile(file: File): Promise<void> {
 }
 
 saveBtn.addEventListener('click', () => {
-  const suggested = `${PRESET_NAME_PREFIX} ${nextPresetNumber(userPresets)}`;
-  const name = prompt('Имя пресета', suggested)?.trim();
+  const suggested = autoPresetName();
+  const name = prompt(t('presets.prompt'), suggested)?.trim();
   if (!name) return;
   userPresets = [...userPresets.filter((item) => item.name !== name), { name, state }];
   if (saveUserPresets(userPresets)) {
     setPresetRef(`u:${name}`, name);
     flash(saveBtn, '✓');
   } else {
-    blockersEl.textContent = 'Не удалось сохранить пресет: браузер запретил доступ к хранилищу.';
+    blockersEl.textContent = t('error.presetSave');
   }
 });
 
@@ -799,5 +847,30 @@ function setPanelOpen(open: boolean): void {
 panelBtn.addEventListener('click', () => setPanelOpen(true));
 panelBackdrop.addEventListener('click', () => setPanelOpen(false));
 setPanelOpen(true);
+
+// --- язык ---
+//
+// Кнопка подписана языком, на который переключит. Смена перерисовывает
+// панель на месте: состояние, история отмены, камера, свёрнутость карточек
+// и прокрутка панели остаются как были.
+
+const langBtn = el('langBtn', HTMLButtonElement);
+
+langBtn.addEventListener('click', () => {
+  const next: Lang = lang() === 'ru' ? 'en' : 'ru';
+  setLang(next);
+});
+
+onLangChange(() => {
+  applyStaticText(document);
+  const collapsed = snapshotCards(panel);
+  const scroll = panel.scrollTop;
+  renderPanel();
+  restoreCards(panel, collapsed);
+  panel.scrollTop = scroll;
+  setPresetRef(presetRef, presetRef.startsWith('b:') ? builtinName(presetRef.slice(2)) : presetName);
+  progress.refresh();
+  syncPanel();
+});
 
 applyState(state, false);

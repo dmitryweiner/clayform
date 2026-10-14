@@ -21,10 +21,9 @@ function samples(id: string, params: Record<string, number>, heightMm = 140, n =
 const maxOf = (xs: number[]): number => xs.reduce((a, b) => Math.max(a, b), -Infinity);
 
 describe('реестр семейств', () => {
-  it('ровно четыре семейства из плана, с русскими подписями', () => {
+  it('ровно четыре семейства из плана', () => {
     expect(FAMILY_IDS).toEqual(['pot', 'bowl', 'cup', 'vase']);
     for (const family of FAMILIES) {
-      expect(family.label.length).toBeGreaterThan(0);
       expect(family.params.length).toBeGreaterThan(2);
     }
   });
@@ -39,7 +38,6 @@ describe('реестр семейств', () => {
       for (const spec of family.params) {
         expect(spec.default).toBeGreaterThanOrEqual(spec.min);
         expect(spec.default).toBeLessThanOrEqual(spec.max);
-        expect(spec.label.length).toBeGreaterThan(0);
       }
     }
   });

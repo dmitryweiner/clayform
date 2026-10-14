@@ -23,7 +23,7 @@ export async function imageFromFile(file: File): Promise<RouletteImage> {
   canvas.width = sw;
   canvas.height = sh;
   const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('канвас недоступен');
+  if (!ctx) throw new Error('canvas 2d context unavailable');
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, sw, sh);
   ctx.drawImage(bitmap, 0, 0, sw, sh);

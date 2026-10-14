@@ -22,6 +22,7 @@ import { analyzeMold, buildMaster, buildBaths } from '../geo/mold';
 import { validateMesh, assessExport } from '../geo/validate';
 import type { AppState } from '../state/schema';
 import { sanitizeState, toBuildParams, effectiveSpout, lidRelief } from '../state/schema';
+import type { Message } from '../geo/message';
 import type { CsgJob, JobPart, WorkerIn, WorkerOut } from './protocol';
 
 /**
@@ -59,7 +60,7 @@ addEventListener('message', (event) => {
 async function handle(message: WorkerIn): Promise<void> {
   const { jobId, job } = message;
   try {
-    if (!loaded) send({ type: 'progress', jobId, step: 0, total: 1, label: 'загружаю модуль булевых операций' });
+    if (!loaded) send({ type: 'progress', jobId, step: 0, total: 1, label: { code: 'progress.loading' } });
     const parts = run(await ready, jobId, job);
     // Буферы переносим, а не копируем: на 384 сегментах это десятки мегабайт.
     send({ type: 'done', jobId, parts }, transferable(parts));
@@ -87,7 +88,7 @@ function run(csg: CsgApi, jobId: number, job: CsgJob): JobPart[] {
         return moldParts(csg, jobId, state, state.resolution, true);
     }
   }
-  throw new Error('воркер не знает такой задачи');
+  throw new Error('the worker does not know this job');
 }
 
 /** Посадка под крышку — если крышка включена. */
@@ -118,8 +119,8 @@ function printableVessel(csg: CsgApi, state: AppState, segments: number): Surfac
  */
 function vesselPart(csg: CsgApi, jobId: number, state: AppState, segments: number): JobPart {
   const progress = new Progress(jobId, 1);
-  progress.next('сборка изделия');
-  return part(state.family, 'Изделие', '', printableVessel(csg, state, segments), []);
+  progress.next({ code: 'progress.vessel' });
+  return part(state.family, '', printableVessel(csg, state, segments), []);
 }
 
 /**
@@ -130,30 +131,29 @@ function vesselPart(csg: CsgApi, jobId: number, state: AppState, segments: numbe
 function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: number): JobPart[] {
   const fit = fitOf(state);
   const progress = new Progress(jobId, fit ? 3 : 2);
-  progress.next('сборка изделия');
+  progress.next({ code: 'progress.vessel' });
 
-  const meshes: { id: string; label: string; mesh: SurfaceMesh }[] = [
-    { id: state.family, label: 'Изделие', mesh: printableVessel(csg, state, segments) },
+  const meshes: { id: string; mesh: SurfaceMesh }[] = [
+    { id: state.family, mesh: printableVessel(csg, state, segments) },
   ];
   if (fit) {
-    progress.next('сборка крышки');
+    progress.next({ code: 'progress.lid' });
     const lid = buildLidMesh(fit, state.lid, segments, { relief: lidRelief(state) });
     if (state.lidBeside) {
       // Один файл на двоих: печатают за один заход. Две замкнутые
       // компоненты в одном меше — законный STL, проверка его принимает.
       meshes[0] = {
         id: state.family,
-        label: 'Изделие + крышка',
         mesh: mergeMeshes(placeInRow([[meshes[0].mesh], [lid]], LID_BESIDE_GAP_MM).flat()),
       };
     } else {
-      meshes.push({ id: 'lid', label: 'Крышка', mesh: lid });
+      meshes.push({ id: 'lid', mesh: lid });
     }
   }
 
-  progress.next('проверка мешей');
+  progress.next({ code: 'progress.checkMeshes' });
   return meshes.map((item) => part(
-    item.id, item.label, sizeNote(item.mesh), item.mesh,
+    item.id, sizeNote(item.mesh), item.mesh,
     assessExport(validateMesh(item.mesh), true).blocking,
   ));
 }
@@ -167,18 +167,17 @@ function pressParts(jobId: number, state: AppState, segments: number): JobPart[]
   const params = toBuildParams(state, segments);
   const { bathWallMm, shrinkPct } = state.mold;
   const progress = new Progress(jobId, 3);
-  progress.next('отминочная форма');
+  progress.next({ code: 'progress.slump' });
   const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct, state.mold.earMm, state.mold.ventMm);
-  progress.next('пуансон');
+  progress.next({ code: 'progress.punch' });
   const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit, state.mold.punchRoundPct);
   const item = {
     id: 'slump',
-    label: 'Форма + пуансон',
     mesh: mergeMeshes(placeInRow([[slump.mesh], [punch]], LID_BESIDE_GAP_MM).flat()),
   };
-  progress.next('проверка меша');
+  progress.next({ code: 'progress.checkMeshes' });
   return [part(
-    item.id, item.label, sizeNote(item.mesh), item.mesh,
+    item.id, sizeNote(item.mesh), item.mesh,
     assessExport(validateMesh(item.mesh), true).blocking,
   )];
 }
@@ -190,7 +189,8 @@ function pressParts(jobId: number, state: AppState, segments: number): JobPart[]
 interface MoldSubject {
   /** приставка к идентификаторам деталей; пусто — изделие */
   id: string;
-  label: string;
+  /** этап сборки самого предмета */
+  step: Message;
   build(): SurfaceMesh;
   mouth: Mouth;
   hasHandle: boolean;
@@ -205,7 +205,7 @@ function moldSubjects(csg: CsgApi, state: AppState, segments: number): MoldSubje
 
   const subjects: MoldSubject[] = [{
     id: '',
-    label: 'изделие',
+    step: { code: 'progress.vessel' },
     build: () => buildSolidVessel(csg, params, state.handle, spout),
     mouth: mouthOf(surface, fit),
     hasHandle: state.handle.on,
@@ -215,7 +215,7 @@ function moldSubjects(csg: CsgApi, state: AppState, segments: number): MoldSubje
   if (fit) {
     subjects.push({
       id: 'lid',
-      label: 'крышка',
+      step: { code: 'progress.lid' },
       // Крышку кладут в форму перевёрнутой: юбка смотрит вверх, и её торец
       // становится устьем, в которое льют шликер. Купол при этом лежит в
       // гипсе целиком, а шов проходит по краю поля.
@@ -249,10 +249,10 @@ function moldParts(
 
   const built: MoldPartMesh[] = [];
   for (const subject of subjects) {
-    progress.next(`сборка: ${subject.label}`);
+    progress.next(subject.step);
     const solid = subject.build();
 
-    progress.next('анализ разъёма');
+    progress.next({ code: 'progress.analyze' });
     const report = analyzeMold(solid, {
       hasHandle: subject.hasHandle,
       hasSpout: subject.hasSpout,
@@ -262,24 +262,24 @@ function moldParts(
 
     const options = { mouth: subject.mouth };
     if (master) {
-      progress.next('мастер-позитив');
+      progress.next({ code: 'progress.master' });
       built.push(...buildMaster(csg, solid, report, state.mold, options).map((item) => prefixed(subject, item)));
     } else {
-      progress.next('гипсовый блок');
+      progress.next({ code: 'progress.block' });
       built.push(...buildBaths(csg, solid, report, state.mold, {
         ...options,
         onPart: (index, total) => {
           // первую деталь объявил «гипсовый блок» — дальше по одной
-          if (index > 0) progress.next(`деталь ${index + 1} из ${total}`);
+          if (index > 0) progress.next({ code: 'progress.part', params: { i: index + 1, n: total } });
         },
       }).map((item) => prefixed(subject, item)));
     }
   }
 
-  const parts = built.map((item) => part(item.id, item.label, sizeNote(item.mesh), item.mesh, []));
+  const parts = built.map((item) => part(item.id, sizeNote(item.mesh), item.mesh, []));
   if (!forExport) return parts;
 
-  progress.next('проверка мешей');
+  progress.next({ code: 'progress.checkMeshes' });
   return parts.map((item, index) => ({
     ...item,
     blocking: assessExport(validateMesh(built[index].mesh), true).blocking,
@@ -288,27 +288,22 @@ function moldParts(
 
 /**
  * Детали формы крышки помечаются, чтобы не путались с деталями формы тела:
- * половина A есть и там и там, а имена файлов должны различаться.
+ * половина A есть и там и там, а имена файлов должны различаться. По той же
+ * приставке `lid-` панель и называет их.
  */
 function prefixed(subject: MoldSubject, item: MoldPartMesh): MoldPartMesh {
   if (!subject.id) return item;
-  return {
-    id: `${subject.id}-${item.id}`,
-    label: `Крышка — ${item.label.toLowerCase()}`,
-    mesh: item.mesh,
-  };
+  return { id: `${subject.id}-${item.id}`, mesh: item.mesh };
 }
 
 function part(
   id: string,
-  label: string,
   note: string,
   mesh: SurfaceMesh,
-  blocking: string[],
+  blocking: Message[],
 ): JobPart {
   return {
     id,
-    label,
     note,
     positions: mesh.positions,
     indices: mesh.indices,
@@ -332,7 +327,7 @@ function sizeNote(mesh: SurfaceMesh): string {
       if (value > max[axis]) max[axis] = value;
     }
   }
-  return `${max.map((value, axis) => Math.round(value - min[axis])).join('×')} мм`;
+  return max.map((value, axis) => Math.round(value - min[axis])).join('×');
 }
 
 /**
@@ -375,7 +370,7 @@ class Progress {
 
   constructor(private readonly jobId: number, public total: number) {}
 
-  next(label: string): void {
+  next(label: Message): void {
     send({ type: 'progress', jobId: this.jobId, step: this.step++, total: this.total, label });
   }
 }

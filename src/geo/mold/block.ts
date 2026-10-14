@@ -13,8 +13,8 @@ import type { MoldScheme } from './analyze';
 import type { MoldState } from './state';
 
 export interface BlockPart {
+  /** название — в словаре интерфейса (`part.<id>`) */
   id: string;
-  label: string;
   solid: Manifold;
   /**
    * Направление, в котором эта часть снимается с изделия. По нему ванночка
@@ -278,11 +278,11 @@ export function buildBlockParts(
   // Пробка снимается первой и вверх; изделие уходит от неё вниз — так её
   // и кладёт ванночка: кольцом кверху.
   const plugParts: BlockPart[] = cavity.plug
-    ? [{ id: 'plug', label: 'Пробка горловины', solid: cavity.plug.solid, pull: 'down' }]
+    ? [{ id: 'plug', solid: cavity.plug.solid, pull: 'down' }]
     : [];
 
   if (scheme === 'dropout') {
-    return [{ id: 'single', label: 'Форма целиком', solid: block, pull: 'up' }, ...plugParts];
+    return [{ id: 'single', solid: block, pull: 'up' }, ...plugParts];
   }
 
   let upper = block;
@@ -301,7 +301,6 @@ export function buildBlockParts(
     ]);
     parts.push({
       id: 'bottom',
-      label: 'Донная плита',
       solid: keys ? scope.keep(csg.Manifold.union([cut.negative, keys])) : cut.negative,
       pull: 'up',
     });
@@ -328,13 +327,11 @@ export function buildBlockParts(
   parts.unshift(
     {
       id: 'half-A',
-      label: 'Половина A',
       solid: keys ? scope.keep(split.positive.subtract(keys)) : split.positive,
       pull: '+y',
     },
     {
       id: 'half-B',
-      label: 'Половина B',
       solid: keys ? scope.keep(csg.Manifold.union([split.negative, keys])) : split.negative,
       pull: '-y',
     },

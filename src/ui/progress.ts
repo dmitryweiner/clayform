@@ -5,6 +5,9 @@
 // Отсюда задержка появления: показываем только то, что и правда долго.
 
 import type { JobProgress } from '../worker/protocol';
+import type { Message } from '../geo/message';
+import type { Key } from '../i18n';
+import { t, tm } from '../i18n';
 
 /** Через сколько после старта задачи полоса появляется, если та ещё идёт. */
 export const SHOW_DELAY_MS = 300;
@@ -17,7 +20,7 @@ export interface ProgressElements {
 
 export interface TrackOptions {
   /** подпись, пока задача о себе ничего не сообщила */
-  label: string;
+  label: Key;
   /** 0 — показать сразу: экспорт запросили кнопкой и ждут ответа */
   delayMs?: number;
   /**
@@ -27,8 +30,9 @@ export interface TrackOptions {
   indeterminate?: boolean;
 }
 
+/** Подпись хранится кодом и переводится при показе: язык может смениться посреди задачи. */
 interface Tracker {
-  label: string;
+  label: Key | Message;
   step: number | null;
   total: number | null;
   indeterminate: boolean;
@@ -42,6 +46,8 @@ export interface ProgressHandle {
    * ошибкой), полоса прячется.
    */
   track<T>(job: (onProgress: (progress: JobProgress) => void) => Promise<T>, options: TrackOptions): Promise<T>;
+  /** перерисовать подпись — после смены языка */
+  refresh(): void;
 }
 
 export function createProgress({ wrap, fill, label }: ProgressElements): ProgressHandle {
@@ -76,7 +82,7 @@ export function createProgress({ wrap, fill, label }: ProgressElements): Progres
     fill.style.width = indeterminate
       ? ''
       : `${Math.round(((shown.step ?? 0) / Math.max(1, shown.total ?? 1)) * 100)}%`;
-    label.textContent = shown.label;
+    label.textContent = typeof shown.label === 'string' ? t(shown.label) : tm(shown.label);
   }
 
   return {
@@ -109,5 +115,6 @@ export function createProgress({ wrap, fill, label }: ProgressElements): Progres
         render();
       }
     },
+    refresh: render,
   };
 }

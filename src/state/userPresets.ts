@@ -40,18 +40,20 @@ export function saveUserPresets(presets: UserPreset[]): boolean {
   }
 }
 
-/** Автоимя сохранённого пресета: «Изделие N». */
-export const PRESET_NAME_PREFIX = 'Изделие';
-
 /**
- * Следующий свободный номер для автоимени. Старые «Моё N» тоже в счёт: иначе
- * после них нумерация «Изделий» пошла бы с единицы и запутала бы список.
+ * Следующий свободный номер для автоимени «<приставка> N». Приставок
+ * несколько — по одной на язык (`presets.auto`) и старая «Моё»: иначе после
+ * смены языка или после старых записей нумерация пошла бы с единицы и
+ * запутала бы список.
  */
-export function nextPresetNumber(presets: UserPreset[]): number {
+export function nextPresetNumber(presets: UserPreset[], prefixes: readonly string[]): number {
   let highest = 0;
   for (const preset of presets) {
-    const match = preset.name.match(/^(?:Изделие|Моё) (\d+)$/);
-    if (match) highest = Math.max(highest, Number(match[1]));
+    for (const prefix of prefixes) {
+      if (!preset.name.startsWith(`${prefix} `)) continue;
+      const tail = preset.name.slice(prefix.length + 1);
+      if (/^\d+$/.test(tail)) highest = Math.max(highest, Number(tail));
+    }
   }
   return highest + 1;
 }

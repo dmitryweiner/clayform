@@ -16,9 +16,12 @@ export { defaultMold, sanitizeMold, SHRINK_MAX_PCT, PLASTER_MAX_MM, SPARE_MAX_MM
 export type { MoldReport, MoldScheme, MoldPart } from './analyze';
 export { analyzeMold, pullUndercut } from './analyze';
 
+/**
+ * Деталь оснастки. Название интерфейс выводит из `id`: `bath-<часть>` —
+ * ванночка под часть, остальное — сама часть (`part.<id>` в словаре).
+ */
 export interface MoldPartMesh {
   id: string;
-  label: string;
   mesh: SurfaceMesh;
 }
 
@@ -60,9 +63,9 @@ export function buildMaster(
     // по верху горловины
     const trimmed = scope.keep(cavity.solid.trimByPlane([0, 0, -1], -cavity.topZ));
     return [
-      { id: 'master', label: 'Мастер-позитив', mesh: fromManifold(trimmed) },
+      { id: 'master', mesh: fromManifold(trimmed) },
       ...(cavity.plug
-        ? [{ id: 'plug', label: 'Пробка горловины', mesh: fromManifold(cavity.plug.solid) }]
+        ? [{ id: 'plug', mesh: fromManifold(cavity.plug.solid) }]
         : []),
     ];
   } finally {
@@ -84,7 +87,6 @@ export function buildBlocks(
     const cavity = buildCavity(csg, scope, solid, report.scheme, mold, options.mouth);
     return buildBlockParts(csg, scope, cavity, report.scheme, mold).map((part) => ({
       id: part.id,
-      label: part.label,
       mesh: fromManifold(part.solid),
     }));
   } finally {
@@ -109,7 +111,6 @@ export function buildBaths(
       options.onPart?.(index, blocks.length);
       return {
         id: `bath-${part.id}`,
-        label: `Ванночка: ${part.label.toLowerCase()}`,
         mesh: fromManifold(buildBath(csg, scope, part, mold)),
       };
     });
