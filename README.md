@@ -1,222 +1,244 @@
 # [ClayForm](https://dmitryweiner.github.io/clayform/)
 
+**English** · [Русский](README.ru.md)
+
 <img width="764" height="806" alt="image" src="https://github.com/user-attachments/assets/7cbe3f8b-d9f2-4173-808c-dbaf40e35ade" />
 
-**Глиняная посуда и литейные формы к ней — из параметров в STL.**
-Веб-приложение: выбираете типовую форму, крутите размеры в миллиметрах,
-наносите рельеф и накатку — и получаете либо файл под печать глиной, либо
-оснастку для шликерного литья.
+**Clay pottery and the molds to cast it — from parameters to STL.**
+A web app: pick a typical shape, turn its dimensions in millimetres, add
+relief and roulette patterns — and get either a file to print in clay or the
+tooling for slip casting.
 
-Геометрический родственник [MathSculpt](../mathsculpt/), но не про
-математические поверхности, а про посуду: параметры называются «горло»,
-«тулово» и «дно», размеры настоящие, а на выходе — то, что можно отлить.
+A geometric relative of [MathSculpt](../mathsculpt/), but about pottery
+rather than mathematical surfaces: the parameters are called “neck”, “belly”
+and “base”, the sizes are real, and what comes out can be cast.
 
-## Что умеет
+## What it does
 
-**Четыре семейства форм** по историческим референсам — горшок (крынка,
-корчага, чайник), миска (тарелка, пиала, килик), чашка (кружка, скифос) и
-ваза (амфора, кувшин, кратер, лекиф). У каждого свой набор параметров:
-диаметры горла, тулова, устья и дна, высота тулова, резкость плеча, отгиб
-венчика, высота ножки.
+**Four shape families** after historical references — pot (krynka,
+korchaga, teapot), bowl (plate, piala, kylix), cup (mug, skyphos) and vase
+(amphora, jug, krater, lekythos). Each has its own parameters: neck, belly,
+mouth and base diameters, belly height, shoulder sharpness, rim flare, foot
+height.
 
-У всех форм есть **скругление дна** — радиус кромки, где стенка или ножка
-встречается с основанием, а у миски и вазы ещё **скругление ножки** —
-радиус перехода от ножки к телу. Острая кромка отбивается, в остром
-внутреннем углу керамика трескается, а глину из острого угла формы не
-достать.
+Every shape has a **base fillet** — the radius of the edge where the wall or
+foot meets the base — and the bowl and vase also have a **foot fillet**, the
+radius of the transition from foot to body. A sharp edge chips, ceramics
+crack in a sharp inner corner, and clay will not release from a sharp corner
+of the mold.
 
-У миски отдельно задаётся угол, под которым стенка отходит от дна: 0 — авто
-(как велит округлость, от ножки полкой), больше — стенка идёт кривой Безье
-от кромки ножки под этим углом и подходит к краю по округлости.
+The bowl also sets the angle at which the wall leaves the base: 0 is auto (as
+the roundness dictates, a shelf from the foot), more makes the wall a Bézier
+curve leaving the foot edge at that angle and reaching the rim by the
+roundness.
 
-Заявленный диаметр — это диаметр готовой вещи. Силуэт интерполируется
-кубическим Эрмитом с ограничителем Фрича–Карлсона: обычный сплайн перелетает
-контрольные точки на 5–10 %, и «тулово 180 мм» превращается в 190.
+The stated diameter is the diameter of the finished piece. The silhouette is
+interpolated with cubic Hermite splines and the Fritsch–Carlson limiter: a
+plain spline overshoots the control points by 5–10 %, and a “180 mm belly”
+turns into 190.
 
-**Рельеф** — волна вдоль высоты, вокруг оси или по спирали, четырёх форм
-(синус, треугольник, меандр, полукруглые валики). Глубина в миллиметрах, зона
-действия по высоте. Шаг спирали дробный: за оборот аргумент волны прирастает
-на freq × шаг, и шов сходится, когда целым выходит произведение, — при
-16 гребнях допустимы шаги кратные ¹⁄₁₆.
+**Relief** — a wave along the height, around the axis or in a spiral, in four
+shapes (sine, triangle, square, half-round ridges). Depth in millimetres, a
+zone of effect along the height. The spiral pitch is fractional: per turn the
+wave argument grows by freq × pitch, and the seam closes when the product is
+whole — with 16 crests, pitches in multiples of ¹⁄₁₆ work.
 
-**Вторая волна** связывается с первой двумя способами. *Плетение* —
-произведение волн: одна бежит вокруг, другая по высоте, получается корзинка
-или вафля. *Модуляция* — вторая волна гнёт первую, сдвигая гребни и меняя их
-глубину; страннее и богаче.
+**A second wave** combines with the first in two ways. *Weave* is the
+product of the waves: one runs around, the other along the height, giving
+basketry or a waffle. *Modulation* lets the second wave bend the first,
+shifting its crests and changing their depth; stranger and richer.
 
-**Накатка роликом** — колесо-штамп, прокатанное по пояску: полоса, верёвочка,
-греческий меандр, зигзаг, точки, ромбы, насечки, сетка — или **своя
-картинка**. Поясков можно поставить до четырёх, каждый со своим рисунком,
-высотой и глубиной — как на настоящей посуде. За оборот всегда укладывается
-целое число оттисков, поэтому на стыке не остаётся «недоката».
+**Roulette** — a stamping wheel rolled along a band: plain band, rope, Greek
+key, zigzag, dots, diamonds, notches, lattice — or **your own image**. Up to
+four bands, each with its own pattern, height and depth, as on real pottery.
+A whole number of impressions always fits in one turn, so there is no
+half-impression at the join.
 
-Непрерывные узоры (полоса, верёвочка, зигзаг, сетка, меандр) идут лентой без
-разрывов. У одиночных (точки, ромбы, насечки, картинка) элемент — квадрат в
-ширину пояска, а между оттисками задаётся просвет в миллиметрах: число
-оттисков подбирается само, и округление достаётся просвету, а не элементу.
+Continuous patterns (band, rope, zigzag, lattice, Greek key) run as an
+unbroken ribbon. For discrete ones (dots, diamonds, notches, image) an
+element is a square as wide as the band, and the gap between impressions is
+set in millimetres: the number of impressions is chosen automatically, and
+the rounding goes to the gap, not to the element.
 
-Меандр шести видов: классический ключ, ключ в рамке, спираль в два с
-половиной оборота, крючки, Т-зубцы и П-волна. Линия и просвет всегда ровно в
-клетку, ширина пояска задаёт высоту рисунка. Каждый вид описан ASCII-сеткой,
-так что новые варианты добавляются строками.
+The Greek key comes in six kinds: classic key, framed key, two-and-a-half
+turn spiral, hooks, T-teeth and square wave. Line and gap always follow the
+grid exactly, and the band width sets the pattern height. Each kind is
+described by an ASCII grid, so new variants are added as lines of text.
 
-Картинка-орнамент — любой файл, уменьшенный до 64 точек по длинной стороне в
-оттенки серого: белое — на всю глубину, чёрное — гладкая стенка, флажок
-инверсии меняет их местами. Пропорции сохраняются, ширина пояска задаёт
-высоту рисунка. Картинка хранится прямо в состоянии и уезжает со ссылкой.
-Мелочь тоньше шага сетки на превью не видна — для экспорта поднимите
-детализацию.
+An image ornament is any file, scaled down to 64 pixels on its long side in
+greyscale: white is full depth, black is the plain wall, and the invert
+switch swaps them. Proportions are kept, and the band width sets the image
+height. The image lives right in the state and travels with the link.
+Detail finer than the mesh step is invisible in the preview — raise the
+resolution for export.
 
-Форма элементов считается в миллиметрах, а не в долях тайла. Точка — оттиск
-шара: радиус шара подбирается по следу и глубине, поэтому мелко вдавленная
-лунка выходит пологой, а не сплющенной полусферой с кратерным бортиком. Линия
-меандра одинаково толста вдоль и поперёк даже на вытянутом пояске.
+Element shapes are computed in millimetres, not in tile fractions. A dot is
+the print of a ball: the ball radius follows from the footprint and the
+depth, so a shallow dimple comes out gentle rather than a squashed hemisphere
+with a crater rim. A Greek key line is equally thick along and across even on
+a stretched band.
 
-**Ручка и носик.** Ручка — дуга в плоскости разъёма формы, одна или две
-(амфора); углы присоединения вверху и внизу задают, под каким наклоном она
-отходит от стенки.
+**Handle and spout.** The handle is an arc in the parting plane of the mold,
+one or two (amphora); the attachment angles at the top and bottom set how it
+leaves the wall.
 
-Носик бывает двух видов. *Оттянутый край*, как у крынки: полость идёт за ним,
-поэтому слив получается желобом, а не налитым куском глины. *Трубчатый*, как у
-чайника: приставная трубка по дуге от стенки к кончику, с высотой крепления,
-длиной, диаметрами у основания и у устья и наклоном среза. В сплошном позитиве
-(мастер, оснастка) трубка сплошная — при шликерном литье носик и так
-отливается полым. В STL самого изделия сквозь стенку прорезается настоящий
-канал со стенкой той же толщины, что у тела, и устье на кончике вскрывается.
+There are two kinds of spout. A *pulled lip*, as on a krynka: the cavity
+follows it, so the pour is a channel rather than a solid lump of clay. A
+*tubular* one, as on a teapot: an applied tube arcing from the wall to the
+tip, with attachment height, length, diameters at the base and the tip, and
+the cut angle. In a solid positive (master, tooling) the tube is solid — slip
+casting makes the spout hollow anyway. In the STL of the piece itself a real
+channel is cut through the wall, with walls as thick as the body, and the tip
+is opened.
 
-Рельеф и накатка ложатся на тело вращения **до** объединения с ручкой и
-носиком, поэтому приставные детали остаются гладкими. Это сознательно: узор,
-заведённый на ручку, не снялся бы с разъёмной формы — он пересекал бы
-плоскость разъёма под углом.
+Relief and roulette go onto the body of revolution **before** it is united
+with the handle and spout, so the applied parts stay smooth. That is on
+purpose: a pattern running onto the handle would not release from a split
+mold — it would cross the parting plane at an angle.
 
-**Крышка** — тело вращения с куполом, юбкой и ручкой (шар на ножке, его
-можно сплющить в эллипс, или буква Т). На купол ложится своя накатка, а
-волны тела — галочкой «И на крышке тоже». Все диаметры посадки выводятся от горловины изделия, так что крышка
-подходит всегда; её можно положить на венчик или утопить на полочку внутри
-горловины. Экспортируется отдельным файлом — или, с флажком «Крышка рядом»,
-одним файлом вместе с изделием, юбкой вниз, чтобы печатать за один заход.
+**The lid** is a body of revolution with a dome, a skirt and a knob (a ball
+on a stem, which can be flattened into an ellipse, or a T). The dome gets its
+own roulette, and the body's waves follow with the “On the lid too” switch.
+All seat diameters are derived from the mouth of the piece, so the lid always
+fits; it can rest on the rim or sink onto a gallery inside the mouth. It is
+exported as a separate file — or, with “Lid alongside”, in one file with the
+piece, skirt down, to print in one go.
 
-**Край венчика** заглаживается радиусом, как это делает гончар пальцем: под
-кромку стенку обрезают ниже, а верх добирает дуга, так что высота остаётся
-ровно заданной. Ноль даёт плоский срез сырого края.
+**The rim edge** is smoothed with a radius, as a potter does with a finger:
+the wall is cut lower under the edge and an arc makes up the top, so the
+height stays exactly as set. Zero gives the flat cut of a raw edge.
 
-**Четыре режима экспорта:**
+**Four export modes:**
 
-| Режим | Что получаете |
+| Mode | What you get |
 |---|---|
-| Изделие | полый сосуд с заданной стенкой — печатать глиной |
-| Мастер | позитив с литейной горловиной — под ручную силиконовую форму |
-| Ванночки | печатные опалубки под заливку силикона, по одной на часть формы |
-| Отминка | углублённая форма-скорлупа и пуансон к ней одним файлом: пласт вдавливают внутрь, рельеф снаружи |
+| Piece | a hollow vessel with the set wall — to print in clay |
+| Master | a positive with a casting spare — for a hand-made silicone mold |
+| Mold boxes | printed boxes to pour silicone into, one per mold part |
+| Press molding | a slump mold shell and its plunger in one file: the slab is pressed inside, the relief ends up outside |
 
-Отминка доступна телу без ручки, носика и крышки. Форма и пуансон
-печатаются скорлупой толщиной «Борт» — только поверхность, которой касается
-пласт, без сплошного блока. Если изделие из формы не выйдет — приложение
-предупредит.
+Press molding is available for a body without a handle, spout or lid. The
+mold and the plunger are printed as shells as thick as the “Wall” — only the
+surface the slab touches, no solid block. If the piece will not come out of
+the mold, the app warns you.
 
-К углублённой форме прилагается **пуансон** — ответная деталь, которая
-прижимает пласт к форме ровно на его толщину («Пласт»). У формы под кромкой
-три ушка с пазами, у пуансона — три коротких лапки-крючка, в дне формы —
-отдушина. Порядок работы: пласт
-кладут на форму и вдавливают рукой; свес за кромку длиннее сантиметра
-обрезают — короче он ляжет между стенкой и лапками. Затем досаживают
-пуансоном, пока лапки не сядут на ушки: губы лапок обнимают ушки снаружи и
-центрируют пуансон, а подошвы на ушках задают толщину стенки и дна. Низ
-пуансона скруглён («Скругление дна»: 100 % — шапка от оси, у миски почти
-полусфера; 0 — плоский пол): по центру дно выходит ровно в пласт, к стенке
-толще, как у пиал с массивной ножкой. Под ушками у формы — рёбра до
-основания (у миски), на них она устойчивее стоит; печатаются без поддержек.
-Пуансон вынимают (отдушина по оси не даёт ему присосаться), кромку пласта
-срезают по венчику. Форма и пуансон лежат в одном STL рядом; если на стол
-принтера вдвоём не помещаются — в слайсере «разбить на части» и печатать
-по очереди.
+The slump mold comes with a **plunger** — the matching part that presses
+the slab to the mold to exactly its thickness (“Slab”). Under its rim the
+mold has three lugs with slots, the plunger has three short hooked legs, and
+the mold floor has a vent. The workflow: lay the slab on the mold and press
+it in by hand; trim any overhang beyond the rim longer than a centimetre —
+shorter overhang will lie between the wall and the legs. Then seat the
+plunger until its legs rest on the lugs: the lips of the legs hug the lugs
+from outside and centre the plunger, and the soles on the lugs set the
+thickness of the wall and the base. The plunger bottom is rounded (“Bottom
+rounding”: 100 % — a cap from the axis, nearly a hemisphere in a bowl; 0 — a
+flat floor): in the centre the base comes out exactly one slab thick,
+thicker towards the wall, like a piala with a heavy foot. Under the lugs the
+mold has ribs down to its base (for a bowl), which help it stand; they print
+without supports. Remove the plunger (the vent along its axis keeps it from
+sticking by suction) and trim the slab edge along the rim. The mold and the
+plunger lie side by side in one STL; if both do not fit the printer bed,
+“split into parts” in the slicer and print them one at a time.
 
-**Утопленная крышка в литейной форме** получает **пробку горловины** —
-отдельную деталь, которая входит в устье сверху и отливает полочку под
-крышку: гипс половинок туда не достаёт. Пробка снимается первой, вверх; в
-ней же литник.
+**A recessed lid in a casting mold** gets a **spare plug** — a separate
+part that goes into the mouth from above and casts the gallery for the lid:
+the plaster of the halves cannot reach there. The plug comes off first,
+upwards; it also holds the sprue.
 
-**Схему разъёма приложение выбирает само.** Миска вынимается вверх — форма
-из одной части. У горшка горло уже тулова — две половины с ключами. Широкое
-плоское дно — плюс отдельная донная плита. Анализатор считает поднутрения по
-нормалям и объясняет решение словами, а если рельеф форму запирает —
-предупреждает и говорит, что именно с ним не так.
+**The app chooses the parting scheme itself.** A bowl lifts straight out — a
+one-piece mold. A pot's neck is narrower than its belly — two halves with
+keys. A wide flat base adds a separate base section. The analyser counts
+undercuts by the normals and explains its choice in words, and if the relief
+locks the mold, it warns you and says what exactly is wrong with it.
 
-**Тяжёлое считает воркер.** Булевы операции (WASM-модуль manifold) живут в
-отдельном потоке: главный его не грузит вовсе. Экспорт ванночек на предельной
-детализации занимает секунды — вкладка при этом не замирает, а полоса внизу
-показывает, какой этап идёт.
+**The heavy lifting is done by a worker.** Boolean operations (the manifold
+WASM module) live in a separate thread: the main one never loads it. Exporting
+mold boxes at the highest resolution takes seconds — the tab does not freeze,
+and a bar at the bottom shows which stage is running.
 
-Он же держит превью честным. Пока крутите ползунок, ручка и носик рисуются
-отдельными телами — быстро и снаружи неотличимо от склейки. Стоит остановиться,
-и картинку сменяет настоящая сборка: с торцами ручки, срезанными изнутри, и со
-сквозным носиком. На экране то же, что уйдёт в STL.
+It also keeps the preview honest. While you drag a slider, the handle and
+spout are drawn as separate bodies — fast and, from outside, identical to the
+union. Once you stop, the picture is replaced by the real assembly: with the
+handle ends trimmed on the inside and a through spout. What is on screen is
+what goes into the STL.
 
-**Пресеты** — встроенные, свои (в браузере, по умолчанию «Изделие N»; в
-списке у каждого 🗑) и файлом: 📂 открывает JSON
-(можно и перетащить на окно), ⬇️ сохраняет текущее состояние в
-`clayform-<имя>.json`. Ссылка 🔗 переносит состояние целиком.
+**Presets** — built-in, your own (in the browser, “Piece N” by default; each
+has a 🗑 in the list) and as files: 📂 opens a JSON (you can also drop it onto
+the window), ⬇️ saves the current state to `clayform-<name>.json`. The 🔗
+link carries the whole state.
 
-**На телефоне** панель — нижний лист поверх модели: тап по модели прячет её,
-кнопка «⚙ Настройки» внизу возвращает. Долгие сборки показывают полосу
-прогресса прямо на модели.
+**The interface is in English and Russian.** The language comes from the
+browser settings (Russian if it is listed before English, English for
+everyone else), and the “RU” / “EN” button in the top bar switches it in
+place, keeping the piece and the undo history. The choice is remembered.
 
-Полный цикл литья описан в [slip_casting_mold_workflow.md](slip_casting_mold_workflow.md).
+**On a phone** the panel is a bottom sheet over the model: tapping the model
+hides it, the “⚙ Settings” button at the bottom brings it back. Long builds
+show a progress bar right on the model.
 
-## Разработка
+The full casting workflow is described (in Russian) in
+[slip_casting_mold_workflow.md](slip_casting_mold_workflow.md).
+
+## Development
 
 ```bash
 npm install
 npm run dev       # vite
-npm run check     # tsc + eslint + vitest (353 теста)
-npm run smoke     # браузерный смоук; --preview для прод-сборки, --res 384 для экспорта, --slow для полосы прогресса
-npm run build     # прод-сборка → ./dist; на Pages публикует GH Actions
+npm run check     # tsc + eslint + vitest (398 tests)
+npm run smoke     # browser smoke; --preview for the production build, --res 384 for export, --slow for the progress bar
+npm run build     # production build → ./dist; GH Actions publishes it to Pages
 ```
 
-Точечный скриншот в заданном состоянии:
+A screenshot in a given state:
 
 ```bash
-node scripts/snap.mjs --out shots/x.png --view --family vase \
-     --check on_roulette --set roul_pattern=lattice --set roul_depth=1.5
+node scripts/snap.mjs --out shots/x.png --view --family vase --lang en \
+     --check on_roulette --set roul0_pattern=lattice --set roul0_depth=1.5
 ```
 
-Golden-тесты пиннят геометрию семейств; пересоздавать осознанно:
+Golden tests pin the geometry of the families; regenerate them deliberately:
 `UPDATE_GOLDEN=1 npx vitest run tests/golden.test.ts`.
 
-## Устройство
+## Layout
 
 ```
-src/geo/       чистое ядро геометрии, без Three.js, в миллиметрах
-  profiles     силуэты семейств: параметры → r(t)
-  relief       волна и волна волны
-  roulette     узоры накатки на тайле
-  build        силуэт → сетка вращения → рельеф → меш
-  hollow       полость под прямую печать
-  handle       ручка: протяжка сечения по дуге Безье
-  spout        носик: оттяжка края и приставная трубка с каналом
-  attach       общее у приставных деталей: как утопить торец в стенку
-  csg          мост к manifold-3d (WASM) для булевых операций
-  assemble     тело ∪ ручки ∪ носик, и то же за вычетом полости и канала
-  mold/        анализ поднутрений, блоки, мастер, ванночки
-src/state/     состояние, санация, пресеты, ссылки, история
-src/worker/    протокол, CSG-воркер и клиент к нему
-src/ui/        карточки, контролы, график силуэта
-src/render/    тонкий слой Three.js
+src/geo/       pure geometry core, no Three.js, in millimetres
+  profiles     family silhouettes: parameters → r(t)
+  relief       the wave and the wave of a wave
+  roulette     roulette patterns on a tile
+  build        silhouette → lathe mesh → relief → mesh
+  hollow       the cavity for direct printing
+  handle       handle: a section swept along a Bézier arc
+  spout        spout: pulled lip and applied tube with a channel
+  attach       shared by applied parts: sinking an end into the wall
+  csg          bridge to manifold-3d (WASM) for boolean operations
+  assemble     body ∪ handles ∪ spout, and the same minus cavity and channel
+  message      messages to the user as codes — the core knows no language
+  mold/        undercut analysis, blocks, master, mold boxes
+src/state/     state, sanitising, presets, links, history
+src/worker/    protocol, the CSG worker and its client
+src/i18n/      ru (reference) and en dictionaries, language, templates
+src/ui/        cards, controls, silhouette graph
+src/render/    a thin Three.js layer
 ```
 
-Три инварианта, на которых всё держится:
+The invariants everything rests on:
 
-- **`src/geo/` не знает про Three.js** — та же развязка, что в mathsculpt.
-- **Всё, что приходит извне, проходит `sanitizeState`.** Ядро вправе считать
-  параметры валидными; ссылку мог править человек. Граница воркера — тоже
-  «извне»: он санирует пришедшее состояние заново.
-- **`src/main.ts` не знает про WASM.** Ни одного пути импорта из главного
-  потока в `geo/csg.ts` — поэтому `geo/mold` там берётся подмодулями
-  (`mold/analyze`, `mold/state`), а не фасадом.
+- **`src/geo/` knows nothing of Three.js** — the same separation as in mathsculpt.
+- **Everything coming from outside goes through `sanitizeState`.** The core
+  may assume valid parameters; a person may have edited the link. The worker
+  boundary is “outside” too: it sanitises the incoming state again.
+- **`src/main.ts` knows nothing of WASM.** Not a single import path from the
+  main thread leads to `geo/csg.ts` — which is why `geo/mold` is imported
+  there by submodules (`mold/analyze`, `mold/state`), not through the facade.
+- **Visible text goes only through the dictionaries.** The core and the worker
+  speak in message codes; a test fails on any Cyrillic string literal outside
+  `src/i18n/ru.ts`.
 
-Ось модели — z, дно изделия в z = 0. Плоскость разъёма формы — XZ (y = 0),
-и ручка с носиком обязаны в ней лежать, иначе двухчастная форма не снимется.
+The model axis is z, the base of the piece at z = 0. The mold parting plane
+is XZ (y = 0), and the handle and spout must lie in it, or a two-part mold
+would not come off.
 
-## Лицензия
+## License
 
 MIT
