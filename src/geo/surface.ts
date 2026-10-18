@@ -1,10 +1,13 @@
 // ЯДРО: сетка (u,v) → позиции/индексы. Чистые типизированные массивы,
 // без Three.js. Ось модели — z (печатная конвенция), рендер сам повернёт.
+
+import type { Cap, CapSpec } from './bottom';
+import { buildCap } from './bottom';
 //
 // Сетка замкнута по u (шов u=0/2π сшит индексами, не дублированием вершин):
 // вершина (i, j) → индекс j*nu + i, где i ∈ [0, nu), j ∈ [0, nv].
 
-export type CapMode = 'both' | 'bottom' | 'none';
+export type CapMode = 'both' | 'bottom' | 'top' | 'none';
 
 /**
  * Позиции вершин сетки; u замкнут. Обычно v — открытый край (nv+1 рядов,
@@ -105,6 +108,12 @@ export function assembleTorusMesh(grid: Grid): Omit<SurfaceMesh, 'normals'> {
   return { positions: new Float32Array(grid.positions), indices: gridIndices(grid.nu, grid.nv, true) };
 }
 
+/** Донья полого меша своей сеткой: наружное и пол полости. */
+export interface HollowCaps {
+  outer?: CapSpec;
+  inner?: CapSpec;
+}
+
 /**
  * Полый сосуд с открытым верхом: внешняя оболочка (стенки + дно) + внутренняя
  * (стенки + дно полости) + кромка сверху. В отличие от caps='bottom'
@@ -118,18 +127,25 @@ export function assembleTorusMesh(grid: Grid): Omit<SurfaceMesh, 'normals'> {
  *
  * `ventMm` — диаметр сквозного отверстия по оси в дне. Без него оба дна —
  * веер из центроида кольца; с ним — кольца вокруг отверстия и его стенка.
+ *
+ * `caps` — донья своей сеткой (`geo/bottom.ts`), когда на них рельеф. Если
+ * задано хоть одно, оба дна строятся так (недостающее — гладким), а
+ * отверстие — общими кольцами обоих.
  */
 export function assembleHollowMesh(
   outer: Grid,
   inner: Float32Array,
   rimRings: Float32Array[] = [],
   ventMm = 0,
+  caps?: HollowCaps,
 ): Omit<SurfaceMesh, 'normals'> {
   const { nu, nv } = outer;
   const nGrid = nu * (nv + 1);
   const rimCount = rimRings.length;
   const vent = ventMm > 0;
-  const vertexCount = 2 * nGrid + rimCount * nu + (vent ? 2 * nu : 2);
+  const own = caps !== undefined;
+  const capVertices = own ? 0 : vent ? 2 * nu : 2;
+  const vertexCount = 2 * nGrid + rimCount * nu + capVertices;
   const outPos = new Float32Array(vertexCount * 3);
   outPos.set(outer.positions, 0);
   outPos.set(inner, nGrid * 3);
@@ -141,7 +157,7 @@ export function assembleHollowMesh(
   const iCap = oCap + 1; // центроид дна полости
 
   const wallTris = nu * nv * 2 * 2; // внешние + внутренние стенки
-  const capTris = nu * (vent ? 6 : 2); // внешнее дно + дно полости (+ стенка отверстия)
+  const capTris = own ? 0 : nu * (vent ? 6 : 2); // внешнее дно + дно полости (+ стенка отверстия)
   const rimTris = nu * 2 * (rimCount + 1); // полос кромки на одну больше, чем колец
   const indices = new Uint32Array((wallTris + capTris + rimTris) * 3);
   let k = 0;
@@ -183,7 +199,9 @@ export function assembleHollowMesh(
     outPos[dst * 3 + 1] = y / nu;
     outPos[dst * 3 + 2] = z / nu;
   };
-  if (vent) {
+  if (own) {
+    // донья добавятся после кромки
+  } else if (vent) {
     // Кольца отверстия: нижнее — на высоте внешнего дна, верхнее — на высоте
     // дна полости, оба по оси их центроидов.
     const ventLow = oCap;
@@ -242,18 +260,45 @@ export function assembleHollowMesh(
       indices[k++] = from + i; indices[k++] = to + i1; indices[k++] = to + i;
     }
   }
-  return { positions: outPos, indices };
+  const shell = { positions: outPos, indices };
+  if (!own) return shell;
+
+  const hole = ventMm / 2;
+  const low = buildCap(outPos, oBase, nu, vertexCount, { ...caps.outer, holeMm: hole }, 'down');
+  const withLow = appendCap(shell, low);
+  const high = buildCap(withLow.positions, iBase, nu, withLow.positions.length / 3, { ...caps.inner, holeMm: hole }, 'up');
+  const both = appendCap(withLow, high);
+  if (!low.hole || !high.hole) return both;
+  // стенка отверстия (нормаль к оси): кольца обоих доньев — по nu вершин
+  const wall = new Uint32Array(nu * 6);
+  let w = 0;
+  for (let i = 0; i < nu; i++) {
+    const i1 = (i + 1) % nu;
+    wall[w++] = low.hole[i1]; wall[w++] = low.hole[i]; wall[w++] = high.hole[i];
+    wall[w++] = low.hole[i1]; wall[w++] = high.hole[i]; wall[w++] = high.hole[i1];
+  }
+  return appendCap(both, { positions: new Float32Array(0), indices: wall, hole: null });
 }
 
 /**
  * Собирает меш из сетки: боковые треугольники + крышки веером из центроида
  * граничного кольца. Нормали не считает — см. normals.ts/meshNormals.
  */
-export function assembleMesh(grid: Grid, caps: CapMode): Omit<SurfaceMesh, 'normals'> {
+export function assembleMesh(
+  grid: Grid,
+  caps: CapMode,
+  bottomCap?: CapSpec,
+): Omit<SurfaceMesh, 'normals'> {
   const { nu, nv, positions } = grid;
+  if (bottomCap && (caps === 'both' || caps === 'bottom')) {
+    // дно своей сеткой: собираем без низа и дописываем его
+    const open = assembleMesh(grid, caps === 'both' ? 'top' : 'none');
+    const cap = buildCap(open.positions, 0, nu, open.positions.length / 3, bottomCap, 'down');
+    return appendCap(open, cap);
+  }
   const side = gridIndices(nu, nv);
   const bottom = caps === 'both' || caps === 'bottom';
-  const top = caps === 'both';
+  const top = caps === 'both' || caps === 'top';
   const extra = (bottom ? 1 : 0) + (top ? 1 : 0);
   const nGrid = nu * (nv + 1);
 
@@ -303,6 +348,17 @@ export function assembleMesh(grid: Grid, caps: CapMode): Omit<SurfaceMesh, 'norm
     }
   }
   return { positions: outPos, indices };
+}
+
+/** Меш плюс дно своей сеткой: вершины дна дописываются в конец. */
+function appendCap(mesh: Omit<SurfaceMesh, 'normals'>, cap: Cap): Omit<SurfaceMesh, 'normals'> {
+  const positions = new Float32Array(mesh.positions.length + cap.positions.length);
+  positions.set(mesh.positions);
+  positions.set(cap.positions, mesh.positions.length);
+  const indices = new Uint32Array(mesh.indices.length + cap.indices.length);
+  indices.set(mesh.indices);
+  indices.set(cap.indices, mesh.indices.length);
+  return { positions, indices };
 }
 
 /**
