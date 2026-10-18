@@ -3,7 +3,7 @@
 // Проверяем не «красиво ли», а то, что форма физически работает: части
 // складываются обратно в целый блок, ключи одной части в точности отвечают
 // впадинам другой, полость больше изделия ровно на усадку, а ванночка
-// действительно держит в себе позитив блока.
+// держит в себе позитив блока — полый снизу, с оболочкой не тоньше борта.
 
 import { initCSG, CsgScope, toManifold } from '../src/geo/csg';
 import type { CsgApi } from '../src/geo/csg';
@@ -11,6 +11,8 @@ import {
   buildBlocks, buildMaster, buildBaths, defaultMold, sanitizeMold,
 } from '../src/geo/mold';
 import { analyzeMold } from '../src/geo/mold/analyze';
+import { undersideVoid } from '../src/geo/mold/underside';
+import type { Manifold } from 'manifold-3d';
 import { buildSolidVessel } from '../src/geo/assemble';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
 import { validateMesh } from '../src/geo/validate';
@@ -322,9 +324,10 @@ describe('ванночки под силикон', () => {
     expect(bbox.max[2] - bbox.min[2]).toBeLessThan(bbox.max[0] - bbox.min[0]);
   });
 
-  it('ванночка действительно держит в себе позитив блока', () => {
-    // силикону не во что затекать, если позитив не стоит внутри коробки:
-    // блок обязан целиком содержаться в напечатанной детали
+  it('позитив блока в ванночке полый снизу — пластик только в оболочке', () => {
+    // Раньше ванночка печаталась сплошным блоком размером с гипсовый: силикону
+    // же нужна только рабочая поверхность. Теперь под ней пустота до стола,
+    // и пластика в ванночке меньше, чем гипса в самом блоке.
     const scope = new CsgScope();
     try {
       const vessel = vesselOf('vase');
@@ -334,8 +337,11 @@ describe('ванночки под силикон', () => {
       for (let i = 0; i < blocks.length; i++) {
         const block = scope.keep(toManifold(csg, blocks[i].mesh));
         const bath = scope.keep(toManifold(csg, baths[i].mesh));
-        // объём ванночки = борта с дном + сам блок, значит блок в ней есть
-        expect(bath.volume(), baths[i].id).toBeGreaterThan(block.volume());
+        expect(bath.volume(), baths[i].id).toBeLessThan(block.volume() * 0.6);
+        // а габарит прежний: позитив по-прежнему стоит внутри коробки
+        const extents = validateMesh(baths[i].mesh).extents;
+        const blockExtents = validateMesh(blocks[i].mesh).extents;
+        expect(Math.max(...extents), baths[i].id).toBeGreaterThan(Math.max(...blockExtents));
       }
     } finally {
       scope.dispose();
@@ -380,6 +386,55 @@ describe('ванночки под силикон', () => {
     // объём материала заметно меньше габаритного: внутри пусто под силикон
     expect(report.volume).toBeLessThan(outer * 0.8);
     expect(report.volume).toBeGreaterThan(outer * 0.05);
+  });
+});
+
+describe('пустота под позитивом ванночки', () => {
+  // Позитив с выемкой-чашей и отвесным карманом: у кармана стенки как у
+  // полости половинки у шва — тот случай, где вертикальный сдвиг поверхности
+  // свёл бы оболочку на нет.
+  const shellMm = 3;
+  const withPositive = (check: (positive: Manifold, hollow: Manifold, scope: CsgScope) => void) => {
+    const scope = new CsgScope();
+    try {
+      const block = scope.keep(csg.Manifold.cube([80, 60, 40], true).translate([0, 0, 20]));
+      const bowl = scope.keep(csg.Manifold.sphere(22, 64).translate([-12, 0, 40]));
+      const pocket = scope.keep(csg.Manifold.cylinder(30, 8, 8, 48).translate([24, 0, 15]));
+      const positive = scope.keep(block.subtract(bowl).subtract(pocket));
+      const hollow = undersideVoid(csg, scope, positive, shellMm, 3);
+      expect(hollow).not.toBeNull();
+      if (hollow) check(positive, hollow, scope);
+    } finally {
+      scope.dispose();
+    }
+  };
+
+  it('пустота везде не ближе оболочки к воздуху над позитивом и вокруг', () => {
+    withPositive((positive, hollow, scope) => {
+      const room = scope.keep(csg.Manifold.cube([200, 200, 100], true).translate([0, 0, 50]));
+      const air = scope.keep(room.subtract(positive));
+      // десятая доли мм — дискретизация: потолок между узлами сетки плоский
+      expect(hollow.minGap(air, 10)).toBeGreaterThan(shellMm - 0.1);
+    });
+  });
+
+  it('пустота открыта на стол и занимает основную часть позитива', () => {
+    withPositive((positive, hollow) => {
+      expect(hollow.boundingBox().min[2]).toBeLessThan(-3);
+      const inside = hollow.trimByPlane([0, 0, 1], 0);
+      expect(inside.volume()).toBeGreaterThan(positive.volume() * 0.5);
+      inside.delete();
+    });
+  });
+
+  it('у позитива тоньше оболочки пустоты нет', () => {
+    const scope = new CsgScope();
+    try {
+      const thin = scope.keep(csg.Manifold.cube([80, 60, 4], true).translate([0, 0, 2]));
+      expect(undersideVoid(csg, scope, thin, shellMm, 3)).toBeNull();
+    } finally {
+      scope.dispose();
+    }
   });
 });
 

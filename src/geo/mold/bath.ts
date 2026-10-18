@@ -15,6 +15,7 @@ import type { CsgApi } from '../csg';
 import type { CsgScope } from '../csg';
 import type { BlockPart } from './block';
 import type { MoldState } from './state';
+import { undersideVoid } from './underside';
 
 /** Поворот блока так, чтобы его рабочая поверхность смотрела вверх. */
 function faceUp(part: BlockPart, scope: CsgScope): Manifold {
@@ -66,7 +67,12 @@ export function buildBath(
       .translate([0, 0, (innerZ + wall) / 2]),
   );
   const shell = scope.keep(outer.subtract(cavity));
+  const whole = scope.keep(csg.Manifold.union([shell, positive]));
+  // под позитивом — пустота до стола: силикону нужна только рабочая
+  // поверхность, а не сплошной блок пластика под ней
+  const hollow = undersideVoid(csg, scope, positive, wall, wall);
+  const bath = hollow ? scope.keep(whole.subtract(hollow)) : whole;
 
   // после сборки опускаем всё так, чтобы дно ванночки легло на стол
-  return scope.keep(csg.Manifold.union([shell, positive]).translate([0, 0, wall]));
+  return scope.keep(bath.translate([0, 0, wall]));
 }
