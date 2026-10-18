@@ -618,6 +618,72 @@ await page.waitForFunction(
 );
 await expectDownloads(3, 'mold', true);
 
+// Клеймо на донышке: строка шрифтом (шрифты грузятся лениво), дата, лого.
+// Проверяем, что меш цел на всех шрифтах и крайних ползунках, что длинная
+// строка ужимается с предупреждением, что с клеймом у вазы появляется
+// донная плита и что отминка с клеймом собирается.
+label('mark');
+await page.locator('#familyGrid .family-btn').nth(0).click();
+await page.click('#tabVessel');
+await page.check('#on_mark');
+await page.fill('#mark_text', 'Мастерская');
+for (const [id, value] of [['mark_font', 'ptSerif'], ['mark_font', 'comfortaa'], ['mark_font', 'oswald'],
+                           ['mark_font', 'rubik'], ['mark_size', '2'], ['mark_size', '15'],
+                           ['mark_size', '5'], ['mark_margin', '30'], ['mark_margin', '1.5'],
+                           ['mark_depth', '1.5'], ['mark_start', '180']]) {
+  const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
+  if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
+  else await page.fill(`#${id}`, value);
+  const verdict = await auditVerdict(page);
+  if (!verdict.includes('замкнуто ✓')) errors.push(`[mark:${id}=${value}] audit="${verdict}"`);
+}
+await page.check('#mark_date');
+await page.setInputFiles('#mark_logo', 'tests/fixtures/ornament.png');
+await page.waitForTimeout(300);
+for (const id of ['mark_logoAngle', 'mark_logoSize', 'mark_logoInvert', 'mark_logoRemove']) {
+  if (!(await page.locator(`#${id}`).isVisible())) errors.push(`[mark] после загрузки лого не видно #${id}`);
+}
+await page.fill('#mark_logoSize', '120');
+await page.check('#mark_logoInvert');
+const logoVerdict = await auditVerdict(page);
+if (!logoVerdict.includes('замкнуто ✓')) errors.push(`[mark:logo] audit="${logoVerdict}"`);
+await page.click('#mark_view');
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/mark.png` });
+await expectDownloads(1, 'mark');
+// строка длиннее окружности: кегль ужимается, панель об этом говорит
+await page.fill('#mark_size', '15');
+await page.fill('#mark_text', 'Очень длинная строка клейма, которая по кругу никак не влезет');
+try {
+  await page.waitForFunction(
+    () => (document.querySelector('#warnings')?.textContent ?? '').includes('ужат'),
+    { timeout: 10000 },
+  );
+} catch {
+  errors.push('[mark] нет предупреждения о длинной строке');
+}
+await page.fill('#mark_size', '5');
+await page.click('#mark_logoRemove');
+await page.waitForTimeout(150);
+if (await page.locator('#mark_logoSize').isVisible()) errors.push('[mark] лого не убралось');
+// ваза без клейма — две половины, с клеймом — ещё и донная плита
+await page.locator('#familyGrid .family-btn').nth(3).click();
+await page.click('#tabBath');
+await page.waitForFunction(
+  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
+  { timeout: 60000 },
+);
+const markParts = await page.locator('#partList li').count();
+if (markParts !== 3) errors.push(`[mark:vase] деталей ${markParts}, ожидалось 3 (с донной плитой)`);
+// отминка с клеймом: на полу матрицы оно выпуклое, отдушина сквозь лого
+await page.locator('#familyGrid .family-btn').nth(1).click();
+await page.setInputFiles('#mark_logo', 'tests/fixtures/ornament.png');
+await page.click('#tabSlump');
+const markSlump = await auditVerdict(page);
+if (!markSlump.includes('замкнуто ✓')) errors.push(`[mark:slump] audit="${markSlump}"`);
+await page.click('#tabVessel');
+await page.uncheck('#on_mark');
+await page.waitForTimeout(150);
+
 /** Видимый текст приложения, где кириллица — непереведённое. Имена своих пресетов не в счёт. */
 async function cyrillicLeft(target) {
   return target.evaluate(() => {

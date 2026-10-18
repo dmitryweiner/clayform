@@ -28,7 +28,7 @@ export const en: Record<keyof typeof ru, string> = {
   // --- panel sections ---
   'panel.shape': 'Shape',
   'panel.relief': 'Relief',
-  'panel.attach': 'Handle, spout, lid',
+  'panel.attach': 'Handle, spout, lid, mark',
   'panel.export': 'STL export',
   'panel.resolution': 'Resolution',
 
@@ -204,6 +204,33 @@ export const en: Record<keyof typeof ru, string> = {
   'spout.angle': 'Tip angle',
 
   // --- lid ---
+  'mark.title': 'Maker’s mark',
+  'mark.desc': 'Text impressed around the base and a logo in the middle. Reads on the upturned piece; '
+    + 'see it with “Show base”.',
+  'mark.text': 'Text',
+  'mark.text.hint': 'runs around the edge of the base, letter tops outward',
+  'mark.text.placeholder': 'name, studio…',
+  'mark.font': 'Font',
+  'mark.date': 'Date',
+  'mark.date.hint': 'today’s date at the end of the text; fixed when you tick the box — untick and tick again to update',
+  'mark.start': 'Text start',
+  'mark.start.hint': 'angle clockwise from twelve o’clock, looking at the base, °',
+  'mark.size': 'Letter size',
+  'mark.size.hint': 'capital letter height, mm; below 4 mm it reads poorly in clay',
+  'mark.margin': 'Edge margin',
+  'mark.margin.hint': 'from the edge of the flat base to the letter tops, mm',
+  'mark.depth': 'Depth',
+  'mark.depth.hint': 'how deep the mark is pressed into the base, mm; a hollow piece limits it to what the base allows',
+  'mark.logo': 'Logo',
+  'mark.logo.hint': 'picture in the middle of the base: white is pressed to full depth, black stays',
+  'mark.logoInvert': 'Invert',
+  'mark.logoAngle': 'Logo rotation',
+  'mark.logoAngle.hint': 'clockwise, looking at the base, °',
+  'mark.logoSize': 'Logo size',
+  'mark.logoSize.hint': 'long side of the picture on the base, mm',
+  'mark.logoRemove': 'Remove logo',
+  'mark.logoRemove.button': 'Remove',
+  'mark.view': 'Show base',
   'lid.title': 'Lid',
   'lid.desc': 'A separate part: printed and cast on its own, upside down in the mold. '
     + 'A cylindrical seat for it is formed in the mouth of the piece. '

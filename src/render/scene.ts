@@ -11,6 +11,11 @@ export interface SceneHandle {
   setMesh(mesh: SurfaceMesh): void;
   /** несколько деталей разом — «взрыв»-превью разъёмной формы */
   setMeshes(meshes: SurfaceMesh[]): void;
+  /**
+   * Камера снизу, на донышко, — как смотрят на перевёрнутое изделие:
+   * «двенадцать часов» клейма наверху кадра.
+   */
+  viewBottom(): void;
   dispose(): void;
 }
 
@@ -36,6 +41,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   const fill = new THREE.DirectionalLight(0xc0a894, 0.5);
   fill.position.set(-2, 1, -1.5);
   scene.add(fill);
+  // Налобный фонарь: неподвижный свет не достаёт до дна, а на дне клеймо.
+  // Слабый — основную лепку формы дают ключевой и заполняющий.
+  const head = new THREE.DirectionalLight(0xfff4e8, 0.45);
+  head.position.set(0, 0, 1);
+  camera.add(head);
+  scene.add(camera);
 
   // z-up (модель) → y-up (экран)
   const group = new THREE.Group();
@@ -134,6 +145,15 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
         camera.position.setLength(distance);
         fittedRadius = radius;
       }
+    },
+
+    viewBottom(): void {
+      // Строго снизу орбита вырождается на полюсе; чуть сместившись к модельной
+      // +y (экранной −z), получаем «верх» кадра там, где он у клейма.
+      const distance = camera.position.distanceTo(controls.target);
+      controls.target.set(0, 0, 0);
+      camera.position.set(0, -distance, -distance * 0.02);
+      controls.update();
     },
 
     dispose(): void {

@@ -324,7 +324,11 @@ export function markCap(
   return { dense, heightAt: (x, y) => depth(x, y) * scale };
 }
 
-/** Шаг густой сетки клейма на сетке стенки из `nu` сегментов, мм. */
+/**
+ * Шаг густой сетки клейма на сетке стенки из `nu` сегментов, мм: штрих буквы
+ * в кегле 5 мм — около миллиметра, и ему нужно хотя бы три узла поперёк.
+ * Превью (192) — 0,33 мм, экспорт на 384 — 0,17.
+ */
 export function markStepMm(nu: number): number {
-  return clamp(96 / Math.max(nu, 1), 0.2, 1);
+  return clamp(64 / Math.max(nu, 1), 0.15, 0.6);
 }

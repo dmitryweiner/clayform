@@ -104,6 +104,15 @@ fits; it can rest on the rim or sink onto a gallery inside the mouth. It is
 exported as a separate file — or, with “Lid alongside”, in one file with the
 piece, skirt down, to print in one go.
 
+**A maker's mark** is impressed into the base: a line of text around the
+edge (four free fonts with Cyrillic — Rubik, PT Serif, Comfortaa, Oswald),
+optionally followed by the date, and an uploaded logo in the middle
+(brightness is depth, with rotation and size). It reads on the upturned
+piece; “Show base” turns the camera there. The mark travels everywhere the
+piece does: into the printed piece, the master, the mold cavity (a mold with
+a mark always gets a base section — the halves could not release it) and the
+slump mold floor, where it stands raised.
+
 **The rim edge** is smoothed with a radius, as a potter does with a finger:
 the wall is cut lower under the edge and an arc makes up the top, so the
 height stays exactly as set. Zero gives the flat cut of a raw edge.
@@ -125,7 +134,8 @@ the mold, the app warns you.
 The slump mold comes with a **plunger** — the matching part that presses
 the slab to the mold to exactly its thickness (“Slab”). Under its rim the
 mold has three lugs with slots, the plunger has three short hooked legs, and
-the mold floor has a vent. The workflow: lay the slab on the mold and press
+the mold floor has a vent with three grooves on the underside leading out
+past the edge — the table would otherwise close it. The workflow: lay the slab on the mold and press
 it in by hand; trim any overhang beyond the rim longer than a centimetre —
 shorter overhang will lie between the wall and the legs. Then seat the
 plunger until its legs rest on the lugs: the lips of the legs hug the lugs
@@ -153,7 +163,9 @@ locks the mold, it warns you and says what exactly is wrong with it.
 
 **The heavy lifting is done by a worker.** Boolean operations (the manifold
 WASM module) live in a separate thread: the main one never loads it. Exporting
-mold boxes at the highest resolution takes seconds — the tab does not freeze,
+mold boxes at the highest resolution takes seconds (the box positive is
+hollow from below, a shell of the box wall thickness: silicone needs only
+the working surface) — the tab does not freeze,
 and a bar at the bottom shows which stage is running.
 
 It also keeps the preview honest. While you drag a slider, the handle and

@@ -32,11 +32,11 @@ export interface RangeControl<T> {
   set(state: T, value: number): T;
 }
 
-/** Пункт списка: значение и ключ его подписи. */
-export interface SelectOption {
-  value: string;
-  label: Key;
-}
+/**
+ * Пункт списка: значение и ключ его подписи — или готовый текст, когда
+ * переводить нечего (имя шрифта).
+ */
+export type SelectOption = { value: string; label: Key } | { value: string; text: string };
 
 export interface SelectControl<T> {
   kind: 'select';
@@ -66,11 +66,39 @@ export interface ImageControl<T> {
   label: Key;
   hint?: Key;
   when?: Visibility<T>;
+  /** предел по длинной стороне, px; по умолчанию — как у накатки */
+  maxPx?: number;
   get(state: T): RouletteImage | undefined;
   set(state: T, image: RouletteImage): T;
 }
 
-export type Control<T> = RangeControl<T> | SelectControl<T> | CheckControl<T> | ImageControl<T>;
+/** Строка текста; меняет состояние на каждом вводе, как ползунок. */
+export interface TextControl<T> {
+  kind: 'text';
+  key: string;
+  label: Key;
+  hint?: Key;
+  placeholder?: Key;
+  maxLength: number;
+  when?: Visibility<T>;
+  get(state: T): string;
+  set(state: T, value: string): T;
+}
+
+/** Кнопка-действие над состоянием («убрать лого»). */
+export interface ButtonControl<T> {
+  kind: 'button';
+  key: string;
+  label: Key;
+  /** надпись на кнопке */
+  button: Key;
+  hint?: Key;
+  when?: Visibility<T>;
+  apply(state: T): T;
+}
+
+export type Control<T> =
+  | RangeControl<T> | SelectControl<T> | CheckControl<T> | ImageControl<T> | TextControl<T> | ButtonControl<T>;
 
 export interface ControlsHandle<T> {
   /** обновляет отображаемые значения, не пересоздавая DOM */
@@ -120,7 +148,7 @@ export function renderControls<T>(
         const file = input.files?.[0];
         input.value = '';
         if (!file) return;
-        imageFromFile(file).then(
+        imageFromFile(file, control.maxPx).then(
           (image) => onChange(control.set(read(), image)),
           () => {
             note.textContent = t('image.notImage');
@@ -136,6 +164,27 @@ export function renderControls<T>(
       };
       show(read());
       syncers.push(show);
+    } else if (control.kind === 'text') {
+      const input = make('input');
+      input.type = 'text';
+      input.id = `${idPrefix}_${control.key}`;
+      input.maxLength = control.maxLength;
+      input.spellcheck = false;
+      if (control.placeholder) input.placeholder = t(control.placeholder);
+      input.value = control.get(read());
+      input.addEventListener('input', () => onChange(control.set(read(), input.value)));
+      row.append(input);
+      syncers.push((state) => {
+        // переписываем только при расхождении: иначе курсор прыгал бы в конец
+        const value = control.get(state);
+        if (input.value !== value) input.value = value;
+      });
+    } else if (control.kind === 'button') {
+      const button = make('button', 'tb-btn', t(control.button));
+      button.type = 'button';
+      button.id = `${idPrefix}_${control.key}`;
+      button.addEventListener('click', () => onChange(control.apply(read())));
+      row.append(button);
     } else if (control.kind === 'check') {
       const box = make('input');
       box.type = 'checkbox';
@@ -151,7 +200,7 @@ export function renderControls<T>(
       const select = make('select');
       select.id = `${idPrefix}_${control.key}`;
       for (const option of control.options) {
-        const node = make('option', undefined, t(option.label));
+        const node = make('option', undefined, 'text' in option ? option.text : t(option.label));
         node.value = option.value;
         select.append(node);
       }

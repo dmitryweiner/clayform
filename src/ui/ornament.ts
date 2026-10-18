@@ -1,4 +1,5 @@
-// Картинка-орнамент: файл → оттенки серого не больше 64 по длинной стороне.
+// Картинка-орнамент: файл → оттенки серого не больше 64 по длинной стороне
+// (лого клейма — до 128).
 // Живёт в главном потоке, потому что нужен DOM (декодер картинок и канвас);
 // воркеру приходят уже байты в состоянии.
 
@@ -14,7 +15,7 @@ const SOURCE_MAX_PX = 512;
  * просмотрщике), яркость — по Rec. 601, уменьшение — честным усреднением по
  * ячейкам: мелкий штрих не пропадает между выборками, а сереет.
  */
-export async function imageFromFile(file: File): Promise<RouletteImage> {
+export async function imageFromFile(file: File, maxPx = IMAGE_MAX_PX): Promise<RouletteImage> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, SOURCE_MAX_PX / Math.max(bitmap.width, bitmap.height));
   const sw = Math.max(1, Math.round(bitmap.width * scale));
@@ -31,9 +32,9 @@ export async function imageFromFile(file: File): Promise<RouletteImage> {
   const source = ctx.getImageData(0, 0, sw, sh).data;
 
   const long = Math.max(sw, sh);
-  const target = Math.min(IMAGE_MAX_PX, long);
+  const target = Math.min(maxPx, long);
   const fit = (side: number): number =>
-    Math.min(IMAGE_MAX_PX, Math.max(IMAGE_MIN_PX, Math.round((side / long) * target)));
+    Math.min(maxPx, Math.max(IMAGE_MIN_PX, Math.round((side / long) * target)));
   const w = fit(sw);
   const h = fit(sh);
 

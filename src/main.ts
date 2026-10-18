@@ -37,7 +37,9 @@ import { buildAppliedSpout } from './geo/spout';
 // живёт в воркере, и путь импорта это подтверждает.
 import { analyzeMold, pressWarning } from './geo/mold/analyze';
 import { buildSlumpShell, buildPunch } from './geo/press';
-import { markActive } from './geo/mark';
+import { markActive, markWarnings } from './geo/mark';
+import type { MarkRaster } from './geo/mark';
+import { markStrip } from './ui/markRaster';
 import { buildHollowVessel } from './geo/hollow';
 import { lidFit, lidSeat, buildLidMesh, lidHeightMm, lidDomeContext } from './geo/lid';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
@@ -171,11 +173,14 @@ function renderPanel(): void {
       handle: () => state.handle,
       spout: () => state.spout,
       lid: () => state.lid,
+      mark: () => state.mark,
     },
     {
       handle: (handle) => applyState({ ...state, handle }),
       spout: (spout) => applyState({ ...state, spout }),
       lid: (lid) => applyState({ ...state, lid }),
+      mark: (mark) => applyState({ ...state, mark }),
+      viewBottom: () => scene.viewBottom(),
     },
   );
 
@@ -220,7 +225,7 @@ function applyState(next: AppState, record = true): void {
 function syncPanel(): void {
   paramRows.setValues(state.shape);
   reliefRows.sync(state.relief, state.roulette);
-  attachRows.sync(state.handle, state.spout, state.lid);
+  attachRows.sync(state.handle, state.spout, state.lid, state.mark);
   exportPanel.sync(state);
   heightInput.value = String(Math.round(state.heightMm));
   resolutionSel.value = String(state.resolution);
@@ -255,6 +260,8 @@ let moldTimer: ReturnType<typeof setTimeout> | null = null;
 let exactTimer: ReturnType<typeof setTimeout> | null = null;
 /** Растёт на каждую пересборку: поздний ответ от старой сборки не должен перебить свежую. */
 let generation = 0;
+/** Растр строки клейма последней сборки — его же получает воркер. */
+let markRaster: MarkRaster | null = null;
 
 function refresh(): void {
   generation++;
@@ -268,7 +275,10 @@ function refresh(): void {
     radiusAt: (v) => profileRadius(profile, v),
   }));
 
-  const buildParams = toBuildParams(state, PREVIEW_SEGMENTS);
+  // Строку клейма рисует шрифтом только главный поток; воркеру она уходит
+  // готовым растром вместе с задачей.
+  markRaster = markStrip(state.mark, () => refresh());
+  const buildParams = toBuildParams(state, PREVIEW_SEGMENTS, markRaster);
   // Посадку под крышку считаем от того же силуэта и той же стенки, из
   // которых строится полость: крышка обязана входить именно в неё.
   const fit = state.lid.on ? lidFit(profile, state.heightMm, state.hollow, state.lid) : null;
@@ -319,6 +329,7 @@ function refresh(): void {
   if (hollow.pinchedFraction > 0 && !press) {
     baseWarnings.push(t('warn.pinched', { pct: (hollow.pinchedFraction * 100).toFixed(1) }));
   }
+  baseWarnings.push(...markWarnings(buildParams.mark, profileRadius(profile, 0)).map(tm));
   if (fit?.tooNarrow) {
     baseWarnings.push(t('warn.lidNarrow', { d: (fit.seatMm * 2).toFixed(0) }));
   }
@@ -408,7 +419,7 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
     // Крышку воркер не считает вовсе: булевых операций ей не нужно, а
     // построенная здесь она уже стоит в сцене — надетой и точной.
     const parts = await progress.track(
-      (onProgress) => csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS }, onProgress),
+      (onProgress) => csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS, markStrip: markRaster }, onProgress),
       { label: 'progress.exact', indeterminate: true },
     );
     if (!parts || stamp !== generation) return;
@@ -432,7 +443,7 @@ async function showMold(stamp: number): Promise<void> {
     // она на полсекунды лишь мельтешила бы.
     const parts = await progress.track(
       (onProgress) => csg.run(
-        { kind: 'mold-preview', state, segments: MOLD_PREVIEW_SEGMENTS },
+        { kind: 'mold-preview', state, segments: MOLD_PREVIEW_SEGMENTS, markStrip: markRaster },
         (step) => {
           onProgress(step);
           // «собираю» в строке остаётся всё время сборки: по нему и человек, и
@@ -600,7 +611,7 @@ async function runExport(): Promise<void> {
     // подвешивало вкладку на секунды, поэтому считает воркер, а полоса
     // показывает, что он не умер.
     const files = await progress.track(
-      (onProgress) => csg.run({ kind: 'export', state }, onProgress),
+      (onProgress) => csg.run({ kind: 'export', state, markStrip: markRaster }, onProgress),
       { label: 'progress.export', delayMs: 0 },
     );
     if (!files) return;

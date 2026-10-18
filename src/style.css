@@ -365,8 +365,10 @@ body {
 }
 
 select,
-input[type='number'] {
+input[type='number'],
+input[type='text'] {
   flex: 1;
+  min-width: 0;
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--line);
