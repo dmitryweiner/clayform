@@ -58,6 +58,11 @@ export interface AnalyzeOptions {
    * расходился с тем, что соберёт воркер.
    */
   hasPlug?: boolean;
+  /**
+   * Клеймо на дне. Его буквы стоят стенками поперёк вытяжки половинок, и
+   * снять их может только донная плита — с клеймом она есть всегда.
+   */
+  bottomMark?: boolean;
 }
 
 export interface UndercutResult {
@@ -236,11 +241,12 @@ export function analyzeMold(
 
   const reason = whyAlongAxis(options, dropout.fraction);
 
-  if (baseShare(mesh) >= WIDE_BASE_SHARE) {
+  const wide = baseShare(mesh) >= WIDE_BASE_SHARE;
+  if (wide || options.bottomMark) {
     return {
       scheme: 'halves-bottom',
       parts: [HALF_A, HALF_B, BOTTOM, ...plug],
-      reason: [reason, { code: 'mold.wideBase' }],
+      reason: [reason, { code: wide ? 'mold.wideBase' : 'mold.markBase' }],
       dropoutUndercut: dropout.fraction,
       halvesUndercut: halves.fraction,
       warnings,

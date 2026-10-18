@@ -335,6 +335,7 @@ export const en: Record<keyof typeof ru, string> = {
   'mold.wideBase': 'The base is wide and flat: a seam across it is the hardest to clean up, so the base is cast '
     + 'as a separate section.',
   'mold.narrowBase': 'The base is narrow, no separate section is needed.',
+  'mold.markBase': 'The base carries a mark: the halves cannot release it, so the base is cast as a separate section.',
   'mold.undercutsAngular': 'Undercuts: {pct} % of the surface, steepest {deg}°. The relief runs at an angle '
     + 'to the parting plane — such a mold would have to be unscrewed. Turn the wave to run along the height '
     + '(the mold releases ring ridges freely) or reduce the depth.',
@@ -342,6 +343,8 @@ export const en: Record<keyof typeof ru, string> = {
     + 'at this pitch the ridges curl over radially.',
   'press.undercut': 'The piece will not come out of the mold: {pct} % of the surface catches, steepest {deg}° — '
     + 'choose an open shape (bowl, tumbler) or reduce the relief depth.',
+  'mark.tooLong': 'The mark text is longer than the circle — letters shrunk to {pct} %.',
+  'mark.noRoom': 'No room for the mark text on the base: reduce the letter size or the edge margin.',
   'mesh.nonFinite': 'The mesh has non-finite coordinates or normals.',
   'mesh.badIndices': 'The mesh has invalid triangle indices.',
   'mesh.empty': 'The mesh is empty.',

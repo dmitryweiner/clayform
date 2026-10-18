@@ -9,16 +9,25 @@
 
 import type { AppState } from '../state/schema';
 import type { Message } from '../geo/message';
+import type { MarkRaster } from '../geo/mark';
 
 /**
  * Задача воркеру. Все три — про булевы операции, ради которых он и заведён:
  * превью изделия и оснастки на огрублённой сетке и экспортная сборка на
  * полной.
  */
-export type CsgJob =
+export type CsgJob = (
   | { kind: 'vessel-preview'; state: AppState; segments: number }
   | { kind: 'mold-preview'; state: AppState; segments: number }
-  | { kind: 'export'; state: AppState };
+  | { kind: 'export'; state: AppState }
+) & {
+  /**
+   * Растр строки клейма. Шрифты есть только у главного потока, поэтому
+   * строку рисует он; это производное от состояния, а не его часть, и
+   * воркер проверяет у растра только размеры (`sanitizeMarkRaster`).
+   */
+  markStrip?: MarkRaster | null;
+};
 
 /**
  * Готовая деталь: меш плюс всё, что о ней показывает панель. Название панель

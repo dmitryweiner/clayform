@@ -3,6 +3,7 @@
 // потоке для превью и в воркере для экспортной детализации.
 
 import type { Grid, SurfaceMesh } from './surface';
+import type { CapSpec } from './bottom';
 import { sampleGrid, assembleMesh } from './surface';
 import { meshNormals, gridNormals } from './normals';
 import type { Params, ProfileDef } from './profiles';
@@ -11,6 +12,8 @@ import type { ReliefState } from './relief';
 import { defaultRelief, reliefDepth } from './relief';
 import type { RouletteState } from './roulette';
 import { defaultRoulette, makeRoulette } from './roulette';
+import type { MarkInput } from './mark';
+import { markCap, markStepMm } from './mark';
 import type { SpoutState } from './spout';
 import { defaultSpout, makeSpout } from './spout';
 
@@ -27,6 +30,8 @@ export interface BuildParams {
   relief: ReliefState;
   roulette: RouletteState;
   spout: SpoutState;
+  /** клеймо на донышке; растр строки приходит из главного потока */
+  mark?: MarkInput;
 }
 
 const NU_MIN = 8;
@@ -191,8 +196,23 @@ function clampUnit(x: number): number {
 
 /** Замкнутый солид изделия: боковая поверхность + дно + верх. */
 export function buildVessel(p: BuildParams): SurfaceMesh {
-  const mesh = assembleMesh(vesselGrid(p), 'both');
+  const grid = vesselGrid(p);
+  const mesh = assembleMesh(grid, 'both', vesselBottom(p, grid));
   return { ...mesh, normals: meshNormals(mesh.positions, mesh.indices) };
+}
+
+/**
+ * Наружное дно изделия своей сеткой, если на нём клеймо; иначе undefined —
+ * веер. Радиус плоского дна меряется по нижнему кольцу сетки: рельеф у дна
+ * гаснет (BASE_GUARD), и кольцо — это ровно край плоского дна.
+ * `maxDepthMm` — сколько дно может отдать оттиску (у полого — толщина дна
+ * минус минимальная стенка).
+ */
+export function vesselBottom(p: BuildParams, grid: Grid, maxDepthMm = Infinity): CapSpec | undefined {
+  if (!p.mark) return undefined;
+  let flat = Infinity;
+  for (let i = 0; i < grid.nu; i++) flat = Math.min(flat, gridRadiusAt(grid, i, 0));
+  return markCap(p.mark, flat, markStepMm(grid.nu), maxDepthMm);
 }
 
 /** Радиус узла сетки (i, j) — удобно тестам и анализатору поднутрений. */

@@ -11,9 +11,13 @@ export type MessageCode =
   | 'mold.dropout'
   | 'mold.wideBase'
   | 'mold.narrowBase'
+  | 'mold.markBase'
   | 'mold.undercutsAngular'
   | 'mold.undercutsRadial'
   | 'press.undercut'
+  // клеймо на дне (mark)
+  | 'mark.tooLong'
+  | 'mark.noRoom'
   // проверка меша перед выгрузкой (validate)
   | 'mesh.nonFinite'
   | 'mesh.badIndices'

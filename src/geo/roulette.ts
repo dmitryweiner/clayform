@@ -590,13 +590,16 @@ export function sanitizeBand(raw: unknown): RouletteBand {
   };
 }
 
-/** Картинка или null, если хоть что-то в ней не так. */
-function sanitizeImage(raw: unknown): RouletteImage | null {
+/**
+ * Картинка или null, если хоть что-то в ней не так. `maxPx` — предел по
+ * стороне: у накатки свой, у лого клейма — крупнее.
+ */
+export function sanitizeImage(raw: unknown, maxPx = IMAGE_MAX_PX): RouletteImage | null {
   const source = asRecord(raw);
   const { w, h, data } = source;
   if (typeof w !== 'number' || typeof h !== 'number' || typeof data !== 'string') return null;
   if (!Number.isInteger(w) || !Number.isInteger(h)) return null;
-  if (w < IMAGE_MIN_PX || w > IMAGE_MAX_PX || h < IMAGE_MIN_PX || h > IMAGE_MAX_PX) return null;
+  if (w < IMAGE_MIN_PX || w > maxPx || h < IMAGE_MIN_PX || h > maxPx) return null;
   const image: RouletteImage = { w, h, data, invert: source.invert === true };
   return decodeImage(image) ? image : null;
 }

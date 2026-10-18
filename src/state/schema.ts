@@ -16,6 +16,8 @@ import type { HandleState } from '../geo/handle';
 import { defaultHandle, sanitizeHandle } from '../geo/handle';
 import type { SpoutState } from '../geo/spout';
 import { defaultSpout, sanitizeSpout } from '../geo/spout';
+import type { MarkRaster, MarkState } from '../geo/mark';
+import { defaultMark, sanitizeMark } from '../geo/mark';
 import type { LidState } from '../geo/lid';
 import { defaultLid, sanitizeLid } from '../geo/lid';
 // Из geo/mold/state, а не из фасада geo/mold: фасад тянет за собой csg.ts, а
@@ -47,6 +49,8 @@ export interface AppState {
   handle: HandleState;
   spout: SpoutState;
   lid: LidState;
+  /** клеймо на донышке */
+  mark: MarkState;
   hollow: HollowState;
   mold: MoldState;
   exportMode: ExportMode;
@@ -75,6 +79,7 @@ export function defaultState(): AppState {
     handle: defaultHandle(),
     spout: defaultSpout(),
     lid: defaultLid(),
+    mark: defaultMark(),
     hollow: defaultHollow(),
     mold: defaultMold(),
     exportMode: 'vessel',
@@ -138,6 +143,7 @@ export function sanitizeState(raw: unknown): AppState {
     handle: sanitizeHandle(source.handle),
     spout: sanitizeSpout(source.spout),
     lid: sanitizeLid(source.lid),
+    mark: sanitizeMark(source.mark),
     hollow: sanitizeHollow(source.hollow),
     mold: sanitizeMold(source.mold),
     exportMode: exportModeOf(source.exportMode),
@@ -191,8 +197,15 @@ export function lidRelief(state: AppState): ReliefState {
   };
 }
 
-/** Состояние + детализация → параметры сборки геометрии. */
-export function toBuildParams(state: AppState, segments: number): BuildParams {
+/**
+ * Состояние + детализация → параметры сборки геометрии. `markStrip` — растр
+ * строки клейма: шрифтом его рисует главный поток, в состоянии его нет.
+ */
+export function toBuildParams(
+  state: AppState,
+  segments: number,
+  markStrip: MarkRaster | null = null,
+): BuildParams {
   return {
     family: state.family,
     shape: state.shape,
@@ -202,5 +215,6 @@ export function toBuildParams(state: AppState, segments: number): BuildParams {
     relief: state.relief,
     roulette: state.roulette,
     spout: effectiveSpout(state),
+    ...(state.mark.on ? { mark: { state: state.mark, strip: markStrip } } : {}),
   };
 }

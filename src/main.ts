@@ -37,6 +37,7 @@ import { buildAppliedSpout } from './geo/spout';
 // живёт в воркере, и путь импорта это подтверждает.
 import { analyzeMold, pressWarning } from './geo/mold/analyze';
 import { buildSlumpShell, buildPunch } from './geo/press';
+import { markActive } from './geo/mark';
 import { buildHollowVessel } from './geo/hollow';
 import { lidFit, lidSeat, buildLidMesh, lidHeightMm, lidDomeContext } from './geo/lid';
 import { buildProfile, familyById, profileRadius } from './geo/profiles';
@@ -298,6 +299,7 @@ function refresh(): void {
     angularRelief: hasAngularRelief(),
     // утопленной крышке форма добавляет пробку горловины (см. mold/block.ts)
     hasPlug: Boolean(fit && fit.recessMm > 0),
+    bottomMark: markActive(state.mark),
   });
   const press = isPressMode(state.exportMode);
   // Отминочная форма — скорлупа без CSG, пуансон — тело вращения: строятся

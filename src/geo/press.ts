@@ -11,7 +11,7 @@ import { assembleHollowMesh, mirrorZ, scaleMesh } from './surface';
 import { meshNormals } from './normals';
 import { profileRadius, MIN_RADIUS_MM } from './profiles';
 import type { BuildParams } from './build';
-import { vesselGrid, vesselSurface } from './build';
+import { vesselBottom, vesselGrid, vesselSurface } from './build';
 import type { HollowState } from './hollow';
 import { cavityPoint, WALL_MIN_MM, WALL_MAX_MM } from './hollow';
 import type { LathePoint } from './lathe';
@@ -274,6 +274,9 @@ export function buildSlumpShell(
       dense: [{ from: 0, to: Infinity, stepMm: grooves.widthMm / 4 }],
       heightAt: grooves.heightAt,
     } : {},
+    // пол полости — это дно изделия: клеймо на нём выпуклое, и пласт его
+    // отпечатает вдавленным
+    inner: vesselBottom(params, inner) ?? {},
   });
   // дно — на стол
   for (let i = 2; i < shell.positions.length; i += 3) shell.positions[i] += shellMm;

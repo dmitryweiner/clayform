@@ -22,6 +22,8 @@ import { analyzeMold, buildMaster, buildBaths } from '../geo/mold';
 import { validateMesh, assessExport } from '../geo/validate';
 import type { AppState } from '../state/schema';
 import { sanitizeState, toBuildParams, effectiveSpout, lidRelief } from '../state/schema';
+import type { MarkRaster } from '../geo/mark';
+import { markActive, sanitizeMarkRaster } from '../geo/mark';
 import type { Message } from '../geo/message';
 import type { CsgJob, JobPart, WorkerIn, WorkerOut } from './protocol';
 
@@ -69,9 +71,16 @@ async function handle(message: WorkerIn): Promise<void> {
   }
 }
 
+/**
+ * Растр строки клейма текущей задачи. Задачи идут строго по одной, поэтому
+ * он живёт здесь, а не тянется параметром через каждую сборку.
+ */
+let markStrip: MarkRaster | null = null;
+
 function run(csg: CsgApi, jobId: number, job: CsgJob): JobPart[] {
   // Граница воркера — такая же внешняя граница, как ссылка или UI.
   const state = sanitizeState(job.state);
+  markStrip = sanitizeMarkRaster(job.markStrip);
   if (job.kind === 'vessel-preview') {
     return [vesselPart(csg, jobId, state, job.segments)];
   }
@@ -106,7 +115,7 @@ function fitOf(state: AppState): LidFit | null {
 function printableVessel(csg: CsgApi, state: AppState, segments: number): SurfaceMesh {
   const fit = fitOf(state);
   return buildPrintableVessel(
-    csg, toBuildParams(state, segments), state.hollow, state.handle, effectiveSpout(state),
+    csg, toBuildParams(state, segments, markStrip), state.hollow, state.handle, effectiveSpout(state),
     fit ? lidSeat(fit) : undefined,
   ).mesh;
 }
@@ -164,7 +173,7 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
  * экспорта с проверкой меша и прогрессом.
  */
 function pressParts(jobId: number, state: AppState, segments: number): JobPart[] {
-  const params = toBuildParams(state, segments);
+  const params = toBuildParams(state, segments, markStrip);
   const { bathWallMm, shrinkPct } = state.mold;
   const progress = new Progress(jobId, 3);
   progress.next({ code: 'progress.slump' });
@@ -195,10 +204,12 @@ interface MoldSubject {
   mouth: Mouth;
   hasHandle: boolean;
   hasSpout: boolean;
+  /** клеймо на дне: форме нужна донная плита */
+  bottomMark: boolean;
 }
 
 function moldSubjects(csg: CsgApi, state: AppState, segments: number): MoldSubject[] {
-  const params = toBuildParams(state, segments);
+  const params = toBuildParams(state, segments, markStrip);
   const surface = vesselSurface(params);
   const fit = fitOf(state);
   const spout = effectiveSpout(state);
@@ -210,6 +221,7 @@ function moldSubjects(csg: CsgApi, state: AppState, segments: number): MoldSubje
     mouth: mouthOf(surface, fit),
     hasHandle: state.handle.on,
     hasSpout: spout.on && spout.kind === 'applied',
+    bottomMark: markActive(state.mark),
   }];
 
   if (fit) {
@@ -226,6 +238,7 @@ function moldSubjects(csg: CsgApi, state: AppState, segments: number): MoldSubje
       },
       hasHandle: false,
       hasSpout: false,
+      bottomMark: false,
     });
   }
   return subjects;
@@ -257,6 +270,7 @@ function moldParts(
       hasHandle: subject.hasHandle,
       hasSpout: subject.hasSpout,
       hasPlug: Boolean(subject.mouth.plug),
+      bottomMark: subject.bottomMark,
     });
     progress.total -= planned - (master ? 1 : report.parts.length);
 
