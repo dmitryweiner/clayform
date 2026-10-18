@@ -23,6 +23,11 @@ export interface CapSpec {
   dense?: readonly CapBand[];
   /** радиус сквозного отверстия по оси, мм; 0 или нет — сплошное дно */
   holeMm?: number;
+  /**
+   * Высота плоскости дна. По умолчанию — средняя по кольцу стенки; задавать,
+   * когда само кольцо уже поднято рельефом (иначе дно уйдёт вслед за ним).
+   */
+  planeZ?: number;
   /** смещение по z, мм, в точке (x, y) */
   heightAt?(x: number, y: number): number;
 }
@@ -60,7 +65,7 @@ export function buildCap(
     z0 += positions[p + 2];
     edge = Math.min(edge, Math.hypot(positions[p], positions[p + 1]));
   }
-  z0 /= nu;
+  z0 = spec.planeZ ?? z0 / nu;
   const wallStep = (2 * Math.PI * edge) / nu;
   const hole = Math.max(0, spec.holeMm ?? 0);
   const bands = spec.dense ?? [];

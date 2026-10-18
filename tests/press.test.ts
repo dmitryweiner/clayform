@@ -299,6 +299,59 @@ describe('пуансон', () => {
     }
   });
 
+  it('на подошве — три канавки от отдушины наружу, посередине между ушками', () => {
+    // стол закрывает отдушину снизу: воздух и лишняя глина уходят канавками
+    const p = params('bowl');
+    const { mesh } = buildSlumpShell(p, hollow, shell, 0);
+    expect(validateMesh(mesh).watertight).toBe(true);
+    const { positions } = mesh;
+    const edge = profileRadius(vesselSurface(p).profile, 0);
+    const width = 2 * VENT_MM;
+    const depth = Math.min(width / 2, shell - 1.2);
+    const lifts = (angle: number, from: number, to: number) => {
+      const out: number[] = [];
+      const cx = Math.cos(angle), cy = Math.sin(angle);
+      for (let i = 0; i < positions.length; i += 3) {
+        const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+        const along = x * cx + y * cy;
+        if (z > shell - 0.5 || along < from || along > to || Math.abs(x * cy - y * cx) > 0.3) continue;
+        out.push(z);
+      }
+      return out;
+    };
+    for (let k = 0; k < 3; k++) {
+      const groove = Math.PI / 2 + (k * 2 * Math.PI) / 3;
+      // по оси канавки подошва поднята на всю глубину — и до самого края
+      const inside = lifts(groove, edge * 0.3, edge * 0.7);
+      expect(inside.length).toBeGreaterThan(0);
+      for (const z of inside) expect(z).toBeCloseTo(depth, 3);
+      const rim = lifts(groove, edge + shell * 0.5, Infinity);
+      expect(Math.min(...rim)).toBeGreaterThan(depth * 0.9);
+      // под ушком подошва на столе
+      const under = lifts(groove + Math.PI / 3, edge * 0.3, edge * 0.7);
+      expect(under.length).toBeGreaterThan(0);
+      for (const z of under) expect(z).toBeCloseTo(0, 4);
+    }
+  });
+
+  it('тонкое дно матрицы — без канавок: продавило бы до полости', () => {
+    const { mesh } = buildSlumpShell(params('bowl'), hollow, 1.4, 0);
+    expect(validateMesh(mesh).watertight).toBe(true);
+    let lowest = Infinity;
+    for (let i = 2; i < mesh.positions.length; i += 3) {
+      if (mesh.positions[i] > 0.05) continue;
+      lowest = Math.min(lowest, mesh.positions[i]);
+    }
+    // вся подошва на столе
+    let lifted = 0;
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const z = mesh.positions[i + 2];
+      if (z > 0.01 && z < 0.3) lifted++;
+    }
+    expect(lowest).toBeCloseTo(0, 4);
+    expect(lifted).toBe(0);
+  });
+
   it('три короткие лапки: подошва на ушке, губа обнимает его снаружи', () => {
     for (const family of families) {
       const { p, fit, layout, positions } = working(family);

@@ -65,6 +65,17 @@ const CHEEK_BELOW_RIM_MM = 1.5;
  * присосом — и к матрице, и к пуансону.
  */
 export const VENT_MM = 2.5;
+/**
+ * Канавки на подошве матрицы: от отдушины к краю, посередине между ушками.
+ * Стол закрывает отдушину снизу, и без них воздуху и лишней глине из-под
+ * пласта некуда уйти. Профиль треугольный, скаты 45° — на столе принтера
+ * печатается без поддержек. Ширина у стола — столько отдушин.
+ */
+const GROOVE_WIDTH_VENTS = 2;
+/** Над вершиной канавки до пола полости — не меньше: иначе продавит. */
+const GROOVE_ROOF_MM = 1.2;
+/** Мельче этого канавка не канавка — тогда её нет вовсе. */
+const GROOVE_MIN_MM = 0.4;
 /** Тоньше фланец не делаем: лапки на нём гуляют. */
 const PUNCH_FLANGE_MIN_MM = 3;
 /**
@@ -252,10 +263,18 @@ export function buildSlumpShell(
       positions[k + 2] = z;
     }
   }
-  const outer: Grid = { nu, nv, positions };
   // отдушина не шире трети донышка: дно должно остаться дном
   const vent = clamp(ventMm, 0.5, profileRadius(profile, 0) * 0.66);
-  const shell = assembleHollowMesh(outer, inner.positions, [], vent);
+  const grooves = ventGrooves(vent, shellMm);
+  if (grooves) liftGrooveExits(positions, nu, nv, grooves);
+  const outer: Grid = { nu, nv, positions };
+  const shell = assembleHollowMesh(outer, inner.positions, [], vent, {
+    outer: grooves ? {
+      planeZ: -shellMm,
+      dense: [{ from: 0, to: Infinity, stepMm: grooves.widthMm / 4 }],
+      heightAt: grooves.heightAt,
+    } : {},
+  });
   // дно — на стол
   for (let i = 2; i < shell.positions.length; i += 3) shell.positions[i] += shellMm;
   const mesh = { ...shell, normals: meshNormals(shell.positions, shell.indices) };
@@ -275,6 +294,65 @@ export function buildSlumpShell(
       },
     },
   };
+}
+
+/** Канавки подошвы: подъём подошвы над столом в точке (x, y). */
+interface VentGrooves {
+  widthMm: number;
+  depthMm: number;
+  heightAt(x: number, y: number): number;
+}
+
+/**
+ * Три канавки от оси на углах посередине между ушками. Подъём — расстояние
+ * до края канавки (скат 45°), не выше глубины; у оси лучи сходятся, и
+ * вокруг отдушины сама собой выходит общая лунка. null — дно матрицы
+ * слишком тонко для канавки.
+ */
+function ventGrooves(ventMm: number, shellMm: number): VentGrooves | null {
+  const widthMm = GROOVE_WIDTH_VENTS * ventMm;
+  const depthMm = Math.min(widthMm / 2, shellMm - GROOVE_ROOF_MM);
+  if (depthMm < GROOVE_MIN_MM) return null;
+  const pitch = (2 * Math.PI) / PUNCH_LEGS;
+  // ушки — на −90° + k·pitch (legDistance), канавки — на полшага от них
+  const rays = Array.from({ length: PUNCH_LEGS }, (_, k) => {
+    const a = Math.PI / 2 + k * pitch;
+    return [Math.cos(a), Math.sin(a)] as const;
+  });
+  return {
+    widthMm,
+    depthMm,
+    heightAt: (x, y) => {
+      let lift = 0;
+      for (const [cx, cy] of rays) {
+        const along = x * cx + y * cy;
+        // до луча: поперёк, а позади оси — до самой оси
+        const off = along > 0 ? Math.abs(x * cy - y * cx) : Math.hypot(x, y);
+        lift = Math.max(lift, widthMm / 2 - off);
+      }
+      return clamp(lift, 0, depthMm);
+    },
+  };
+}
+
+/**
+ * Выход канавок наружу: низ стенки в их секторах поднимается вместе с краем
+ * подошвы и плавно сходит на нет к двойной глубине канавки. Подъём убывает
+ * с высотой медленнее, чем она растёт, поэтому ряды стенки не меняются
+ * местами и поверхность не складывается.
+ */
+function liftGrooveExits(positions: Float32Array, nu: number, nv: number, grooves: VentGrooves): void {
+  const z0 = positions[2];
+  const band = 2 * grooves.depthMm;
+  for (let j = 0; j <= nv; j++) {
+    for (let i = 0; i < nu; i++) {
+      const k = (j * nu + i) * 3;
+      const above = positions[k + 2] - z0;
+      if (above >= band) continue;
+      const lift = grooves.heightAt(positions[k], positions[k + 1]);
+      positions[k + 2] += lift * (1 - above / band);
+    }
+  }
 }
 
 /**
