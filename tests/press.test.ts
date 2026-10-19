@@ -306,23 +306,24 @@ describe('пуансон', () => {
     expect(validateMesh(mesh).watertight).toBe(true);
     const { positions } = mesh;
     const edge = profileRadius(vesselSurface(p).profile, 0);
-    const width = 2 * VENT_MM;
+    const width = VENT_MM;
     const depth = Math.min(width / 2, shell - 1.2);
-    const lifts = (angle: number, from: number, to: number) => {
+    // скат 45°: в стороне от оси канавки подъём меньше на это расстояние
+    const lifts = (angle: number, from: number, to: number, slope = false) => {
       const out: number[] = [];
       const cx = Math.cos(angle), cy = Math.sin(angle);
       for (let i = 0; i < positions.length; i += 3) {
         const x = positions[i], y = positions[i + 1], z = positions[i + 2];
         const along = x * cx + y * cy;
         if (z > shell - 0.5 || along < from || along > to || Math.abs(x * cy - y * cx) > 0.3) continue;
-        out.push(z);
+        out.push(slope ? z + Math.abs(x * cy - y * cx) : z);
       }
       return out;
     };
     for (let k = 0; k < 3; k++) {
       const groove = Math.PI / 2 + (k * 2 * Math.PI) / 3;
       // по оси канавки подошва поднята на всю глубину — и до самого края
-      const inside = lifts(groove, edge * 0.3, edge * 0.7);
+      const inside = lifts(groove, edge * 0.3, edge * 0.7, depth === width / 2);
       expect(inside.length).toBeGreaterThan(0);
       for (const z of inside) expect(z).toBeCloseTo(depth, 3);
       const rim = lifts(groove, edge + shell * 0.5, Infinity);
