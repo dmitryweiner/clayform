@@ -198,6 +198,9 @@ show a progress bar right on the model.
 The full casting workflow is described (in Russian) in
 [slip_casting_mold_workflow.md](slip_casting_mold_workflow.md).
 
+A detailed user guide — every shape, attachment and export mode with its
+parameters — is in [docs/](docs/README.md) (in Russian).
+
 ## Development
 
 ```bash

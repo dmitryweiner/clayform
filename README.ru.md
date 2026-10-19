@@ -186,6 +186,9 @@
 
 Полный цикл литья описан в [slip_casting_mold_workflow.md](slip_casting_mold_workflow.md).
 
+Подробное руководство — все формы, приставные детали и режимы экспорта с
+параметрами — в [docs/](docs/README.md).
+
 ## Разработка
 
 ```bash
