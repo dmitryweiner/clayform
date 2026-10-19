@@ -75,7 +75,7 @@ describe('analyzeMold — выбор схемы', () => {
 
   it('прямая чашка, расширяющаяся кверху, тоже вынимается вверх', () => {
     const mesh = buildVessel(params('cup', {
-      shape: { ...defaultFamilyParams('cup'), dRim: 90, dFoot: 60, barrel: 0, rimFlare: 0 },
+      shape: { ...defaultFamilyParams('cup'), dRim: 90, dFoot: 60, bulgeMm: 0, rimFlare: 0 },
     }));
     expect(analyzeMold(mesh, { hasHandle: false }).scheme).toBe('dropout');
   });
@@ -88,10 +88,10 @@ describe('analyzeMold — выбор схемы', () => {
 
   it('бочкообразная чашка: пузо шире венчика — вверх уже не вынуть', () => {
     const straight = buildVessel(params('cup', {
-      shape: { ...defaultFamilyParams('cup'), dRim: 90, dFoot: 60, barrel: 0, rimFlare: 0 },
+      shape: { ...defaultFamilyParams('cup'), dRim: 90, dFoot: 60, bulgeMm: 0, rimFlare: 0 },
     }));
     const barrelled = buildVessel(params('cup', {
-      shape: { ...defaultFamilyParams('cup'), dRim: 90, dFoot: 60, barrel: 0.35, rimFlare: 0 },
+      shape: { ...defaultFamilyParams('cup'), dRim: 90, dFoot: 60, bulgeMm: 13, rimFlare: 0 },
     }));
     expect(analyzeMold(straight, { hasHandle: false }).scheme).toBe('dropout');
     expect(analyzeMold(barrelled, { hasHandle: false }).scheme).not.toBe('dropout');

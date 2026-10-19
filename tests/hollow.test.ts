@@ -51,7 +51,7 @@ describe('buildHollowVessel', () => {
 
   it('у цилиндра стенка ровно заданной толщины', () => {
     const p = params('cup', {
-      shape: { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, barrel: 0, rimFlare: 0 },
+      shape: { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, bulgeMm: 0, rimFlare: 0 },
       heightMm: 100,
     });
     const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm: 3.5, baseMm: 5 }));
@@ -209,7 +209,7 @@ describe('buildHollowVessel', () => {
 
   it('в носике стенка остаётся заданной толщины', () => {
     const p = params('cup', {
-      shape: { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, barrel: 0, rimFlare: 0 },
+      shape: { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, bulgeMm: 0, rimFlare: 0 },
       heightMm: 100,
       spout: sanitizeSpout({ on: true, pullMm: 18, widthDeg: 70, zone: 0.3 }),
     });

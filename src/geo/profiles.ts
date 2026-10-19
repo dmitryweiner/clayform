@@ -49,6 +49,11 @@ export interface FamilyDef {
    * Нет у семейства ножки — нет и метода: скругление ножки ему не положено.
    */
   footZ?(p: Params, heightMm: number): number;
+  /**
+   * Перевод устаревших ключей (из старых ссылок и пресетов) в нынешние —
+   * до зажима в диапазоны. Нынешний ключ, если он есть, главнее старого.
+   */
+  legacy?(raw: Partial<Params>): Partial<Params>;
 }
 
 /**
@@ -99,6 +104,77 @@ function sampled(count: number, radius: (t: number) => number): ProfilePoint[] {
 }
 
 const SAMPLES = 25; // нечётное: t = 0.5 попадает в узел
+
+/**
+ * Острота горба — общая для горшка, вазы и чашки: −1 — полнее, к плато,
+ * 0 — как велит семейство, +1 — ребро.
+ */
+const SHARPNESS: ParamSpec = {
+  key: 'sharpness', min: -1, max: 1, step: 0.01, default: 0, unit: 'x',
+};
+
+/**
+ * Перепараметризация стороны горба: u — расстояние от пуза до конца стороны
+ * в долях, силуэт берётся в w(u). w(0)=0, w(1)=1 и w'(1)=1 — у дальнего
+ * конца наклон не меняется, излома ни у дна, ни у горла нет. У пуза
+ * w ≈ u^p, а силуэт у экстремума квадратичен, поэтому r ≈ k·u^{2p}: при
+ * p = ½ (острота +1) — линейно, ребро; при p = 2 (−1) — плоская верхушка.
+ */
+function sharpWarp(u: number, sharpness: number): number {
+  const p = Math.pow(2, -clamp(sharpness, -1, 1));
+  return u + (Math.pow(u, p) - u) * (1 - u);
+}
+
+/** Узлов на заострённый силуэт и отдельно на сгущение у пуза. */
+const SHARP_SAMPLES = 160;
+const SHARP_PEAK_SAMPLES = 32;
+
+/**
+ * Заострённый (или раздобревший) горб: силуэт семейства по контрольным
+ * точкам перепараметризуется по высоте на [lo, peak] и [peak, hi] через
+ * sharpWarp. Значения радиуса не меняются — ширина остаётся максимумом и
+ * стоит на той же высоте. При нулевой остроте точки отдаются как были.
+ */
+function sharpenAround(
+  points: ProfilePoint[], lo: number, peak: number, hi: number, sharpness: number,
+): ProfilePoint[] {
+  if (sharpness === 0 || !(lo < peak && peak < hi)) return points;
+  const def: ProfileDef = { familyId: '', heightMm: 1, points };
+  const radius = (t: number): number => {
+    if (t <= lo || t >= hi) return profileRadius(def, t);
+    if (t <= peak) return profileRadius(def, peak - sharpWarp((peak - t) / (peak - lo), sharpness) * (peak - lo));
+    return profileRadius(def, peak + sharpWarp((t - peak) / (hi - peak), sharpness) * (hi - peak));
+  };
+  return peakNodes(lo, peak, hi, points.map((q) => q.t))
+    .map((t) => ({ t, r: Math.max(MIN_RADIUS_MM, radius(t)) }));
+}
+
+/**
+ * Узлы выборки острого силуэта: равномерно по высоте, плюс сгущение к пузу —
+ * при остроте +1 там излом, и сплайн не должен его съесть.
+ */
+function peakNodes(lo: number, peak: number, hi: number, extra: number[] = []): number[] {
+  const ts = new Set<number>([lo, peak, hi, ...extra]);
+  for (let k = 0; k <= SHARP_SAMPLES; k++) ts.add(k / SHARP_SAMPLES);
+  for (let k = 1; k <= SHARP_PEAK_SAMPLES; k++) {
+    const q = (k / SHARP_PEAK_SAMPLES) ** 2;
+    ts.add(peak - q * (peak - lo));
+    ts.add(peak + q * (hi - peak));
+  }
+  return [...ts].sort((a, b) => a - b).filter((t, i, all) => i === 0 || t - all[i - 1] > 1e-7);
+}
+
+/**
+ * Колено миски — где стенка поворачивает от пологой к крутой, в долях
+ * высоты стенки. У нынешней стенки-дуги оно там, где касательная
+ * четверти круга под 45°: 1 − 1/√2. Это значение — тождество.
+ */
+const KNEE_NEUTRAL = 0.29;
+
+/** Показатель степени, переносящий колено с KNEE_NEUTRAL на kneeAt. */
+function kneePower(kneeAt: number): number {
+  return Math.log(KNEE_NEUTRAL) / Math.log(clamp(kneeAt, 0.05, 0.95));
+}
 /** Узлов на стенку миски с заданным углом у дна — излом у ножки должен читаться. */
 const WALL_SAMPLES = 128;
 
@@ -109,9 +185,10 @@ const POT: FamilyDef = {
   defaultHeightMm: 150,
   params: [
     { key: 'dBelly', min: 40, max: 320, step: 1, default: 170, unit: 'mm' },
+    { key: 'bellyAt', min: 0.25, max: 0.8, step: 0.01, default: 0.52, unit: 'x' },
+    SHARPNESS,
     { key: 'dNeck', min: 20, max: 300, step: 1, default: 108, unit: 'mm' },
     { key: 'dFoot', min: 20, max: 300, step: 1, default: 104, unit: 'mm' },
-    { key: 'bellyAt', min: 0.25, max: 0.8, step: 0.01, default: 0.52, unit: 'x' },
     { key: 'shoulder', min: 0, max: 1, step: 0.01, default: 0.45, unit: 'x' },
     { key: 'neckH', min: 0, max: 0.4, step: 0.01, default: 0.16, unit: 'x' },
     { key: 'rimFlare', min: -0.1, max: 0.6, step: 0.01, default: 0.18, unit: 'x' },
@@ -127,7 +204,8 @@ const POT: FamilyDef = {
     const neckStart = Math.max(bellyAt + 0.1, 1 - p.neckH);
 
     const points: ProfilePoint[] = [{ t: 0, r: rFoot }, { t: bellyAt, r: rBelly }];
-    if (neckStart < 0.995) {
+    const hasNeck = neckStart < 0.995;
+    if (hasNeck) {
       points.push({
         t: lerp(bellyAt, neckStart, lerp(0.45, 0.72, p.shoulder)),
         r: lerp(rNeck, rBelly, lerp(0.42, 0.78, p.shoulder)),
@@ -135,7 +213,9 @@ const POT: FamilyDef = {
       points.push({ t: neckStart, r: rNeck });
     }
     points.push({ t: 1, r: rRim });
-    return points.map((q) => ({ t: q.t, r: Math.max(MIN_RADIUS_MM, q.r) }));
+    const clamped = points.map((q) => ({ t: q.t, r: Math.max(MIN_RADIUS_MM, q.r) }));
+    // сверху горб кончается у горла: там минимум и нулевой тангенс
+    return sharpenAround(clamped, 0, bellyAt, hasNeck ? neckStart : 1, p.sharpness);
   },
 };
 
@@ -146,6 +226,7 @@ const BOWL: FamilyDef = {
     { key: 'dRim', min: 60, max: 400, step: 1, default: 210, unit: 'mm' },
     { key: 'dFoot', min: 20, max: 300, step: 1, default: 92, unit: 'mm' },
     { key: 'curvature', min: 0, max: 1, step: 0.01, default: 0.6, unit: 'x' },
+    { key: 'kneeAt', min: 0.1, max: 0.7, step: 0.01, default: KNEE_NEUTRAL, unit: 'x' },
     { key: 'baseAngle', min: 0, max: 90, step: 1, default: 0, unit: 'deg' },
     { key: 'footH', min: 0, max: 60, step: 1, default: 8, unit: 'mm' },
     FOOT_FILLET,
@@ -158,13 +239,14 @@ const BOWL: FamilyDef = {
     const rRim = p.dRim / 2;
     const tFoot = clamp(p.footH / Math.max(1, heightMm), 0, 0.45);
     const c = p.curvature;
+    const knee = kneePower(p.kneeAt);
     // Угол у дна не задан — прежняя стенка: смесь прямой и дуги окружности.
     // У дуги касательная у дна горизонтальна, поэтому от ножки такая стенка
     // всегда уходит полкой; заданный угол переводит стенку на кривую Безье.
     if (p.baseAngle > 0) {
       // Узел ровно на кромке ножки и густая выборка стенки: иначе сплайн
       // профиля сгладил бы излом у дна, и угла там было бы не видно.
-      const wall = bowlWall(rFoot, rRim, tFoot * heightMm, heightMm, c, p.baseAngle);
+      const wall = bowlWall(rFoot, rRim, tFoot * heightMm, heightMm, c, p.baseAngle, knee);
       const points: ProfilePoint[] = [{ t: 0, r: rFoot }];
       if (tFoot > 0) points.push({ t: tFoot, r: rFoot });
       for (let k = 1; k <= WALL_SAMPLES; k++) {
@@ -175,7 +257,8 @@ const BOWL: FamilyDef = {
     }
     return sampled(SAMPLES, (t) => {
       if (t <= tFoot) return rFoot;
-      const s = (t - tFoot) / (1 - tFoot);
+      // колено выше — стенка по высоте отстаёт: s^a при a > 1
+      const s = Math.pow((t - tFoot) / (1 - tFoot), knee);
       // c=0 — прямая, c=1 — дуга окружности r = √(1−(1−s)²): стенка круто
       // уходит от дна и приходит к краю вертикально, как у пиалы
       const shape = lerp(s, Math.sqrt(Math.max(0, 1 - (1 - s) * (1 - s))), c);
@@ -195,11 +278,15 @@ const QUARTER_ELLIPSE = 0.5523;
  * пиалы. Длины ручек — те же, что у прямой (c = 0) и четверти эллипса
  * (c = 1), между ними линейно.
  *
+ * Колено двигает высоту второй ручки: p2y^(1/a) — выше при a > 1. Первую
+ * ручку оно не трогает, угол у дна остаётся тем, что задан.
+ *
  * Высоты управляющих точек не убывают, поэтому и высота по кривой монотонна:
  * радиус на заданной высоте находится бисекцией по параметру кривой.
  */
 function bowlWall(
   rFoot: number, rRim: number, zFoot: number, heightMm: number, curvature: number, baseAngleDeg: number,
+  kneePow = 1,
 ): (z: number) => number {
   const c = clamp(curvature, 0, 1);
   const w = rRim - rFoot;
@@ -207,7 +294,7 @@ function bowlWall(
   const p1x = lerp(1 / 3, QUARTER_ELLIPSE, c);
   const p1y = lerp(1 / 3, 0, c);
   const p2x = lerp(2 / 3, 1, c);
-  const p2y = lerp(2 / 3, 1 - QUARTER_ELLIPSE, c);
+  const p2y = Math.pow(lerp(2 / 3, 1 - QUARTER_ELLIPSE, c), 1 / kneePow);
   // первая ручка: длина как у формы без угла, направление — по углу
   const angle = (clamp(baseAngleDeg, 0, 90) * Math.PI) / 180;
   const handle = Math.hypot(p1x * w, p1y * h);
@@ -238,18 +325,37 @@ const CUP: FamilyDef = {
   params: [
     { key: 'dRim', min: 30, max: 220, step: 1, default: 84, unit: 'mm' },
     { key: 'dFoot', min: 25, max: 200, step: 1, default: 66, unit: 'mm' },
-    { key: 'barrel', min: -0.25, max: 0.35, step: 0.01, default: 0.06, unit: 'x' },
+    // по умолчанию — прежняя «бочка» 0.06 от среднего радиуса 37.5 мм
+    { key: 'bulgeMm', min: -30, max: 40, step: 0.25, default: 2.25, unit: 'mm' },
+    { key: 'bulgeAt', min: 0.2, max: 0.8, step: 0.01, default: 0.5, unit: 'x' },
+    SHARPNESS,
     { key: 'rimFlare', min: -0.08, max: 0.4, step: 0.01, default: 0, unit: 'x' },
     BASE_FILLET,
   ],
+  // «Бочка» была долей среднего радиуса; теперь выпуклость в миллиметрах
+  legacy(raw) {
+    if (typeof raw.bulgeMm === 'number' || typeof raw.barrel !== 'number' || !Number.isFinite(raw.barrel)) {
+      return raw;
+    }
+    const diameter = (key: string, fallback: number): number => {
+      const value = raw[key];
+      return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+    };
+    const rMean = (clamp(diameter('dRim', 84), 30, 220) + clamp(diameter('dFoot', 66), 25, 200)) / 4;
+    return { ...raw, bulgeMm: raw.barrel * rMean };
+  },
   points(p, _heightMm) {
     const rFoot = p.dFoot / 2;
     const rRim = p.dRim / 2;
-    const rMean = (rFoot + rRim) / 2;
-    return sampled(SAMPLES, (t) => {
-      const straight = lerp(rFoot, rRim, t);
-      return (straight + p.barrel * rMean * Math.sin(Math.PI * t)) * rimFactor(p.rimFlare, t);
-    });
+    const at = clamp(p.bulgeAt, 0.05, 0.95);
+    // cos(π/2·u) от пика к концам; при at = ½ и без остроты — ровно sin(πt)
+    const radius = (t: number): number => {
+      const u = t < at ? (at - t) / at : (t - at) / (1 - at);
+      const bump = Math.cos((Math.PI / 2) * sharpWarp(u, p.sharpness));
+      return (lerp(rFoot, rRim, t) + p.bulgeMm * bump) * rimFactor(p.rimFlare, t);
+    };
+    if (p.sharpness === 0 && at === 0.5) return sampled(SAMPLES, radius);
+    return peakNodes(0, at, 1).map((t) => ({ t, r: Math.max(MIN_RADIUS_MM, radius(t)) }));
   },
 };
 
@@ -258,10 +364,11 @@ const VASE: FamilyDef = {
   defaultHeightMm: 260,
   params: [
     { key: 'dBelly', min: 40, max: 320, step: 1, default: 156, unit: 'mm' },
+    { key: 'bellyAt', min: 0.2, max: 0.7, step: 0.01, default: 0.4, unit: 'x' },
+    SHARPNESS,
     { key: 'dNeck', min: 12, max: 200, step: 1, default: 54, unit: 'mm' },
     { key: 'dRim', min: 14, max: 260, step: 1, default: 76, unit: 'mm' },
     { key: 'dFoot', min: 18, max: 260, step: 1, default: 78, unit: 'mm' },
-    { key: 'bellyAt', min: 0.2, max: 0.7, step: 0.01, default: 0.4, unit: 'x' },
     { key: 'neckAt', min: 0.5, max: 0.95, step: 0.01, default: 0.79, unit: 'x' },
     { key: 'footH', min: 0, max: 90, step: 1, default: 12, unit: 'mm' },
     FOOT_FILLET,
@@ -289,7 +396,9 @@ const VASE: FamilyDef = {
     points.push({ t: bellyAt, r: rBelly });
     points.push({ t: neckAt, r: rNeck });
     points.push({ t: 1, r: rRim });
-    return points.map((q) => ({ t: q.t, r: Math.max(MIN_RADIUS_MM, q.r) }));
+    const clamped = points.map((q) => ({ t: q.t, r: Math.max(MIN_RADIUS_MM, q.r) }));
+    // снизу горб начинается над ножкой, сверху кончается у горла
+    return sharpenAround(clamped, tFoot > 0.015 ? tFoot : 0, bellyAt, neckAt, p.sharpness);
   },
 };
 
@@ -319,9 +428,11 @@ export function defaultFamilyParams(id: string): Params {
  * которую в ядро попадают числа из UI и share-ссылок.
  */
 export function clampFamilyParams(id: string, raw: Partial<Params>): Params {
+  const family = familyById(id);
+  const source = family.legacy ? family.legacy(raw) : raw;
   const out: Params = {};
-  for (const spec of familyById(id).params) {
-    const value = raw[spec.key];
+  for (const spec of family.params) {
+    const value = source[spec.key];
     out[spec.key] = typeof value === 'number' && Number.isFinite(value)
       ? clamp(value, spec.min, spec.max)
       : spec.default;
@@ -502,7 +613,13 @@ function limitedTangents(points: ProfilePoint[], i: number): [number, number] {
   const raw = (k: number): number => {
     if (k === 0) return slope(points, 0);
     if (k === n - 1) return slope(points, n - 2);
-    return (slope(points, k - 1) + slope(points, k)) / 2;
+    const before = slope(points, k - 1);
+    const after = slope(points, k);
+    // экстремум: тангенс нулевой для обоих сегментов, иначе один сегмент
+    // зануляет его у себя, а другой нет — и в узле излом. Стык с плоским
+    // сегментом (верх ножки) экстремумом не считается: там излом задуман
+    if (before * after < 0) return 0;
+    return (before + after) / 2;
   };
   const delta = slope(points, i);
   if (delta === 0) return [0, 0];

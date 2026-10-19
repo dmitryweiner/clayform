@@ -17,9 +17,16 @@ and “base”, the sizes are real, and what comes out can be cast.
 
 **Four shape families** after historical references — pot (krynka,
 korchaga, teapot), bowl (plate, piala, kylix), cup (mug, skyphos) and vase
-(amphora, jug, krater, lekythos). Each has its own parameters: neck, belly,
-mouth and base diameters, belly height, shoulder sharpness, rim flare, foot
-height.
+(amphora, jug, krater, lekythos). Each has its own parameters: neck, mouth
+and base diameters, shoulder sharpness, rim flare, foot height.
+
+The **bulge** of a pot, vase and cup is set by the same three sliders: how
+wide (“Width” — the diameter at the widest point; for the cup, “Bulge” — mm
+beyond a straight wall, negative for a waist), at what height, and its
+**sharpness** — from a full, almost flat-topped bulge (−1) through a smooth
+one (0) to a sharp ridge (+1). A bowl is widest at the rim, so it has wall
+“Roundness” and a **roundness height** — where the wall turns from shallow
+to steep.
 
 Every shape has a **base fillet** — the radius of the edge where the wall or
 foot meets the base — and the bowl and vase also have a **foot fillet**, the

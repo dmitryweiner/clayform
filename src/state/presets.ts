@@ -141,20 +141,20 @@ export const PRESETS: Preset[] = [
     { heightMm: 110 }),
 
   make('mug', 'cup',
-    { dRim: 88, dFoot: 70, barrel: 0.08, rimFlare: 0 },
+    { dRim: 88, dFoot: 70, bulgeMm: 3.25, rimFlare: 0 },
     {
       heightMm: 100,
       handle: { on: true, count: 1, topAt: 0.84, bottomAt: 0.28, reachMm: 30, thicknessMm: 11, widthRatio: 0.7 },
     }),
 
   make('tumbler', 'cup',
-    { dRim: 78, dFoot: 58, barrel: 0, rimFlare: 0 },
+    { dRim: 78, dFoot: 58, bulgeMm: 0, rimFlare: 0 },
     { heightMm: 110 }),
 
   // У настоящего скифоса ручки горизонтальные; наши лежат в плоскости
   // разъёма, иначе форма не разнялась бы. Осознанная стилизация.
   make('skyphos', 'cup',
-    { dRim: 120, dFoot: 60, barrel: 0.12, rimFlare: 0.08 },
+    { dRim: 120, dFoot: 60, bulgeMm: 5.5, rimFlare: 0.08 },
     {
       heightMm: 90,
       handle: {
@@ -164,7 +164,7 @@ export const PRESETS: Preset[] = [
     }),
 
   make('kanopka', 'cup',
-    { dRim: 92, dFoot: 78, barrel: 0.28, rimFlare: 0.05 },
+    { dRim: 92, dFoot: 78, bulgeMm: 12, rimFlare: 0.05 },
     {
       heightMm: 115,
       handle: { on: true, count: 1, topAt: 0.8, bottomAt: 0.24, reachMm: 32, thicknessMm: 12, widthRatio: 0.6 },

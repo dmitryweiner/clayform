@@ -92,6 +92,27 @@ if (!afterExtremes.includes('замкнуто ✓')) {
   errors.push(`[slider-extremes] audit="${afterExtremes}"`);
 }
 
+// выпуклость, её высота и острота — у каждого семейства свои; крайние
+// сочетания не должны рвать меш
+label('bulge-extremes');
+const bulgeControls = ['p_bellyAt', 'p_bulgeMm', 'p_bulgeAt', 'p_sharpness', 'p_curvature', 'p_kneeAt'];
+for (let i = 0; i < families.length; i++) {
+  await page.locator('#familyGrid .family-btn').nth(i).click();
+  await page.waitForTimeout(150);
+  const ids = [];
+  for (const id of bulgeControls) if (await page.locator(`#${id}`).count()) ids.push(id);
+  if (ids.length < 2) errors.push(`[bulge-extremes:${families[i]}] ползунков выпуклости: ${ids.join(',')}`);
+  for (const bound of ['min', 'max']) {
+    for (const id of ids) {
+      const slider = page.locator(`#${id}`);
+      await slider.fill(await slider.getAttribute(bound));
+    }
+    await page.waitForTimeout(150);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[bulge-extremes:${families[i]}:${bound}] audit="${verdict}"`);
+  }
+}
+
 // высота в миллиметрах доезжает до габаритов модели
 label('height');
 await page.fill('#heightMm', '300');

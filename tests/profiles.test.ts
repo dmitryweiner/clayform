@@ -169,20 +169,140 @@ describe('bowl — миска/тарелка/пиала', () => {
 describe('cup — чашка/стакан/кружка', () => {
   const base = defaultFamilyParams('cup');
 
-  it('barrel=0 — прямой усечённый конус между заявленными диаметрами', () => {
-    const def = buildProfile('cup', { ...base, dRim: 84, dFoot: 62, barrel: 0, rimFlare: 0 }, 95);
+  it('bulgeMm=0 — прямой усечённый конус между заявленными диаметрами', () => {
+    const def = buildProfile('cup', { ...base, dRim: 84, dFoot: 62, bulgeMm: 0, rimFlare: 0 }, 95);
     expect(profileRadius(def, 0) * 2).toBeCloseTo(62, 6);
     expect(profileRadius(def, 1) * 2).toBeCloseTo(84, 6);
     expect(profileRadius(def, 0.5) * 2).toBeCloseTo(73, 1);
   });
 
-  it('barrel>0 раздувает середину, barrel<0 — втягивает', () => {
+  it('выпуклость — миллиметры над прямой стенкой на высоте выпуклости; <0 — талия', () => {
     const params = { ...base, dRim: 84, dFoot: 62, rimFlare: 0 };
-    const straight = profileRadius(buildProfile('cup', { ...params, barrel: 0 }, 95), 0.5);
-    const fat = profileRadius(buildProfile('cup', { ...params, barrel: 0.3 }, 95), 0.5);
-    const waisted = profileRadius(buildProfile('cup', { ...params, barrel: -0.2 }, 95), 0.5);
-    expect(fat).toBeGreaterThan(straight + 3);
-    expect(waisted).toBeLessThan(straight - 2);
+    for (const bulgeAt of [0.3, 0.5, 0.7]) {
+      const straight = (62 + (84 - 62) * bulgeAt) / 2;
+      const fat = buildProfile('cup', { ...params, bulgeAt, bulgeMm: 8 }, 95);
+      const waisted = buildProfile('cup', { ...params, bulgeAt, bulgeMm: -6 }, 95);
+      expect(profileRadius(fat, bulgeAt), `at ${bulgeAt}`).toBeCloseTo(straight + 8, 6);
+      expect(profileRadius(waisted, bulgeAt), `at ${bulgeAt}`).toBeCloseTo(straight - 6, 6);
+    }
+  });
+
+  it('при цилиндре пик выпуклости стоит на заданной высоте', () => {
+    const params = { ...base, dRim: 80, dFoot: 80, bulgeMm: 10, rimFlare: 0 };
+    for (const bulgeAt of [0.25, 0.65]) {
+      const rs = samples('cup', { ...params, bulgeAt }, 100, 401);
+      expect(rs.indexOf(maxOf(rs)) / 400).toBeCloseTo(bulgeAt, 2);
+    }
+  });
+
+  it('старая «бочка» переводится в мм от среднего радиуса, и перевод идемпотентен', () => {
+    const once = clampFamilyParams('cup', { dRim: 88, dFoot: 70, barrel: 0.08 });
+    expect(once.bulgeMm).toBeCloseTo(0.08 * (88 + 70) / 4, 9);
+    expect(once).not.toHaveProperty('barrel');
+    expect(clampFamilyParams('cup', once)).toEqual(once);
+    // нынешний ключ главнее старого
+    expect(clampFamilyParams('cup', { barrel: 0.3, bulgeMm: 1 }).bulgeMm).toBe(1);
+    // дефолт — прежняя дефолтная бочка 0.06
+    expect(clampFamilyParams('cup', { barrel: 0.06 }).bulgeMm).toBeCloseTo(base.bulgeMm, 9);
+  });
+});
+
+/** Наклон силуэта dr/dt по обе стороны от t: излом — разные знаки и крутизна. */
+function slopes(def: ReturnType<typeof buildProfile>, t: number, h = 1e-3): [number, number] {
+  return [
+    (profileRadius(def, t) - profileRadius(def, t - h)) / h,
+    (profileRadius(def, t + h) - profileRadius(def, t)) / h,
+  ];
+}
+
+describe('острота горба — горшок, ваза, чашка', () => {
+  const cases: [string, Record<string, number>, number][] = [
+    ['pot', { ...defaultFamilyParams('pot'), bellyAt: 0.5 }, 0.5],
+    ['vase', { ...defaultFamilyParams('vase'), bellyAt: 0.4 }, 0.4],
+    ['cup', { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, bulgeMm: 10, bulgeAt: 0.5 }, 0.5],
+  ];
+
+  it.each(cases)('%s: ноль — ровно прежний силуэт', (id, params) => {
+    const neutral = buildProfile(id, { ...params, sharpness: 0 }, 150);
+    const legacy = buildProfile(id, Object.fromEntries(Object.entries(params).filter(([k]) => k !== 'sharpness')), 150);
+    expect(neutral.points).toEqual(legacy.points);
+  });
+
+  it.each(cases)('%s: ширина и её высота не меняются', (id, params, peak) => {
+    const r0 = maxOf(samples(id, { ...params, sharpness: 0 }, 150, 801));
+    for (const sharpness of [-1, -0.5, 0.5, 1]) {
+      const rs = samples(id, { ...params, sharpness }, 150, 801);
+      expect(maxOf(rs), `${sharpness}`).toBeCloseTo(r0, 4);
+      if (id !== 'cup') expect(rs.indexOf(maxOf(rs)) / 800, `${sharpness}`).toBeCloseTo(peak, 2);
+    }
+  });
+
+  it.each(cases)('%s: +1 — ребро у пуза, −1 — полнее', (id, params, peak) => {
+    const sharp = buildProfile(id, { ...params, sharpness: 1 }, 150);
+    const round = buildProfile(id, { ...params, sharpness: 0 }, 150);
+    const full = buildProfile(id, { ...params, sharpness: -1 }, 150);
+    const [left, right] = slopes(sharp, peak);
+    expect(left).toBeGreaterThan(20);
+    expect(right).toBeLessThan(-20);
+    const [l0, r0] = slopes(round, peak);
+    expect(Math.abs(l0) + Math.abs(r0)).toBeLessThan((left - right) / 4);
+    // на десятой доле высоты от пуза полный горб шире круглого, острый — уже
+    for (const t of [peak - 0.1, peak + 0.1]) {
+      expect(profileRadius(full, t)).toBeGreaterThan(profileRadius(round, t));
+      expect(profileRadius(sharp, t)).toBeLessThan(profileRadius(round, t));
+    }
+  });
+
+  it('у горла излома нет ни при какой остроте', () => {
+    const params = { ...defaultFamilyParams('vase'), footH: 0 };
+    const neck = defaultFamilyParams('vase').neckAt;
+    for (const sharpness of [-1, 0, 1]) {
+      const [l, r] = slopes(buildProfile('vase', { ...params, sharpness }, 260), neck, 1e-4);
+      expect(Math.abs(l - r), `${sharpness}`).toBeLessThan(1);
+    }
+  });
+});
+
+describe('высота округлости миски — колено', () => {
+  const base = { ...defaultFamilyParams('bowl'), dRim: 200, dFoot: 80, footH: 0, rimFlare: 0, curvature: 0.8 };
+
+  it('нейтраль — прежний силуэт в обеих ветках', () => {
+    for (const baseAngle of [0, 40]) {
+      const neutral = { ...base, baseAngle, kneeAt: 0.29 };
+      const legacy = Object.fromEntries(Object.entries(neutral).filter(([k]) => k !== 'kneeAt'));
+      expect(buildProfile('bowl', neutral, 80).points).toEqual(buildProfile('bowl', legacy, 80).points);
+    }
+  });
+
+  it('колено выше — стенка у дна круче и уже, края на месте', () => {
+    for (const baseAngle of [0, 40]) {
+      const low = buildProfile('bowl', { ...base, baseAngle, kneeAt: 0.15 }, 80);
+      const high = buildProfile('bowl', { ...base, baseAngle, kneeAt: 0.6 }, 80);
+      expect(profileRadius(high, 0.3), `угол ${baseAngle}`).toBeLessThan(profileRadius(low, 0.3) - 5);
+      for (const def of [low, high]) {
+        expect(profileRadius(def, 0) * 2).toBeCloseTo(80, 3);
+        expect(profileRadius(def, 1) * 2).toBeCloseTo(200, 3);
+      }
+    }
+  });
+
+  it('колено не трогает угол у дна', () => {
+    const heightMm = 90;
+    for (const kneeAt of [0.15, 0.6]) {
+      const def = buildProfile('bowl', { ...base, baseAngle: 35, kneeAt }, heightMm);
+      const dt = 1 / heightMm;
+      const dr = profileRadius(def, dt) - profileRadius(def, 0);
+      expect((Math.atan2(dt * heightMm, dr) * 180) / Math.PI, `колено ${kneeAt}`).toBeCloseTo(35, -1);
+    }
+  });
+
+  it('стенка монотонна при любом колене', () => {
+    for (const kneeAt of [0.1, 0.29, 0.7]) {
+      for (const curvature of [0, 1]) {
+        const rs = samples('bowl', { ...base, curvature, kneeAt });
+        for (let i = 1; i < rs.length; i++) expect(rs[i]).toBeGreaterThanOrEqual(rs[i - 1] - 1e-6);
+      }
+    }
   });
 });
 
@@ -237,7 +357,7 @@ describe('скругления у дна и у ножки', () => {
   const at = (def: ReturnType<typeof buildProfile>, z: number) => profileRadius(def, z / def.heightMm);
 
   it('кромка дна цилиндра — четверть окружности радиуса R', () => {
-    const shape = { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, barrel: 0, rimFlare: 0 };
+    const shape = { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, bulgeMm: 0, rimFlare: 0 };
     const R = 6;
     const sharp = buildProfile('cup', shape, 100);
     const round = buildProfile('cup', { ...shape, baseFillet: R }, 100);

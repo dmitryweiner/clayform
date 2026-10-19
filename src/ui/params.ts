@@ -13,7 +13,8 @@ export interface ParamRowsHandle {
 }
 
 function format(spec: ParamSpec, value: number): string {
-  if (spec.unit === 'mm') return `${Math.round(value)}`;
+  // дробный шаг (выпуклость чашки, скругления) — с долями, без хвостовых нулей
+  if (spec.unit === 'mm') return spec.step < 1 ? `${Number(value.toFixed(2))}` : `${Math.round(value)}`;
   if (spec.unit === 'deg') return value > 0 ? `${Math.round(value)}°` : t('param.auto');
   return value.toFixed(2);
 }

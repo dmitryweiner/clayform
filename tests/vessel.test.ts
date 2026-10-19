@@ -22,7 +22,7 @@ describe('buildVessel', () => {
     const mesh = buildVessel({
       ...defaultBuildParams(),
       family: 'cup',
-      shape: { ...defaultFamilyParams('cup'), dRim: 90, dFoot: 70, barrel: 0, rimFlare: 0 },
+      shape: { ...defaultFamilyParams('cup'), dRim: 90, dFoot: 70, bulgeMm: 0, rimFlare: 0 },
       heightMm,
       nu: 256,
     });
@@ -47,7 +47,7 @@ describe('buildVessel', () => {
     const mesh = buildVessel({
       ...defaultBuildParams(),
       family: 'cup',
-      shape: { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, barrel: 0, rimFlare: 0 },
+      shape: { ...defaultFamilyParams('cup'), dRim: 80, dFoot: 80, bulgeMm: 0, rimFlare: 0 },
       heightMm: 100,
       nu: 512,
     });
