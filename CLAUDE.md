@@ -13,6 +13,10 @@ cast-builder заливает сам — через горловину и кан
 (`PLAN-EXPORT.md`). Под кнопкой экспорта — ссылка на него. Тесты
 cast-builder стоят на STL, выгруженных ядром clayform (`fixtures/README.md`
 там; печатные пересобирает его `scripts/fixtures.mjs` из исходников clayform).
+После правок тела, носика или крышки — проверка, что каждый встроенный
+пресет, выгруженный печатным, cast-builder заливает в мастер (~10 с):
+`cd ../cast-builder && ../clayform/node_modules/.bin/vite-node --root
+../clayform scripts/fixtures.mjs --presets` (`--res <n>`, по умолчанию 192).
 
 ## План
 
