@@ -87,11 +87,12 @@ describe('toBuildParams', () => {
   });
 });
 
-describe('сплошное изделие', () => {
-  it('булев флаг, по умолчанию выключен, мусор — false', () => {
-    expect(defaultState().solid).toBe(false);
-    expect(sanitizeState({ solid: true }).solid).toBe(true);
-    expect(sanitizeState({ solid: 1 }).solid).toBe(false);
+describe('оснастка уехала в cast-builder', () => {
+  it('сплошного изделия больше нет: старые ссылки с галочкой читаются без неё', () => {
+    const old = sanitizeState({ ...defaultState(), solid: true });
+    expect(old).not.toHaveProperty('solid');
+    expect(old).toEqual(defaultState());
+    expect(sanitizeState(old)).toEqual(old);
   });
 
   it('оснастки в состоянии больше нет: старые ссылки с ней читаются без неё', () => {

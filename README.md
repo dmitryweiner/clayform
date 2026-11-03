@@ -6,9 +6,9 @@
 
 **Clay pottery — from parameters to STL.**
 A web app: pick a typical shape, turn its dimensions in millimetres, add
-relief and roulette patterns — and get a file to print in clay, or a solid
-piece to build slip-casting molds from in
-[Cast Builder](https://dmitryweiner.github.io/cast-builder/).
+relief and roulette patterns — and get a file to print in clay — the same file
+[Cast Builder](https://dmitryweiner.github.io/cast-builder/) builds
+slip-casting molds from.
 
 A geometric relative of [MathSculpt](../mathsculpt/), but about pottery
 rather than mathematical surfaces: the parameters are called “neck”, “belly”
@@ -94,10 +94,10 @@ There are two kinds of spout. A *pulled lip*, as on a krynka: the cavity
 follows it, so the pour is a channel rather than a solid lump of clay. A
 *tubular* one, as on a teapot: an applied tube arcing from the wall to the
 tip, with attachment height, length, diameters at the base and the tip, and
-the cut angle. In a solid piece (the blank for molds) the tube is solid — slip
-casting makes the spout hollow anyway. In the STL of the piece itself a real
-channel is cut through the wall, with walls as thick as the body, and the tip
-is opened.
+the cut angle. In the STL a real channel is cut through the wall, with walls
+as thick as the body, and the tip is opened; for a casting master Cast
+Builder fills the channel along with the cavity — slip casting makes the
+spout hollow anyway.
 
 Relief and roulette go onto the body of revolution **before** it is united
 with the handle and spout, so the applied parts stay smooth. That is on
@@ -117,8 +117,8 @@ edge (four free fonts with Cyrillic — Rubik, PT Serif, Comfortaa, Oswald),
 optionally followed by the date, and an uploaded logo in the middle
 (brightness is depth, with rotation and size). It reads on the upturned
 piece; “Show base” turns the camera there. The mark travels everywhere the
-piece does: into the printed piece and the solid one — and from there into
-the molds Cast Builder makes.
+piece does: into the printed piece — and from there into the molds Cast
+Builder makes.
 
 **The rim edge** is smoothed with a radius, as a potter does with a finger:
 the wall is cut lower under the edge and an arc makes up the top, so the
@@ -126,12 +126,10 @@ height stays exactly as set. Zero gives the flat cut of a raw edge.
 
 **Export** gives the piece as it is printed in clay: hollow, with the set
 wall, base and rim — and the lid as a separate file or, with “Lid
-alongside”, in the same one. With **“Solid”** it gives the piece as a solid
-body with the handle and the spout, and the lid solid and upside down, as it
-goes into a mold. That is the blank for the tooling: the master positive,
-the pour boxes for silicone (the parting scheme is chosen from the shape)
-and the slump mold with its punch are built from a ready STL by a separate
-app, [Cast Builder](https://dmitryweiner.github.io/cast-builder/)
+alongside”, in the same one. The same STL is the input for the tooling: the
+master positive (filled solid from the hollow piece), the pour boxes for
+silicone (the parting scheme is chosen from the shape) and the slump mold
+with its punch are built by a separate app, [Cast Builder](https://dmitryweiner.github.io/cast-builder/)
 ([source](https://github.com/dmitryweiner/cast-builder)).
 
 **The heavy lifting is done by a worker.** Boolean operations (the manifold

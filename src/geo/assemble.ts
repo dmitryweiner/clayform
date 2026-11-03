@@ -15,7 +15,7 @@ import { assembleMesh } from './surface';
 import type { CsgApi } from './csg';
 import { CsgScope, toManifold, fromManifold } from './csg';
 import type { BuildParams } from './build';
-import { buildVessel, vesselSurface } from './build';
+import { vesselSurface } from './build';
 import type { HandleState } from './handle';
 import { buildHandles } from './handle';
 import type { SpoutState } from './spout';
@@ -34,28 +34,6 @@ export function unionAll(csg: CsgApi, meshes: SurfaceMesh[]): SurfaceMesh {
   } finally {
     scope.dispose();
   }
-}
-
-/**
- * Сплошной позитив изделия со всеми приставками. Это то, вокруг чего потом
- * строится литейная оснастка.
- */
-export function buildSolidVessel(
-  csg: CsgApi,
-  p: BuildParams,
-  handle: HandleState,
-  spout: SpoutState,
-): SurfaceMesh {
-  const body = buildVessel(p);
-  const surface = vesselSurface(p);
-  // Носик приклеивается сплошным: мастер и оснастка работают с позитивом, а
-  // в шликерном литье носик и так отливается полым — проход через стенку
-  // прорезают по сырому.
-  const parts = [
-    ...buildHandles(handle, surface.profile, surface.heightMm),
-    ...maybe(buildAppliedSpout(spout, surface.profile, surface.heightMm)),
-  ];
-  return parts.length === 0 ? body : unionAll(csg, [body, ...parts]);
 }
 
 /**

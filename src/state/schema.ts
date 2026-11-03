@@ -39,13 +39,6 @@ export interface AppState {
   mark: MarkState;
   hollow: HollowState;
   /**
-   * Изделие сплошным телом, а не полым: с ручкой и носиком, без усадки и
-   * горловины. Это заготовка для оснастки — формы, ванночки и отминку
-   * строит отдельное приложение cast-builder по готовому STL, и полое
-   * изделие с носиком оно не заполнит: канал носика открывает полость наружу.
-   */
-  solid: boolean;
-  /**
    * Крышка рядом с изделием, юбкой вниз, — и в превью, и одним STL на двоих:
    * печатать за один заход. Только с крышкой.
    */
@@ -72,7 +65,6 @@ export function defaultState(): AppState {
     lid: defaultLid(),
     mark: defaultMark(),
     hollow: defaultHollow(),
-    solid: false,
     lidBeside: false,
     resolution: 192,
   };
@@ -135,7 +127,6 @@ export function sanitizeState(raw: unknown): AppState {
     lid: sanitizeLid(source.lid),
     mark: sanitizeMark(source.mark),
     hollow: sanitizeHollow(source.hollow),
-    solid: typeof source.solid === 'boolean' ? source.solid : false,
     lidBeside: typeof source.lidBeside === 'boolean' ? source.lidBeside : false,
     resolution,
   };

@@ -14,8 +14,8 @@ import { mergeMeshes } from '../geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from '../geo/layout';
 import { buildProfile } from '../geo/profiles';
 import type { LidFit } from '../geo/lid';
-import { lidFit, lidSeat, buildLidMesh, buildLidSolid } from '../geo/lid';
-import { buildSolidVessel, buildPrintableVessel } from '../geo/assemble';
+import { lidFit, lidSeat, buildLidMesh } from '../geo/lid';
+import { buildPrintableVessel } from '../geo/assemble';
 import { validateMesh, assessExport } from '../geo/validate';
 import type { AppState } from '../state/schema';
 import { sanitizeState, toBuildParams, effectiveSpout, lidRelief } from '../state/schema';
@@ -82,12 +82,11 @@ function fitOf(state: AppState): LidFit | null {
 
 /**
  * Изделие целиком: тело, ручки, трубка носика — полое, с проходом сквозь
- * стенку, или сплошное, заготовкой для оснастки в cast-builder. Ровно это
- * уходит в STL — и ровно это показывает превью, когда пользователь
- * остановился.
+ * стенку. Ровно это уходит в STL — и ровно это показывает превью, когда
+ * пользователь остановился. Сплошной мастер для оснастки cast-builder
+ * заливает из него сам.
  */
 function printableVessel(csg: CsgApi, state: AppState, segments: number): SurfaceMesh {
-  if (state.solid) return buildSolidVessel(csg, toBuildParams(state, segments, markStrip), state.handle, effectiveSpout(state));
   const fit = fitOf(state);
   return buildPrintableVessel(
     csg, toBuildParams(state, segments, markStrip), state.hollow, state.handle, effectiveSpout(state),
@@ -108,11 +107,8 @@ function vesselPart(csg: CsgApi, jobId: number, state: AppState, segments: numbe
 }
 
 /**
- * Что уходит в STL: само изделие и, если она есть, крышка — отдельным
- * файлом и в печатном положении, юбкой вниз на столе. Сплошная крышка —
- * позитив для оснастки: перевёрнутая юбкой вверх, как её кладут в форму
- * (торец юбки — устье, в него льют шликер), и всегда отдельным файлом —
- * в одном STL с изделием cast-builder принял бы их за одну модель.
+ * Что уходит в STL: само изделие и, если она есть, крышка — в печатном
+ * положении, юбкой вниз на столе, отдельным файлом или «рядом» одним.
  * Меши проверяем: от вердикта зависит, выпускать ли файл.
  */
 function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: number): JobPart[] {
@@ -125,10 +121,8 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
   ];
   if (fit) {
     progress.next({ code: 'progress.lid' });
-    const lid = state.solid
-      ? buildLidSolid(fit, state.lid, segments, { upsideDown: true, relief: lidRelief(state) })
-      : buildLidMesh(fit, state.lid, segments, { relief: lidRelief(state) });
-    if (state.lidBeside && !state.solid) {
+    const lid = buildLidMesh(fit, state.lid, segments, { relief: lidRelief(state) });
+    if (state.lidBeside) {
       // Один файл на двоих: печатают за один заход. Две замкнутые
       // компоненты в одном меше — законный STL, проверка его принимает.
       meshes[0] = {
