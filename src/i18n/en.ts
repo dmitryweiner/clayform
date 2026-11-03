@@ -281,14 +281,11 @@ export const en: Record<keyof typeof ru, string> = {
   'export.rim.hint': '0 — a flat cut; never more than half the wall — that would be an undercut',
   'export.lidBeside': 'Lid alongside',
   'export.lidBeside.hint': 'the lid skirt-down next to the piece, in one file — to print in one go',
-  'export.solid': 'Solid',
-  'export.solid.hint': 'a solid body with the handle and the spout, no cavity — the blank for molds, pour boxes and slump molds in Cast Builder',
   'export.cast': 'Molds, pour boxes and slump molds are built in',
-  'export.cast.tail': ': export the piece solid and open the file there.',
+  'export.cast.tail': ': export the piece and open the file there, the lid as a separate file.',
 
   // --- parts ---
   'part.vessel': 'Piece',
-  'part.solid': 'Solid piece',
   'part.vesselLid': 'Piece + lid',
   'part.oneFile': 'in one file',
   'part.clay': '{v} l of clay',

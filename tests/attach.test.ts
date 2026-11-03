@@ -9,7 +9,7 @@
 import { initCSG } from '../src/geo/csg';
 import type { CsgApi } from '../src/geo/csg';
 import { CsgScope, toManifold } from '../src/geo/csg';
-import { buildSolidVessel, buildPrintableVessel, unionAll } from '../src/geo/assemble';
+import { buildPrintableVessel, unionAll } from '../src/geo/assemble';
 import { buildHandles, defaultHandle, sanitizeHandle } from '../src/geo/handle';
 import {
   defaultSpout, sanitizeSpout, makeSpout, buildAppliedSpout, appliedSpoutChannel, SPOUT_LIMITS,
@@ -165,28 +165,31 @@ describe('buildHandles', () => {
 });
 
 describe('изделие с ручкой', () => {
+  const hollow = sanitizeHollow({ wallMm: 3, baseMm: 4 });
+  const printable = (params: ReturnType<typeof cup>, handle = handleOn()) =>
+    buildPrintableVessel(csg, params, hollow, handle, defaultSpout()).mesh;
+
   it('одна ручка делает в теле сквозное отверстие: род 1', () => {
-    const mesh = buildSolidVessel(csg, cup(), handleOn(), defaultSpout());
+    const mesh = printable(cup());
     expect(validateMesh(mesh).watertight).toBe(true);
     expect(genusOf(mesh)).toBe(1);
   });
 
   it('две ручки — род 2', () => {
-    expect(genusOf(buildSolidVessel(csg, cup(), handleOn({ count: 2 }), defaultSpout()))).toBe(2);
+    expect(genusOf(printable(cup(), handleOn({ count: 2 })))).toBe(2);
   });
 
   it('без ручки род нулевой и CSG не запускается', () => {
-    const plain = buildSolidVessel(csg, cup(), sanitizeHandle({ on: false }), defaultSpout());
+    const plain = printable(cup(), sanitizeHandle({ on: false }));
     expect(genusOf(plain)).toBe(0);
-    expect(plain.positions.length).toBe(buildVessel(cup()).positions.length);
+    expect(plain.positions.length).toBe(buildHollowVessel(cup(), hollow).mesh.positions.length);
   });
 
   it('прирост объёма равен ручке за вычетом утопленных торцов', () => {
     const profile = buildProfile('cup', defaultFamilyParams('cup'), 95);
     const handleVolume = validateMesh(buildHandles(handleOn(), profile, 95)[0]).volume;
-    const plain = validateMesh(buildVessel(cup())).volume;
-    const withHandle = validateMesh(buildSolidVessel(csg, cup(), handleOn(), defaultSpout())).volume;
-    const grew = withHandle - plain;
+    const plain = validateMesh(printable(cup(), sanitizeHandle({ on: false }))).volume;
+    const grew = validateMesh(printable(cup())).volume - plain;
     expect(grew).toBeGreaterThan(handleVolume * 0.6);
     expect(grew).toBeLessThan(handleVolume);
   });
@@ -198,7 +201,7 @@ describe('изделие с ручкой', () => {
         shape: defaultFamilyParams(family),
         heightMm: familyById(family).defaultHeightMm,
       });
-      const mesh = buildSolidVessel(csg, params, handleOn({ topAt: 0.8, bottomAt: 0.35 }), defaultSpout());
+      const mesh = printable(params, handleOn({ topAt: 0.8, bottomAt: 0.35 }));
       expect(validateMesh(mesh).watertight, family).toBe(true);
       expect(genusOf(mesh), family).toBe(1);
     }
@@ -444,13 +447,18 @@ describe('приставной носик', () => {
     }
   });
 
-  it('сплошной позитив с носиком собирается и остаётся замкнутым', () => {
-    const mesh = buildSolidVessel(csg, teapot(), sanitizeHandle({ on: false }), teapotSpout());
-    const report = validateMesh(mesh);
-    expect(report.watertight).toBe(true);
-    // трубка приклеена, а не висит рядом: сплошное тело осталось односвязным
-    expect(genusOf(mesh)).toBe(0);
-    expect(report.volume).toBeGreaterThan(validateMesh(buildVessel(teapot())).volume);
+  it('трубка приклеена, а не висит рядом: изделие одним куском', () => {
+    const hollow = sanitizeHollow({ wallMm: 3, baseMm: 4 });
+    const mesh = buildPrintableVessel(csg, teapot(), hollow, sanitizeHandle({ on: false }), teapotSpout()).mesh;
+    const scope = new CsgScope();
+    try {
+      const solid = scope.keep(toManifold(csg, mesh));
+      expect(solid.decompose().map((shell) => scope.keep(shell))).toHaveLength(1);
+      // сквозной канал от устья носика к горловине — один туннель: род 1
+      expect(solid.genus()).toBe(1);
+    } finally {
+      scope.dispose();
+    }
   });
 
   it('канал действительно пробивает стенку: материала стало меньше на него', () => {

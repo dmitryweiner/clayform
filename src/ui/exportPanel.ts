@@ -1,6 +1,6 @@
 // Панель экспорта: изделие, как его печатают глиной, — полое, с заданной
-// стенкой, или сплошное, заготовкой для оснастки. Формы, ванночки и отминку
-// строит cast-builder по выгруженному STL; ссылка на него — в разметке.
+// стенкой. Формы, ванночки и отминку строит cast-builder по этому же STL —
+// сплошной мастер он заливает из него сам; ссылка на него — в разметке.
 
 import type { HollowState } from '../geo/hollow';
 import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM, RIM_MAX_MM } from '../geo/hollow';
@@ -32,16 +32,9 @@ const HOLLOW_CONTROLS: Control<HollowState>[] = [
 /** Над всем состоянием: «Крышка рядом» зависит от того, включена ли крышка. */
 const PIECE_CONTROLS: Control<AppState>[] = [
   {
-    kind: 'check', key: 'solid', label: 'export.solid',
-    hint: 'export.solid.hint',
-    get: (s) => s.solid,
-    set: (s, v) => ({ ...s, solid: v }),
-  },
-  {
     kind: 'check', key: 'lidBeside', label: 'export.lidBeside',
     hint: 'export.lidBeside.hint',
-    // сплошная крышка — позитив для формы, она всегда отдельным файлом
-    when: (s) => s.lid.on && !s.solid,
+    when: (s) => s.lid.on,
     get: (s) => s.lidBeside,
     set: (s, v) => ({ ...s, lidBeside: v }),
   },
@@ -60,7 +53,6 @@ export function renderExportPanel(
 ): ExportPanelHandle {
   const onHollow = (hollow: HollowState): void => onChange({ ...read(), hollow });
 
-  // Стенка, дно и край есть только у полого изделия; сплошному они ни к чему.
   const hollowHost = make('div');
   const pieceHost = make('div');
   paramsHost.textContent = '';
@@ -70,7 +62,6 @@ export function renderExportPanel(
 
   return {
     sync(state): void {
-      hollowHost.hidden = state.solid;
       hollowRows.sync(state.hollow);
       pieceRows.sync(state);
     },

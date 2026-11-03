@@ -529,8 +529,6 @@ export function lidHeightMm(fit: LidFit, lid: LidState): number {
 export interface LidBuildOptions {
   /** сдвиг по z: 0 — как печатают, fit.liftMm — как надета на изделие */
   liftMm?: number;
-  /** перевернуть юбкой вверх — так крышку кладут в литейную форму */
-  upsideDown?: boolean;
   /**
    * Волны тела, которые идут и на крышку («И на крышке тоже»). Накатка
    * крышки своя и берётся из LidState.
@@ -589,22 +587,7 @@ function domeSteps(lid: LidState, nu: number, relief: ReliefState | undefined): 
   return hasDomeRelief(lid, relief) ? Math.max(DOME_STEPS, Math.round(nu * RELIEF_DOME_SHARE)) : DOME_STEPS;
 }
 
-function place(
-  points: LathePoint[],
-  fit: LidFit,
-  lid: LidState,
-  options: LidBuildOptions,
-): LathePoint[] {
-  if (options.upsideDown) {
-    const height = lidHeightMm(fit, lid);
-    // Зеркало по z пустило бы контур по часовой и вывернуло меш наизнанку —
-    // разворачиваем заодно и порядок обхода. Нормаль рельефа отражается тоже.
-    return points.map((point) => ({
-      ...point,
-      z: height - point.z,
-      ...(point.relief ? { relief: { ...point.relief, nz: -point.relief.nz } } : {}),
-    })).reverse();
-  }
+function place(points: LathePoint[], options: LidBuildOptions): LathePoint[] {
   const lift = options.liftMm ?? 0;
   return lift === 0 ? points : points.map((point) => ({ ...point, z: point.z + lift }));
 }
@@ -631,13 +614,12 @@ export function buildLidMesh(
     ...outerPoints(fit, lid, domeSteps(lid, nu, options.relief)),
     ...inner,
   ];
-  return toMesh(place(points, fit, lid, options), nu, domeDepth(fit, lid, options.relief));
+  return toMesh(place(points, options), nu, domeDepth(fit, lid, options.relief));
 }
 
 /**
- * Сплошная крышка — позитив под литейную оснастку. Гипс формирует только
- * наружную поверхность, полость получается сливом шликера, поэтому форме
- * нужен именно сплошной объём под наружным контуром.
+ * Сплошная крышка: весь объём под наружным контуром. Печатной она
+ * становится, когда под куполом выбирать нечего (см. buildLidMesh).
  */
 export function buildLidSolid(
   fit: LidFit,
@@ -646,5 +628,5 @@ export function buildLidSolid(
   options: LidBuildOptions = {},
 ): SurfaceMesh {
   const points: LathePoint[] = [{ r: 0, z: 0 }, ...outerPoints(fit, lid, domeSteps(lid, nu, options.relief))];
-  return toMesh(place(points, fit, lid, options), nu, domeDepth(fit, lid, options.relief));
+  return toMesh(place(points, options), nu, domeDepth(fit, lid, options.relief));
 }

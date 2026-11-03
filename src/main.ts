@@ -269,8 +269,7 @@ function refresh(): void {
   // превью, и в экспорте её строит один и тот же параметрический код.
   // Надетой её показываем сразу, без ожидания воркера.
   // «Крышка рядом» — в печатном положении, юбкой вниз; иначе — надетой.
-  // Сплошная крышка всегда уходит отдельным файлом (см. воркер).
-  const beside = Boolean(fit) && state.lidBeside && !state.solid;
+  const beside = Boolean(fit) && state.lidBeside;
   if (fit) {
     const dome = lidDomeContext(fit, state.lid);
     attachRows.setLidBandNote((band) => describeBand(band, dome));
@@ -286,7 +285,7 @@ function refresh(): void {
   if (hasAppliedSpout() && state.spout.tipAt < SPOUT_BELOW_RIM) {
     baseWarnings.push(t('warn.spoutLow'));
   }
-  if (hollow.pinchedFraction > 0 && !state.solid) {
+  if (hollow.pinchedFraction > 0) {
     baseWarnings.push(t('warn.pinched', { pct: (hollow.pinchedFraction * 100).toFixed(1) }));
   }
   baseWarnings.push(...markWarnings(buildParams.mark, profileRadius(profile, 0)).map(tm));
@@ -313,11 +312,10 @@ function refresh(): void {
   // на каждое движение стоил бы 300 мс вместо 10. Снаружи это выглядит
   // ровно как объединение — а вот внутри полости торчат утопленные торцы,
   // и носик стоит заглушенным. Поэтому по паузе картинку заменяет
-  // настоящая сборка из воркера (showExactVessel). Сплошное изделие — то же
-  // тело без полости: заготовка для оснастки в cast-builder.
+  // настоящая сборка из воркера (showExactVessel).
   const surface = vesselSurface(buildParams);
   const tube = buildAppliedSpout(effectiveSpout(state), surface.profile, surface.heightMm);
-  const shell = state.solid ? outer : hollow.mesh;
+  const shell = hollow.mesh;
   const body = [
     shell,
     ...buildHandles(state.handle, surface.profile, surface.heightMm),
@@ -333,9 +331,7 @@ function refresh(): void {
   exportPanel.setParts(beside
     ? [{ label: t('part.vesselLid'), note: t('part.oneFile') }]
     : [
-      state.solid
-        ? { label: t('part.solid'), note: t('size.round', { d: widthMm.toFixed(0), h: state.heightMm.toFixed(0) }) }
-        : { label: t('part.vessel'), note: t('part.clay', { v: (clayMl / 1000).toFixed(2) }) },
+      { label: t('part.vessel'), note: t('part.clay', { v: (clayMl / 1000).toFixed(2) }) },
       ...(fit ? [{ label: t('part.lid'), note: lidNote }] : []),
     ]);
   auditEl.textContent = t('audit.checking');
@@ -388,20 +384,18 @@ function toMesh(part: JobPart): SurfaceMesh {
  * стало бы вечным шумом, от которого отучаются читать и остальные.
  */
 function audit(meshes: SurfaceMesh[]): void {
-  // свесы важны только тому, что печатают глиной; сплошное — заготовка оснастки
-  const printedInClay = !state.solid;
   const reports = meshes.map((mesh) => validateMesh(mesh));
   const assessments = reports.map((report) => assessExport(report, true));
   const triangles = reports.reduce((sum, report) => sum + report.triangleCount, 0);
   const blocking = assessments.flatMap((assessment) => assessment.blocking);
-  const overhang = printedInClay ? overhangFraction(meshes[0], 60) : 0;
+  const overhang = overhangFraction(meshes[0], 60);
 
   auditEl.textContent = reports.every((report) => report.watertight)
     ? t('audit.watertight', { k: Math.round(triangles / 1000) })
     : t('audit.open');
 
   const extra = assessments.flatMap((assessment) => assessment.warnings).map(tm);
-  if (printedInClay && overhang > 0.15) {
+  if (overhang > 0.15) {
     extra.push(t('warn.overhang', { pct: (overhang * 100).toFixed(0) }));
   }
   warningsEl.textContent = [...baseWarnings, ...extra].join('\n');

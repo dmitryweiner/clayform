@@ -523,24 +523,14 @@ if (!besideVerdict.includes('замкнуто ✓')) errors.push(`[lid-beside] a
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-beside.png` });
 await expectDownloads(1, 'teapot-beside');
 await page.uncheck('#print_lidBeside');
+// без крышки галочке делать нечего — она прячется; с крышкой видна снова
+await page.uncheck('#on_lid');
+if (await page.locator('#print_lidBeside').isVisible()) errors.push('[lid-beside] «Крышка рядом» видна без крышки');
+await page.check('#on_lid');
+if (!(await page.locator('#print_lidBeside').isVisible())) errors.push('[lid-beside] «Крышка рядом» не видна при крышке');
 
-// «Сплошное»: заготовка для оснастки в cast-builder. Тот же чайник уходит
-// двумя файлами — сплошное тело с ручкой и носиком и сплошная крышка юбкой
-// вверх; «Крышка рядом» при этом прячется: сплошная крышка всегда отдельно.
-label('solid');
-await page.check('#print_solid');
-await page.waitForTimeout(150);
-if (await page.locator('#print_lidBeside').isVisible()) errors.push('[solid] «Крышка рядом» видна при сплошном');
-if (await page.locator('#print_wall').isVisible()) errors.push('[solid] «Стенка» видна при сплошном');
-const solidPart = (await page.locator('#partList li').first().textContent()) ?? '';
-if (!solidPart.includes('сплошным')) errors.push(`[solid] первая деталь "${solidPart}"`);
-const solidVerdict = await auditVerdict(page);
-if (!solidVerdict.includes('замкнуто ✓')) errors.push(`[solid] audit="${solidVerdict}"`);
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/solid.png` });
-await expectDownloads(2, 'solid');
-await page.uncheck('#print_solid');
 const castHref = await page.locator('#castLink').getAttribute('href');
-if (!castHref?.includes('cast-builder')) errors.push(`[solid] ссылка на cast-builder: ${castHref}`);
+if (!castHref?.includes('cast-builder')) errors.push(`[cast-link] ссылка на cast-builder: ${castHref}`);
 await page.uncheck('#on_handle');
 await page.uncheck('#on_spout');
 await page.uncheck('#on_lid');

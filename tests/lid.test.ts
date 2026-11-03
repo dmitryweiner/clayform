@@ -192,17 +192,6 @@ describe('buildLidMesh', () => {
     expect(worn.bbox.max[2]).toBeCloseTo(fit.restZMm - fit.depthMm + lidHeightMm(fit, lid), 3);
   });
 
-  it('перевёрнутая крышка стоит на столе и не вывернута наизнанку', () => {
-    const { fit, lid } = fitFor('pot');
-    const upright = validateMesh(buildLidSolid(fit, lid, 96));
-    const flipped = validateMesh(buildLidSolid(fit, lid, 96, { upsideDown: true }));
-    expect(flipped.watertight).toBe(true);
-    expect(flipped.volume).toBeGreaterThan(0);
-    expect(flipped.volume / upright.volume).toBeCloseTo(1, 5);
-    expect(flipped.bbox.min[2]).toBeCloseTo(0, 6);
-    expect(flipped.bbox.max[2]).toBeCloseTo(upright.bbox.max[2], 6);
-  });
-
   it('крайние параметры не рвут меш', () => {
     const extremes: Partial<LidState>[] = [
       { domeMm: LID_LIMITS.domeMm.min, curvature: 0 },
@@ -352,11 +341,11 @@ describe('рельеф на куполе крышки', () => {
     expect(lidHeightMm(fit, lid)).toBeCloseTo(validateMesh(rolled).bbox.max[2], 3);
   });
 
-  it('вдавленный рельеф не протыкает купол, перевёрнутый позитив тоже цел', () => {
+  it('вдавленный рельеф не протыкает купол, сплошная крышка тоже цела', () => {
     const { fit, lid } = fitFor('pot');
     const deep = { ...lid, roulette: { bands: [{ ...band, depthMm: -8 }] } };
     expect(validateMesh(buildLidMesh(fit, deep, 96)).watertight).toBe(true);
-    const solid = buildLidSolid(fit, deep, 96, { upsideDown: true });
+    const solid = buildLidSolid(fit, deep, 96);
     expect(validateMesh(solid).watertight).toBe(true);
     expect(validateMesh(solid).volume).toBeGreaterThan(0);
   });
