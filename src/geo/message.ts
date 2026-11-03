@@ -4,17 +4,6 @@
 // ключом словаря — это проверяет tsc в самом `tm`.
 
 export type MessageCode =
-  // схема разъёма формы (mold/analyze)
-  | 'mold.whyHandle'
-  | 'mold.whySpout'
-  | 'mold.whyWider'
-  | 'mold.dropout'
-  | 'mold.wideBase'
-  | 'mold.narrowBase'
-  | 'mold.markBase'
-  | 'mold.undercutsAngular'
-  | 'mold.undercutsRadial'
-  | 'press.undercut'
   // клеймо на дне (mark)
   | 'mark.tooLong'
   | 'mark.noRoom'
@@ -30,13 +19,7 @@ export type MessageCode =
   | 'progress.loading'
   | 'progress.vessel'
   | 'progress.lid'
-  | 'progress.checkMeshes'
-  | 'progress.slump'
-  | 'progress.punch'
-  | 'progress.analyze'
-  | 'progress.master'
-  | 'progress.block'
-  | 'progress.part';
+  | 'progress.checkMeshes';
 
 export interface Message {
   code: MessageCode;

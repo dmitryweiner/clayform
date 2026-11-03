@@ -524,128 +524,32 @@ if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-beside.png` });
 await expectDownloads(1, 'teapot-beside');
 await page.uncheck('#print_lidBeside');
 
-// Литейная оснастка: у каждой схемы своё число деталей. Ручку и носик
-// снимаем — они расширяют габарит и через это меняют выбор схемы, а здесь
-// проверяется именно соответствие «силуэт → число деталей».
-label('mold');
+// «Сплошное»: заготовка для оснастки в cast-builder. Тот же чайник уходит
+// двумя файлами — сплошное тело с ручкой и носиком и сплошная крышка юбкой
+// вверх; «Крышка рядом» при этом прячется: сплошная крышка всегда отдельно.
+label('solid');
+await page.check('#print_solid');
+await page.waitForTimeout(150);
+if (await page.locator('#print_lidBeside').isVisible()) errors.push('[solid] «Крышка рядом» видна при сплошном');
+if (await page.locator('#print_wall').isVisible()) errors.push('[solid] «Стенка» видна при сплошном');
+const solidPart = (await page.locator('#partList li').first().textContent()) ?? '';
+if (!solidPart.includes('сплошным')) errors.push(`[solid] первая деталь "${solidPart}"`);
+const solidVerdict = await auditVerdict(page);
+if (!solidVerdict.includes('замкнуто ✓')) errors.push(`[solid] audit="${solidVerdict}"`);
+if (shotsDir) await page.screenshot({ path: `${shotsDir}/solid.png` });
+await expectDownloads(2, 'solid');
+await page.uncheck('#print_solid');
+const castHref = await page.locator('#castLink').getAttribute('href');
+if (!castHref?.includes('cast-builder')) errors.push(`[solid] ссылка на cast-builder: ${castHref}`);
 await page.uncheck('#on_handle');
 await page.uncheck('#on_spout');
 await page.uncheck('#on_lid');
-for (const [family, index, tab, expected] of [
-  ['миска', 1, '#tabBath', 1],
-  ['горшок', 0, '#tabBath', 3],
-  ['ваза', 3, '#tabBath', 2],
-  ['ваза', 3, '#tabMaster', 1],
-]) {
-  label(`mold:${family}:${tab}`);
-  await page.locator('#familyGrid .family-btn').nth(index).click();
-  await page.click(tab);
-  await page.waitForFunction(
-    () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
-    { timeout: 60000 },
-  );
-  const parts = await page.locator('#partList li').count();
-  if (parts !== expected) {
-    errors.push(`[mold:${family}${tab}] деталей ${parts}, ожидалось ${expected}`);
-  }
-  const blockers = (await page.locator('#blockers').textContent()).trim();
-  if (blockers) errors.push(`[mold:${family}${tab}] blockers="${blockers}"`);
-  if (shotsDir) await page.screenshot({ path: `${shotsDir}/mold-${family}-${tab.slice(4)}.png` });
-}
-
-// у крышки своя форма: к деталям формы тела добавляются её собственные
-// Полоса прогресса оснастки — на чайнике: ручка, носик и крышка дают
-// самую тяжёлую сборку, она идёт дольше задержки появления полосы и на M1.
-// (CDP под --slow замедляет только главный поток, воркер считает как есть.)
-label('mold-progress');
-await pickPreset('b:teapot');
-await expectPreviewProgress('mold', () => page.click('#tabBath'), true);
-
-// утопленная крышка: форме нужна пробка горловины — на деталь больше
-label('mold-plug');
-const waitMold = () => page.waitForFunction(
-  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
-  { timeout: 60000 },
-);
-await waitMold();
-const teapotParts = await page.locator('#partList li').count();
-await page.fill('#lid_recess', '6');
-await page.waitForTimeout(100);
-await waitMold();
-const plugParts = await page.locator('#partList li').count();
-if (plugParts !== teapotParts + 1) {
-  errors.push(`[mold-plug] деталей ${plugParts}, ожидалось ${teapotParts + 1} (с пробкой)`);
-}
-if (!(await page.locator('#partList').textContent()).includes('пробка горловины')) {
-  errors.push('[mold-plug] в списке деталей нет пробки');
-}
-const plugBlockers = (await page.locator('#blockers').textContent()).trim();
-if (plugBlockers) errors.push(`[mold-plug] blockers="${plugBlockers}"`);
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/mold-plug.png` });
-await page.fill('#lid_recess', '0');
-
-label('mold-lid');
-await page.uncheck('#on_handle');
-await page.uncheck('#on_spout');
-await page.locator('#familyGrid .family-btn').nth(0).click();
-await page.check('#on_lid');
-await page.click('#tabBath');
-await page.waitForFunction(
-  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
-  { timeout: 60000 },
-);
-const lidMoldParts = await page.locator('#partList li').count();
-if (lidMoldParts !== 5) {
-  errors.push(`[mold-lid] деталей ${lidMoldParts}, ожидалось 5 (три у тела, две у крышки)`);
-}
-const lidMoldBlockers = (await page.locator('#blockers').textContent()).trim();
-if (lidMoldBlockers) errors.push(`[mold-lid] blockers="${lidMoldBlockers}"`);
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/mold-lid.png` });
-await page.uncheck('#on_lid');
-
-// отминка: табы есть у голого тела и исчезают с приставной деталью
-label('press');
-await page.locator('#familyGrid .family-btn').nth(1).click();
-await page.waitForTimeout(150);
-if (!(await page.locator('#pressTabs').isVisible())) errors.push('[press] у миски нет табов отминки');
-await page.click('#tabSlump');
-const slumpVerdict = await auditVerdict(page);
-if (!slumpVerdict.includes('замкнуто ✓')) errors.push(`[press:slump] audit="${slumpVerdict}"`);
-// форма и пуансон — одна деталь, один файл
-if ((await page.locator('#partList li').count()) !== 1) errors.push('[press:slump] деталей не одна');
-const slumpPart = (await page.locator('#partList li').first().textContent()) ?? '';
-if (!slumpPart.includes('пуансон')) errors.push(`[press:slump] в подписи нет пуансона: "${slumpPart}"`);
-if (!(await page.locator('#slump_wall').isVisible())) errors.push('[press:slump] не видно ползунка «Пласт»');
-if (!(await page.locator('#slump_ear').isVisible())) errors.push('[press:slump] не видно ползунка «Ушки»');
-if (!(await page.locator('#slump_round').isVisible())) errors.push('[press:slump] не видно ползунка «Скругление дна»');
-if (!(await page.locator('#slump_vent').isVisible())) errors.push('[press:slump] не видно ползунка «Отдушины»');
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/press-slump.png` });
-await expectDownloads(1, 'slump');
-await page.check('#on_handle');
-await page.waitForTimeout(150);
-if (await page.locator('#pressTabs').isVisible()) errors.push('[press] табы отминки видны при ручке');
-if ((await page.locator('#tabVessel').getAttribute('aria-selected')) !== 'true') {
-  errors.push('[press] с ручкой режим не откатился к изделию');
-}
-await page.uncheck('#on_handle');
-
-// экспорт оснастки: у горшка это три отдельных файла
-label('export-mold');
-await page.locator('#familyGrid .family-btn').nth(0).click();
-await page.click('#tabBath');
-await page.waitForFunction(
-  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
-  { timeout: 60000 },
-);
-await expectDownloads(3, 'mold', true);
 
 // Клеймо на донышке: строка шрифтом (шрифты грузятся лениво), дата, лого.
-// Проверяем, что меш цел на всех шрифтах и крайних ползунках, что длинная
-// строка ужимается с предупреждением, что с клеймом у вазы появляется
-// донная плита и что отминка с клеймом собирается.
+// Проверяем, что меш цел на всех шрифтах и крайних ползунках и что длинная
+// строка ужимается с предупреждением.
 label('mark');
 await page.locator('#familyGrid .family-btn').nth(0).click();
-await page.click('#tabVessel');
 await page.check('#on_mark');
 await page.fill('#mark_text', 'Мастерская');
 for (const [id, value] of [['mark_font', 'ptSerif'], ['mark_font', 'comfortaa'], ['mark_font', 'oswald'],
@@ -686,22 +590,6 @@ await page.fill('#mark_size', '5');
 await page.click('#mark_logoRemove');
 await page.waitForTimeout(150);
 if (await page.locator('#mark_logoSize').isVisible()) errors.push('[mark] лого не убралось');
-// ваза без клейма — две половины, с клеймом — ещё и донная плита
-await page.locator('#familyGrid .family-btn').nth(3).click();
-await page.click('#tabBath');
-await page.waitForFunction(
-  () => !(document.querySelector('#audit')?.textContent ?? '').includes('собираю'),
-  { timeout: 60000 },
-);
-const markParts = await page.locator('#partList li').count();
-if (markParts !== 3) errors.push(`[mark:vase] деталей ${markParts}, ожидалось 3 (с донной плитой)`);
-// отминка с клеймом: на полу матрицы оно выпуклое, отдушина сквозь лого
-await page.locator('#familyGrid .family-btn').nth(1).click();
-await page.setInputFiles('#mark_logo', 'tests/fixtures/ornament.png');
-await page.click('#tabSlump');
-const markSlump = await auditVerdict(page);
-if (!markSlump.includes('замкнуто ✓')) errors.push(`[mark:slump] audit="${markSlump}"`);
-await page.click('#tabVessel');
 await page.uncheck('#on_mark');
 await page.waitForTimeout(150);
 
@@ -730,7 +618,6 @@ async function checkLanguage() {
   // крышке есть, список пресетов открыт — чтобы непереведённому негде было
   // спрятаться.
   await page.locator('#familyGrid .family-btn').nth(0).click();
-  await page.click('#tabVessel');
   for (const id of ['wave', 'wave2', 'roulette', 'handle', 'spout', 'lid']) await page.check(`#on_${id}`);
   await page.locator('#card_roulette .fcard-body button', { hasText: 'Полоса' }).click();
   await page.locator('#card_lid .fcard-body button', { hasText: 'Полоса' }).click();
@@ -761,18 +648,6 @@ async function checkLanguage() {
   if (left.length) errors.push(`[lang] непереведённое: ${left.slice(0, 8).join(' | ')}`);
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/lang-en.png` });
   await page.keyboard.press('Escape');
-
-  // оснастка и отминка — свои тексты: схема разъёма, детали, прогресс
-  for (const tab of ['#tabMaster', '#tabBath']) {
-    await page.click(tab);
-    await page.waitForFunction(
-      () => !(document.querySelector('#audit')?.textContent ?? '').includes('building'),
-      { timeout: 60000 },
-    );
-    const moldLeft = await cyrillicLeft(page);
-    if (moldLeft.length) errors.push(`[lang:${tab}] непереведённое: ${moldLeft.slice(0, 8).join(' | ')}`);
-  }
-  await page.click('#tabVessel');
 
   // выбор языка помнится
   await page.reload({ waitUntil: 'load' });

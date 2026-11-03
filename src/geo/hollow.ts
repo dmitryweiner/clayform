@@ -286,7 +286,7 @@ export function buildHollowVessel(
   // клеймо вдавливается в дно, но не глубже, чем оставит минимальную стенку
   const mark = vesselBottom(p, outer, floorZ - MIN_WALL_MM);
   const shell = assembleHollowMesh(
-    outer, inner, rimRings(outer, inner, nu, nv, rimR), 0, mark ? { outer: mark } : undefined,
+    outer, inner, rimRings(outer, inner, nu, nv, rimR), mark ? { outer: mark } : undefined,
   );
   const cavity = assembleMesh({ nu, nv, positions: inner }, 'both');
   return {

@@ -125,26 +125,21 @@ export interface HollowCaps {
  * Пустой массив даёт плоский срез, как у сырого края; несколько колец по дуге
  * дают заглаженный край, какой гончар делает пальцем.
  *
- * `ventMm` — диаметр сквозного отверстия по оси в дне. Без него оба дна —
- * веер из центроида кольца; с ним — кольца вокруг отверстия и его стенка.
- *
  * `caps` — донья своей сеткой (`geo/bottom.ts`), когда на них рельеф. Если
- * задано хоть одно, оба дна строятся так (недостающее — гладким), а
- * отверстие — общими кольцами обоих.
+ * задано хоть одно, оба дна строятся так (недостающее — гладким); без них
+ * оба дна — веер из центроида кольца.
  */
 export function assembleHollowMesh(
   outer: Grid,
   inner: Float32Array,
   rimRings: Float32Array[] = [],
-  ventMm = 0,
   caps?: HollowCaps,
 ): Omit<SurfaceMesh, 'normals'> {
   const { nu, nv } = outer;
   const nGrid = nu * (nv + 1);
   const rimCount = rimRings.length;
-  const vent = ventMm > 0;
   const own = caps !== undefined;
-  const capVertices = own ? 0 : vent ? 2 * nu : 2;
+  const capVertices = own ? 0 : 2;
   const vertexCount = 2 * nGrid + rimCount * nu + capVertices;
   const outPos = new Float32Array(vertexCount * 3);
   outPos.set(outer.positions, 0);
@@ -157,7 +152,7 @@ export function assembleHollowMesh(
   const iCap = oCap + 1; // центроид дна полости
 
   const wallTris = nu * nv * 2 * 2; // внешние + внутренние стенки
-  const capTris = own ? 0 : nu * (vent ? 6 : 2); // внешнее дно + дно полости (+ стенка отверстия)
+  const capTris = own ? 0 : nu * 2; // внешнее дно + дно полости
   const rimTris = nu * 2 * (rimCount + 1); // полос кромки на одну больше, чем колец
   const indices = new Uint32Array((wallTris + capTris + rimTris) * 3);
   let k = 0;
@@ -201,37 +196,6 @@ export function assembleHollowMesh(
   };
   if (own) {
     // донья добавятся после кромки
-  } else if (vent) {
-    // Кольца отверстия: нижнее — на высоте внешнего дна, верхнее — на высоте
-    // дна полости, оба по оси их центроидов.
-    const ventLow = oCap;
-    const ventHigh = oCap + nu;
-    const ringZ = (base: number): number => {
-      let z = 0;
-      for (let i = 0; i < nu; i++) z += outPos[(base + i) * 3 + 2];
-      return z / nu;
-    };
-    const lowZ = ringZ(oBase);
-    const highZ = ringZ(iBase);
-    for (let i = 0; i < nu; i++) {
-      const u = (2 * Math.PI * i) / nu;
-      const x = (ventMm / 2) * Math.cos(u);
-      const y = (ventMm / 2) * Math.sin(u);
-      outPos.set([x, y, lowZ], (ventLow + i) * 3);
-      outPos.set([x, y, highZ], (ventHigh + i) * 3);
-    }
-    for (let i = 0; i < nu; i++) {
-      const i1 = (i + 1) % nu;
-      // внешнее дно кольцом (нормаль вниз)
-      indices[k++] = ventLow + i; indices[k++] = oBase + i1; indices[k++] = oBase + i;
-      indices[k++] = ventLow + i; indices[k++] = ventLow + i1; indices[k++] = oBase + i1;
-      // дно полости кольцом (нормаль вверх)
-      indices[k++] = ventHigh + i; indices[k++] = iBase + i; indices[k++] = iBase + i1;
-      indices[k++] = ventHigh + i; indices[k++] = iBase + i1; indices[k++] = ventHigh + i1;
-      // стенка отверстия (нормаль к оси)
-      indices[k++] = ventLow + i1; indices[k++] = ventLow + i; indices[k++] = ventHigh + i;
-      indices[k++] = ventLow + i1; indices[k++] = ventHigh + i; indices[k++] = ventHigh + i1;
-    }
   } else {
     centroid(oBase, oCap);
     centroid(iBase, iCap);
@@ -263,21 +227,10 @@ export function assembleHollowMesh(
   const shell = { positions: outPos, indices };
   if (!own) return shell;
 
-  const hole = ventMm / 2;
-  const low = buildCap(outPos, oBase, nu, vertexCount, { ...caps.outer, holeMm: hole }, 'down');
+  const low = buildCap(outPos, oBase, nu, vertexCount, caps.outer ?? {}, 'down');
   const withLow = appendCap(shell, low);
-  const high = buildCap(withLow.positions, iBase, nu, withLow.positions.length / 3, { ...caps.inner, holeMm: hole }, 'up');
-  const both = appendCap(withLow, high);
-  if (!low.hole || !high.hole) return both;
-  // стенка отверстия (нормаль к оси): кольца обоих доньев — по nu вершин
-  const wall = new Uint32Array(nu * 6);
-  let w = 0;
-  for (let i = 0; i < nu; i++) {
-    const i1 = (i + 1) % nu;
-    wall[w++] = low.hole[i1]; wall[w++] = low.hole[i]; wall[w++] = high.hole[i];
-    wall[w++] = low.hole[i1]; wall[w++] = high.hole[i]; wall[w++] = high.hole[i1];
-  }
-  return appendCap(both, { positions: new Float32Array(0), indices: wall, hole: null });
+  const high = buildCap(withLow.positions, iBase, nu, withLow.positions.length / 3, caps.inner ?? {}, 'up');
+  return appendCap(withLow, high);
 }
 
 /**
@@ -387,34 +340,4 @@ export function mergeMeshes(meshes: readonly SurfaceMesh[]): SurfaceMesh {
     indexOffset += mesh.indices.length;
   }
   return { positions, normals, indices };
-}
-
-/**
- * Зеркало по высоте: z → top − z, где top — верх меша, так что перевёрнутый
- * меш снова стоит на z = 0. Отражение меняет ориентацию, поэтому обход
- * треугольников разворачивается, иначе нормали смотрели бы внутрь.
- */
-export function mirrorZ(mesh: SurfaceMesh): SurfaceMesh {
-  let top = -Infinity;
-  for (let i = 2; i < mesh.positions.length; i += 3) top = Math.max(top, mesh.positions[i]);
-  const positions = new Float32Array(mesh.positions);
-  const normals = new Float32Array(mesh.normals);
-  for (let i = 2; i < positions.length; i += 3) {
-    positions[i] = top - positions[i];
-    normals[i] = -normals[i];
-  }
-  const indices = new Uint32Array(mesh.indices);
-  for (let t = 0; t < indices.length; t += 3) {
-    indices[t + 1] = mesh.indices[t + 2];
-    indices[t + 2] = mesh.indices[t + 1];
-  }
-  return { positions, normals, indices };
-}
-
-/** Равномерное увеличение относительно начала координат. */
-export function scaleMesh(mesh: SurfaceMesh, factor: number): SurfaceMesh {
-  if (factor === 1) return mesh;
-  const positions = new Float32Array(mesh.positions.length);
-  for (let i = 0; i < positions.length; i++) positions[i] = mesh.positions[i] * factor;
-  return { ...mesh, positions };
 }

@@ -14,7 +14,6 @@ import { buildHandles, defaultHandle, sanitizeHandle } from '../src/geo/handle';
 import {
   defaultSpout, sanitizeSpout, makeSpout, buildAppliedSpout, appliedSpoutChannel, SPOUT_LIMITS,
 } from '../src/geo/spout';
-import { analyzeMold } from '../src/geo/mold';
 import { buildVessel, defaultBuildParams, vesselGrid, gridRadiusAt } from '../src/geo/build';
 import { sanitizeHollow, buildHollowVessel } from '../src/geo/hollow';
 import { assembleMesh } from '../src/geo/surface';
@@ -560,15 +559,6 @@ describe('приставной носик', () => {
       expect(report.watertight, tag).toBe(true);
       expect(report.volume, tag).toBeGreaterThan(0);
     }
-  });
-
-  it('форма с носиком не бывает одночастной', () => {
-    // миска сама по себе вынимается вверх — а с носиком уже нет
-    const bowl = buildVessel(cup({ family: 'bowl', shape: defaultFamilyParams('bowl') }));
-    expect(analyzeMold(bowl, { hasHandle: false }).scheme).toBe('dropout');
-    const report = analyzeMold(bowl, { hasHandle: false, hasSpout: true });
-    expect(report.scheme).not.toBe('dropout');
-    expect(report.reason[0].code).toBe('mold.whySpout');
   });
 });
 

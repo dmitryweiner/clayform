@@ -67,12 +67,6 @@ describe('словари', () => {
       expect(hasKey(`preset.${preset.id}.note`), preset.id).toBe(true);
     }
   });
-
-  it('детали оснастки называются по id', () => {
-    for (const id of ['half-A', 'half-B', 'bottom', 'single', 'plug', 'master']) {
-      expect(hasKey(`part.${id}`), id).toBe(true);
-    }
-  });
 });
 
 describe('detectLang', () => {

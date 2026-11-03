@@ -1,6 +1,8 @@
 // Весь CSG приложения. Главный поток сюда только шлёт состояние и получает
 // готовые меши: WASM-модуль manifold (~2 МБ) в главный поток не попадает
-// вовсе, и вкладка не замирает даже на экспорте ванночек в 384 сегмента.
+// вовсе, и вкладка не замирает даже на экспорте изделия с ручкой в 384
+// сегмента. Оснастку (формы, ванночки, отминку) строит cast-builder по
+// выгруженному STL — здесь только само изделие.
 //
 // Внутри — ровно те же вызовы ядра, что раньше стояли в main.ts. Никакого
 // DOM и никакого Three.js: воркер видит только чистую геометрию.
@@ -10,20 +12,15 @@ import { initCSG } from '../geo/csg';
 import type { SurfaceMesh } from '../geo/surface';
 import { mergeMeshes } from '../geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from '../geo/layout';
-import type { VesselSurface } from '../geo/build';
-import { vesselSurface } from '../geo/build';
-import { buildSlumpShell, buildPunch } from '../geo/press';
-import { buildProfile, profileRadius } from '../geo/profiles';
+import { buildProfile } from '../geo/profiles';
 import type { LidFit } from '../geo/lid';
-import { lidFit, lidSeat, lidHeightMm, buildLidMesh, buildLidSolid } from '../geo/lid';
+import { lidFit, lidSeat, buildLidMesh, buildLidSolid } from '../geo/lid';
 import { buildSolidVessel, buildPrintableVessel } from '../geo/assemble';
-import type { Mouth, MoldPartMesh } from '../geo/mold';
-import { analyzeMold, buildMaster, buildBaths } from '../geo/mold';
 import { validateMesh, assessExport } from '../geo/validate';
 import type { AppState } from '../state/schema';
 import { sanitizeState, toBuildParams, effectiveSpout, lidRelief } from '../state/schema';
 import type { MarkRaster } from '../geo/mark';
-import { markActive, sanitizeMarkRaster } from '../geo/mark';
+import { sanitizeMarkRaster } from '../geo/mark';
 import type { Message } from '../geo/message';
 import type { CsgJob, JobPart, WorkerIn, WorkerOut } from './protocol';
 
@@ -40,20 +37,6 @@ let loaded = false;
 void ready.then(() => {
   loaded = true;
 });
-
-/** Больше четырёх частей у формы не бывает — половины, донная плита и пробка. */
-const MAX_MOLD_PARTS = 4;
-/** По скольким углам обходится венчик, когда меряется устье. */
-const MOUTH_SAMPLES = 64;
-/**
- * Насколько литейная горловина уже юбки перевёрнутой крышки. Ставить её
- * ровно по юбке нельзя: цилиндр горловины совпал бы с цилиндром юбки, а
- * совпадающие поверхности — худший вход для булевой операции, и на месте
- * стыка остаётся рваная грань. Отступ берётся долей от радиуса, чтобы у
- * крошечной крышки горловина не съелась целиком.
- */
-const LID_MOUTH_INSET_MM = 1.5;
-const LID_MOUTH_INSET_MAX = 0.15;
 
 addEventListener('message', (event) => {
   if (isJobMessage(event.data)) void handle(event.data);
@@ -84,18 +67,8 @@ function run(csg: CsgApi, jobId: number, job: CsgJob): JobPart[] {
   if (job.kind === 'vessel-preview') {
     return [vesselPart(csg, jobId, state, job.segments)];
   }
-  if (job.kind === 'mold-preview') {
-    return moldParts(csg, jobId, state, job.segments, false);
-  }
   if (job.kind === 'export') {
-    switch (state.exportMode) {
-      case 'vessel':
-        return vesselParts(csg, jobId, state, state.resolution);
-      case 'slump':
-        return pressParts(jobId, state, state.resolution);
-      default:
-        return moldParts(csg, jobId, state, state.resolution, true);
-    }
+    return vesselParts(csg, jobId, state, state.resolution);
   }
   throw new Error('the worker does not know this job');
 }
@@ -108,11 +81,13 @@ function fitOf(state: AppState): LidFit | null {
 }
 
 /**
- * Полое изделие целиком: тело, ручки, трубка носика и проход сквозь стенку.
- * Ровно это уходит в STL — и ровно это показывает превью, когда пользователь
+ * Изделие целиком: тело, ручки, трубка носика — полое, с проходом сквозь
+ * стенку, или сплошное, заготовкой для оснастки в cast-builder. Ровно это
+ * уходит в STL — и ровно это показывает превью, когда пользователь
  * остановился.
  */
 function printableVessel(csg: CsgApi, state: AppState, segments: number): SurfaceMesh {
+  if (state.solid) return buildSolidVessel(csg, toBuildParams(state, segments, markStrip), state.handle, effectiveSpout(state));
   const fit = fitOf(state);
   return buildPrintableVessel(
     csg, toBuildParams(state, segments, markStrip), state.hollow, state.handle, effectiveSpout(state),
@@ -133,8 +108,11 @@ function vesselPart(csg: CsgApi, jobId: number, state: AppState, segments: numbe
 }
 
 /**
- * Что уходит в STL в режиме «изделие»: само изделие и, если она есть,
- * крышка — отдельным файлом и в печатном положении, юбкой вниз на столе.
+ * Что уходит в STL: само изделие и, если она есть, крышка — отдельным
+ * файлом и в печатном положении, юбкой вниз на столе. Сплошная крышка —
+ * позитив для оснастки: перевёрнутая юбкой вверх, как её кладут в форму
+ * (торец юбки — устье, в него льют шликер), и всегда отдельным файлом —
+ * в одном STL с изделием cast-builder принял бы их за одну модель.
  * Меши проверяем: от вердикта зависит, выпускать ли файл.
  */
 function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: number): JobPart[] {
@@ -147,8 +125,10 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
   ];
   if (fit) {
     progress.next({ code: 'progress.lid' });
-    const lid = buildLidMesh(fit, state.lid, segments, { relief: lidRelief(state) });
-    if (state.lidBeside) {
+    const lid = state.solid
+      ? buildLidSolid(fit, state.lid, segments, { upsideDown: true, relief: lidRelief(state) })
+      : buildLidMesh(fit, state.lid, segments, { relief: lidRelief(state) });
+    if (state.lidBeside && !state.solid) {
       // Один файл на двоих: печатают за один заход. Две замкнутые
       // компоненты в одном меше — законный STL, проверка его принимает.
       meshes[0] = {
@@ -165,149 +145,6 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
     item.id, sizeNote(item.mesh), item.mesh,
     assessExport(validateMesh(item.mesh), true).blocking,
   ));
-}
-
-/**
- * Отминочная форма с пуансоном рядом, одним файлом: две замкнутые компоненты
- * в одном меше. Чистая геометрия без CSG — в воркере только ради общего пути
- * экспорта с проверкой меша и прогрессом.
- */
-function pressParts(jobId: number, state: AppState, segments: number): JobPart[] {
-  const params = toBuildParams(state, segments, markStrip);
-  const { bathWallMm, shrinkPct } = state.mold;
-  const progress = new Progress(jobId, 3);
-  progress.next({ code: 'progress.slump' });
-  const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct, state.mold.earMm, state.mold.ventMm);
-  progress.next({ code: 'progress.punch' });
-  const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit, state.mold.punchRoundPct);
-  const item = {
-    id: 'slump',
-    mesh: mergeMeshes(placeInRow([[slump.mesh], [punch]], LID_BESIDE_GAP_MM).flat()),
-  };
-  progress.next({ code: 'progress.checkMeshes' });
-  return [part(
-    item.id, sizeNote(item.mesh), item.mesh,
-    assessExport(validateMesh(item.mesh), true).blocking,
-  )];
-}
-
-/**
- * Предмет, вокруг которого строится оснастка. Их бывает два: само изделие и
- * его крышка — у крышки своя форма, своя схема разъёма и свои ванночки.
- */
-interface MoldSubject {
-  /** приставка к идентификаторам деталей; пусто — изделие */
-  id: string;
-  /** этап сборки самого предмета */
-  step: Message;
-  build(): SurfaceMesh;
-  mouth: Mouth;
-  hasHandle: boolean;
-  hasSpout: boolean;
-  /** клеймо на дне: форме нужна донная плита */
-  bottomMark: boolean;
-}
-
-function moldSubjects(csg: CsgApi, state: AppState, segments: number): MoldSubject[] {
-  const params = toBuildParams(state, segments, markStrip);
-  const surface = vesselSurface(params);
-  const fit = fitOf(state);
-  const spout = effectiveSpout(state);
-
-  const subjects: MoldSubject[] = [{
-    id: '',
-    step: { code: 'progress.vessel' },
-    build: () => buildSolidVessel(csg, params, state.handle, spout),
-    mouth: mouthOf(surface, fit),
-    hasHandle: state.handle.on,
-    hasSpout: spout.on && spout.kind === 'applied',
-    bottomMark: markActive(state.mark),
-  }];
-
-  if (fit) {
-    subjects.push({
-      id: 'lid',
-      step: { code: 'progress.lid' },
-      // Крышку кладут в форму перевёрнутой: юбка смотрит вверх, и её торец
-      // становится устьем, в которое льют шликер. Купол при этом лежит в
-      // гипсе целиком, а шов проходит по краю поля.
-      build: () => buildLidSolid(fit, state.lid, segments, { upsideDown: true, relief: lidRelief(state) }),
-      mouth: {
-        zMm: lidHeightMm(fit, state.lid),
-        radiusMm: Math.max(fit.plugMm * (1 - LID_MOUTH_INSET_MAX), fit.plugMm - LID_MOUTH_INSET_MM),
-      },
-      hasHandle: false,
-      hasSpout: false,
-      bottomMark: false,
-    });
-  }
-  return subjects;
-}
-
-/** Мастер-позитив или ванночки — смотря что выбрано в панели экспорта. */
-function moldParts(
-  csg: CsgApi,
-  jobId: number,
-  state: AppState,
-  segments: number,
-  forExport: boolean,
-): JobPart[] {
-  const master = state.exportMode === 'master';
-  const subjects = moldSubjects(csg, state, segments);
-  // Пока схема не выбрана, число деталей неизвестно: берём на каждый предмет
-  // наибольшее возможное. После анализа итог только уменьшается, поэтому
-  // шкала может прыгнуть вперёд, но никогда не откатится назад.
-  const planned = master ? 1 : MAX_MOLD_PARTS;
-  const progress = new Progress(jobId, subjects.length * (2 + planned) + (forExport ? 1 : 0));
-
-  const built: MoldPartMesh[] = [];
-  for (const subject of subjects) {
-    progress.next(subject.step);
-    const solid = subject.build();
-
-    progress.next({ code: 'progress.analyze' });
-    const report = analyzeMold(solid, {
-      hasHandle: subject.hasHandle,
-      hasSpout: subject.hasSpout,
-      hasPlug: Boolean(subject.mouth.plug),
-      bottomMark: subject.bottomMark,
-    });
-    progress.total -= planned - (master ? 1 : report.parts.length);
-
-    const options = { mouth: subject.mouth };
-    if (master) {
-      progress.next({ code: 'progress.master' });
-      built.push(...buildMaster(csg, solid, report, state.mold, options).map((item) => prefixed(subject, item)));
-    } else {
-      progress.next({ code: 'progress.block' });
-      built.push(...buildBaths(csg, solid, report, state.mold, {
-        ...options,
-        onPart: (index, total) => {
-          // первую деталь объявил «гипсовый блок» — дальше по одной
-          if (index > 0) progress.next({ code: 'progress.part', params: { i: index + 1, n: total } });
-        },
-      }).map((item) => prefixed(subject, item)));
-    }
-  }
-
-  const parts = built.map((item) => part(item.id, sizeNote(item.mesh), item.mesh, []));
-  if (!forExport) return parts;
-
-  progress.next({ code: 'progress.checkMeshes' });
-  return parts.map((item, index) => ({
-    ...item,
-    blocking: assessExport(validateMesh(built[index].mesh), true).blocking,
-  }));
-}
-
-/**
- * Детали формы крышки помечаются, чтобы не путались с деталями формы тела:
- * половина A есть и там и там, а имена файлов должны различаться. По той же
- * приставке `lid-` панель и называет их.
- */
-function prefixed(subject: MoldSubject, item: MoldPartMesh): MoldPartMesh {
-  if (!subject.id) return item;
-  return { id: `${subject.id}-${item.id}`, mesh: item.mesh };
 }
 
 function part(
@@ -345,44 +182,13 @@ function sizeNote(mesh: SurfaceMesh): string {
 }
 
 /**
- * Устье изделия для литейной горловины: венчик тела вращения плюс всё, что
- * добавили наружу рельеф и оттянутый слив. Носик сюда не входит намеренно —
- * он приставная деталь, и горловину ставят не на него.
- *
- * При крышке литник сужаем до посадочного цилиндра. Гипс формирует
- * только наружную поверхность, а внутреннюю даёт слив шликера, поэтому
- * цилиндрическую посадку форма сама не отольёт — зато отливка выходит из неё
- * с утолщением у устья ровно по диаметру посадки.
- *
- * Утопленной крышке нужна полочка ниже венчика, и туда гипс половинок не
- * достаёт. Её отливает пробка горловины — отдельная деталь, входящая в устье
- * сверху; ей нужен радиус галереи над полочкой и венчика снаружи.
- */
-function mouthOf(surface: VesselSurface, fit: LidFit | null): Mouth {
-  let outward = 0;
-  for (let i = 0; i < MOUTH_SAMPLES; i++) {
-    const u = (2 * Math.PI * i) / MOUTH_SAMPLES;
-    outward = Math.max(outward, surface.depthAt(u, 1) + surface.pullAt(u, 1));
-  }
-  const rimMm = profileRadius(surface.profile, 1) + Math.max(0, outward);
-  return {
-    zMm: surface.heightMm,
-    radiusMm: fit ? fit.seatMm : rimMm,
-    ...(fit && fit.recessMm > 0
-      ? { plug: { recessMm: fit.recessMm, galleryMm: fit.galleryMm, rimMm } }
-      : {}),
-  };
-}
-
-/**
  * Этапы задачи: шкала считает их, подпись говорит, какой идёт сейчас.
- * Этапы идут строго по порядку, поэтому номер считает сам счётчик — а вот
- * общее число может уточниться по ходу, когда станет известна схема разъёма.
+ * Этапы идут строго по порядку, поэтому номер считает сам счётчик.
  */
 class Progress {
   private step = 0;
 
-  constructor(private readonly jobId: number, public total: number) {}
+  constructor(private readonly jobId: number, private readonly total: number) {}
 
   next(label: Message): void {
     send({ type: 'progress', jobId: this.jobId, step: this.step++, total: this.total, label });

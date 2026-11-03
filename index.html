@@ -42,25 +42,13 @@
 
           <h3 class="group-title" data-i18n="panel.export">STL export</h3>
           <section class="card">
-            <div class="tabs" role="tablist">
-              <button class="tab" id="tabVessel" role="tab" aria-selected="true" data-i18n="export.tab.vessel">Piece</button>
-              <button class="tab" id="tabMaster" role="tab" aria-selected="false"
-                      data-i18n="export.tab.master" data-i18n-title="export.tab.master.title"
-                      title="Master model with a spare, for a hand-made mold">Master</button>
-              <button class="tab" id="tabBath" role="tab" aria-selected="false"
-                      data-i18n="export.tab.bath" data-i18n-title="export.tab.bath.title"
-                      title="Printed boxes to pour silicone into">Mold boxes</button>
-            </div>
-            <div class="tabs" id="pressTabs" role="tablist" hidden>
-              <span class="tabs-label" data-i18n="export.press">Press molding:</span>
-              <button class="tab" id="tabSlump" role="tab" aria-selected="false"
-                      data-i18n="export.tab.slump" data-i18n-title="export.tab.slump.title"
-                      title="Slump mold: the slab is pressed in, the relief ends up on the outside of the piece">slump mold and plunger</button>
-            </div>
             <div id="exportParams"></div>
-            <p id="schemeNote" class="scheme-note"></p>
             <ul id="partList" class="part-list"></ul>
-            <button id="exportBtn" class="tb-btn primary" style="width: 100%">Export STL</button>
+            <button id="exportBtn" class="tb-btn primary" style="width: 100%" data-i18n="export.button.vessel">Export STL</button>
+            <p class="cast-note">
+              <span data-i18n="export.cast">Molds, pour boxes and slump molds are built in</span>
+              <a id="castLink" href="https://dmitryweiner.github.io/cast-builder/" target="_blank" rel="noopener">Cast Builder</a><span data-i18n="export.cast.tail">: export the piece solid and open the file there.</span>
+            </p>
           </section>
 
           <label class="row">

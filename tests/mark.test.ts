@@ -9,8 +9,6 @@ import type { MarkRaster, MarkState } from '../src/geo/mark';
 import { encodeBase64 } from '../src/geo/bytes';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
 import { buildHollowVessel, defaultHollow } from '../src/geo/hollow';
-import { buildSlumpShell } from '../src/geo/press';
-import { analyzeMold } from '../src/geo/mold/analyze';
 import { defaultFamilyParams, familyById } from '../src/geo/profiles';
 import { validateMesh } from '../src/geo/validate';
 
@@ -173,27 +171,5 @@ describe('клеймо в изделии', () => {
     }
     expect(highest).toBeLessThanOrEqual(1.2 - 0.6 + 1e-6);
     expect(highest).toBeGreaterThan(0.5);
-  });
-
-  it('форма с клеймом — всегда с донной плитой', () => {
-    const vessel = buildVessel(params('vase'));
-    expect(analyzeMold(vessel, { hasHandle: false }).scheme).toBe('halves');
-    const report = analyzeMold(vessel, { hasHandle: false, bottomMark: true });
-    expect(report.scheme).toBe('halves-bottom');
-    expect(report.reason.map((m) => m.code)).toContain('mold.markBase');
-  });
-
-  it('в матрице отминки клеймо выпуклое, отдушина сквозь лого', () => {
-    const shell = 3;
-    const withLogo = { state: mark({ text: '', logo: leftHalfLogo() }), strip: null };
-    const { mesh } = buildSlumpShell(params('bowl', withLogo), defaultHollow(), shell, 0);
-    expect(validateMesh(mesh).watertight).toBe(true);
-    // пол полости — на высоте дна; под лого он приподнят на глубину оттиска
-    let raised = 0;
-    for (let i = 0; i < mesh.positions.length; i += 3) {
-      const r = Math.hypot(mesh.positions[i], mesh.positions[i + 1]);
-      if (r > 2 && r < 8 && mesh.positions[i + 2] > shell + 0.4) raised++;
-    }
-    expect(raised).toBeGreaterThan(0);
   });
 });
