@@ -47,27 +47,10 @@ describe('дно своей сеткой', () => {
     expect(plain - report.volume).toBeLessThan(ring * 1.15);
   });
 
-  it('полое дно с отверстием: сквозное, замкнутое, объём как у старого', () => {
-    const outer = cylinder(R, 0, H);
-    const inner = cylinder(R - 3, 3, H).positions;
-    const vent = 4;
-    const old = validateMesh(assembleHollowMesh(outer, inner, [], vent));
-    const own = assembleHollowMesh(outer, inner, [], vent, {});
-    const report = validateMesh(own);
-    expect(report.watertight).toBe(true);
-    expect(report.volume).toBeCloseTo(old.volume, -1);
-    // у оси нет ни одной вершины: отверстие сквозное
-    let nearest = Infinity;
-    for (let i = 0; i < own.positions.length; i += 3) {
-      nearest = Math.min(nearest, Math.hypot(own.positions[i], own.positions[i + 1]));
-    }
-    expect(nearest).toBeCloseTo(vent / 2, 3);
-  });
-
   it('рельеф на наружном дне полого меша не трогает пол полости', () => {
     const outer = cylinder(R, 0, H);
     const inner = cylinder(R - 3, 3, H).positions;
-    const mesh = assembleHollowMesh(outer, inner, [], 0, {
+    const mesh = assembleHollowMesh(outer, inner, [], {
       outer: { heightAt: (x) => (Math.abs(x) < 2 ? 1 : 0) },
     });
     const report = validateMesh(mesh);

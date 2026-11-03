@@ -105,7 +105,6 @@ export const en: Record<keyof typeof ru, string> = {
   'ctl.spiralK': 'Spiral pitch',
   'ctl.spiralK.hint': 'works with the “spiral” direction',
   'ctl.curvature': 'Roundness',
-  'ctl.wall': 'Wall',
   'image.file': 'File…',
   'image.notImage': 'not an image',
   'image.load': 'load an image',
@@ -273,21 +272,7 @@ export const en: Record<keyof typeof ru, string> = {
   'lid.roulette': 'Roulette on the dome',
 
   // --- export ---
-  'export.tab.vessel': 'Piece',
-  'export.tab.master': 'Master',
-  'export.tab.master.title': 'Master model with a spare, for a hand-made mold',
-  'export.tab.bath': 'Mold boxes',
-  'export.tab.bath.title': 'Printed boxes to pour silicone into',
-  'export.press': 'Press molding:',
-  'export.tab.slump': 'slump mold and plunger',
-  'export.tab.slump.title': 'Slump mold: the slab is pressed in, the relief ends up on the outside of the piece',
-  'export.slumpNote': 'Slump mold: the slab is pressed inside, the relief lands on the outside of the piece, '
-    + 'and the outer dimensions are exactly as set. Next to it is the plunger: its legs sit on the lugs of the mold '
-    + 'and it presses the slab to exactly its thickness. Both parts are shells as thick as the wall.',
   'export.button.vessel': 'Export STL',
-  'export.button.slump': 'Export the mold',
-  'export.button.master': 'Export the master',
-  'export.button.bath': 'Export mold boxes',
   'export.busy': 'Building…',
   'export.wall': 'Wall',
   'export.wall.hint': 'thickness is measured along the surface normal',
@@ -296,55 +281,26 @@ export const en: Record<keyof typeof ru, string> = {
   'export.rim.hint': '0 — a flat cut; never more than half the wall — that would be an undercut',
   'export.lidBeside': 'Lid alongside',
   'export.lidBeside.hint': 'the lid skirt-down next to the piece, in one file — to print in one go',
-  'export.shrink': 'Shrinkage',
-  'export.shrink.hint': 'slip shrinks in drying and firing — the model is enlarged by this much',
-  'export.spare': 'Spare',
-  'export.spare.hint': 'the collar above the rim where slip is topped up',
-  'export.slumpWall.hint': 'shell thickness of the mold and plunger: only the surface the slab touches is printed',
-  'export.ear': 'Lugs',
-  'export.ear.hint': 'the lug pad under a plunger leg: the lugs and legs reach out by this much more',
-  'export.round': 'Bottom rounding',
-  'export.round.hint': 'the plunger bottom: 100 — a cap from the axis, nearly a hemisphere in a bowl; 0 — a flat floor. '
-    + 'Clay in the corner is thicker, never thinner than the slab',
-  'export.vent': 'Vents',
-  'export.vent.hint': 'diameter of the holes in the mold floor and along the plunger axis: they let air out and break the suction',
-  'export.slab': 'Slab',
-  'export.slab.hint': 'slab thickness is the wall of the piece; the plunger is smaller than the mold by exactly that',
-  'export.plaster': 'Plaster',
-  'export.plaster.hint': 'plaster thickness around the cavity',
-  'export.key': 'Keys',
-  'export.key.hint': 'radius of the registration keys on the parting plane; 0 — none',
-  'export.silicone': 'Silicone',
-  'export.silicone.hint': 'silicone layer above the block',
-  'export.bathWall.hint': 'wall thickness of the printed box',
+  'export.solid': 'Solid',
+  'export.solid.hint': 'a solid body with the handle and the spout, no cavity — the blank for molds, pour boxes and slump molds in Cast Builder',
+  'export.cast': 'Molds, pour boxes and slump molds are built in',
+  'export.cast.tail': ': export the piece solid and open the file there.',
 
   // --- parts ---
   'part.vessel': 'Piece',
+  'part.solid': 'Solid piece',
   'part.vesselLid': 'Piece + lid',
   'part.oneFile': 'in one file',
   'part.clay': '{v} l of clay',
   'part.lid': 'Lid',
-  'part.slump': 'Mold + plunger',
-  'part.half-A': 'Half A',
-  'part.half-B': 'Half B',
-  'part.bottom': 'Base section',
-  'part.single': 'One-piece mold',
-  'part.plug': 'Spare plug',
-  'part.master': 'Master model',
-  'part.bath': 'Mold box: {part}',
-  'part.lidOf': 'Lid — {part}',
 
   // --- sizes and status ---
   'size.round': '⌀{d} × {h} mm',
-  'size.box': '{dims} mm',
   'volume.l': '{v} l',
   'volume.ml': '{v} ml',
   'status.capacity': 'capacity {v}',
   'status.clay': 'clay {v}',
   'audit.checking': 'checking…',
-  'audit.molding': 'building the mold…',
-  'audit.step': 'building: {step} ({i} of {n})',
-  'audit.parts': '{n} {n|part|parts} · {k}k triangles',
   'audit.watertight': 'watertight ✓ · {k}k triangles',
   'audit.open': 'mesh is not watertight',
 
@@ -355,31 +311,12 @@ export const en: Record<keyof typeof ru, string> = {
   'warn.lidNarrow': 'The mouth is too narrow for a lid: the seat came out ⌀{d} mm. Widen the neck, or reduce the gallery or the wall.',
   'warn.overhang': 'Overhangs steeper than 60° over {pct} % of the surface — printing in clay will need supports.',
   'error.vessel': 'Could not build the piece: {error}',
-  'error.mold': 'Could not build the mold: {error}',
   'error.export': 'Build failed: {error}',
   'error.notPreset': '“{name}” is not a ClayForm preset.',
   'error.presetSave': 'Could not save the preset: the browser denied access to storage.',
   'error.presetDelete': 'Could not delete the preset: the browser denied access to storage.',
 
   // --- core messages (geo/message.ts) ---
-  'mold.whyHandle': 'The handle makes a through hole in the body — the piece cannot be lifted out, '
-    + 'the mold must split along the axis.',
-  'mold.whySpout': 'The applied spout sticks out sideways — the piece cannot be lifted out, '
-    + 'the mold must split along the axis.',
-  'mold.whyWider': 'Somewhere the piece gets wider higher up ({pct} % of the surface catches) — it cannot be lifted out, '
-    + 'the mold must split along the axis.',
-  'mold.dropout': 'Nowhere does the piece get wider higher up: it lifts straight out, a one-piece mold will do.',
-  'mold.wideBase': 'The base is wide and flat: a seam across it is the hardest to clean up, so the base is cast '
-    + 'as a separate section.',
-  'mold.narrowBase': 'The base is narrow, no separate section is needed.',
-  'mold.markBase': 'The base carries a mark: the halves cannot release it, so the base is cast as a separate section.',
-  'mold.undercutsAngular': 'Undercuts: {pct} % of the surface, steepest {deg}°. The relief runs at an angle '
-    + 'to the parting plane — such a mold would have to be unscrewed. Turn the wave to run along the height '
-    + '(the mold releases ring ridges freely) or reduce the depth.',
-  'mold.undercutsRadial': 'Undercuts: {pct} % of the surface, steepest {deg}°. Reduce the relief depth: '
-    + 'at this pitch the ridges curl over radially.',
-  'press.undercut': 'The piece will not come out of the mold: {pct} % of the surface catches, steepest {deg}° — '
-    + 'choose an open shape (bowl, tumbler) or reduce the relief depth.',
   'mark.tooLong': 'The mark text is longer than the circle — letters shrunk to {pct} %.',
   'mark.noRoom': 'No room for the mark text on the base: reduce the letter size or the edge margin.',
   'mesh.nonFinite': 'The mesh has non-finite coordinates or normals.',
@@ -393,14 +330,7 @@ export const en: Record<keyof typeof ru, string> = {
   'progress.vessel': 'building the piece',
   'progress.lid': 'building the lid',
   'progress.checkMeshes': 'checking meshes',
-  'progress.slump': 'slump mold',
-  'progress.punch': 'plunger',
-  'progress.analyze': 'choosing the parting',
-  'progress.master': 'master model',
-  'progress.block': 'plaster block',
-  'progress.part': 'part {i} of {n}',
   'progress.exact': 'exact build of the piece…',
-  'progress.mold': 'building the mold…',
   'progress.export': 'building…',
 
   // --- presets ---

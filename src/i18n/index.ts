@@ -111,11 +111,6 @@ export function autoPresetPrefixes(): string[] {
   return [...LANGS.map((language) => DICTS[language]['presets.auto'].replace(/\s*\{n\}\s*/, '')), LEGACY_PRESET_PREFIX];
 }
 
-/** Первая буква строчная: «Половина A» внутри «Ванночка: половина A». */
-export function lowerFirst(text: string): string {
-  return text.charAt(0).toLocaleLowerCase(current) + text.slice(1);
-}
-
 const PLACEHOLDER = /\{(\w+)(?:\|([^}]*))?\}/g;
 
 export function format(template: string, params: Params | undefined, language: Lang): string {

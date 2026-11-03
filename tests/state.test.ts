@@ -3,7 +3,7 @@
 
 import {
   defaultState, sanitizeState, stateForFamily, toBuildParams,
-  HEIGHT_MIN_MM, HEIGHT_MAX_MM, STATE_VERSION, pressAllowed,
+  HEIGHT_MIN_MM, HEIGHT_MAX_MM, STATE_VERSION,
 } from '../src/state/schema';
 import { defaultFamilyParams, familyById } from '../src/geo/profiles';
 import { buildVessel } from '../src/geo/build';
@@ -87,27 +87,18 @@ describe('toBuildParams', () => {
   });
 });
 
-describe('отминка', () => {
-  it('доступна только телу без ручки, носика и крышки', () => {
-    const plain = sanitizeState({ ...defaultState(), exportMode: 'slump' });
-    expect(plain.exportMode).toBe('slump');
-    expect(pressAllowed(plain)).toBe(true);
-    for (const extra of [
-      { handle: { on: true } },
-      { spout: { on: true, kind: 'lip' } },
-      { spout: { on: true, kind: 'applied' } },
-      { lid: { on: true } },
-    ]) {
-      for (const exportMode of ['slump']) {
-        const state = sanitizeState({ ...defaultState(), ...extra, exportMode });
-        expect(state.exportMode, JSON.stringify(extra)).toBe('vessel');
-        expect(sanitizeState(state)).toEqual(state);
-      }
-    }
+describe('сплошное изделие', () => {
+  it('булев флаг, по умолчанию выключен, мусор — false', () => {
+    expect(defaultState().solid).toBe(false);
+    expect(sanitizeState({ solid: true }).solid).toBe(true);
+    expect(sanitizeState({ solid: 1 }).solid).toBe(false);
   });
 
-  it('прочие режимы приставные детали не трогают', () => {
-    expect(sanitizeState({ ...defaultState(), handle: { on: true }, exportMode: 'bath' }).exportMode).toBe('bath');
+  it('оснастки в состоянии больше нет: старые ссылки с ней читаются без неё', () => {
+    const old = sanitizeState({ ...defaultState(), exportMode: 'bath', mold: { shrinkPct: 10 } });
+    expect(old).not.toHaveProperty('exportMode');
+    expect(old).not.toHaveProperty('mold');
+    expect(old).toEqual(defaultState());
   });
 });
 

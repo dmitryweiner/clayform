@@ -20,22 +20,8 @@ import type { MarkRaster, MarkState } from '../geo/mark';
 import { defaultMark, sanitizeMark } from '../geo/mark';
 import type { LidState } from '../geo/lid';
 import { defaultLid, sanitizeLid } from '../geo/lid';
-// Из geo/mold/state, а не из фасада geo/mold: фасад тянет за собой csg.ts, а
-// схему состояния читает и главный поток, который про WASM знать не должен.
-import type { MoldState } from '../geo/mold/state';
-import { defaultMold, sanitizeMold } from '../geo/mold/state';
 
 export const STATE_VERSION = 1;
-
-/**
- * Что уходит в STL:
- *  vessel — само изделие, полое, как его печатают глиной;
- *  master — мастер-позитив под ручную силиконовую форму;
- *  bath   — ванночки-опалубки под заливку силикона (по одной на часть);
- *  slump  — отминка: углублённая форма и пуансон, пласт вдавливают внутрь.
- */
-export const EXPORT_MODES = ['vessel', 'master', 'bath', 'slump'] as const;
-export type ExportMode = (typeof EXPORT_MODES)[number];
 
 export interface AppState {
   version: number;
@@ -52,11 +38,16 @@ export interface AppState {
   /** клеймо на донышке */
   mark: MarkState;
   hollow: HollowState;
-  mold: MoldState;
-  exportMode: ExportMode;
+  /**
+   * Изделие сплошным телом, а не полым: с ручкой и носиком, без усадки и
+   * горловины. Это заготовка для оснастки — формы, ванночки и отминку
+   * строит отдельное приложение cast-builder по готовому STL, и полое
+   * изделие с носиком оно не заполнит: канал носика открывает полость наружу.
+   */
+  solid: boolean;
   /**
    * Крышка рядом с изделием, юбкой вниз, — и в превью, и одним STL на двоих:
-   * печатать за один заход. Только в режиме «изделие» и только с крышкой.
+   * печатать за один заход. Только с крышкой.
    */
   lidBeside: boolean;
   /** сегментов сетки для экспортной сборки */
@@ -81,8 +72,7 @@ export function defaultState(): AppState {
     lid: defaultLid(),
     mark: defaultMark(),
     hollow: defaultHollow(),
-    mold: defaultMold(),
-    exportMode: 'vessel',
+    solid: false,
     lidBeside: false,
     resolution: 192,
   };
@@ -133,7 +123,7 @@ export function sanitizeState(raw: unknown): AppState {
   );
   const wanted = num(source.resolution, fallback.resolution);
   const resolution = RESOLUTIONS.includes(wanted) ? wanted : fallback.resolution;
-  const state: AppState = {
+  return {
     version: STATE_VERSION,
     family,
     shape: clampFamilyParams(family, numericRecord(source.shape)),
@@ -145,31 +135,10 @@ export function sanitizeState(raw: unknown): AppState {
     lid: sanitizeLid(source.lid),
     mark: sanitizeMark(source.mark),
     hollow: sanitizeHollow(source.hollow),
-    mold: sanitizeMold(source.mold),
-    exportMode: exportModeOf(source.exportMode),
+    solid: typeof source.solid === 'boolean' ? source.solid : false,
     lidBeside: typeof source.lidBeside === 'boolean' ? source.lidBeside : false,
     resolution,
   };
-  // Отминка — только для тела без приставных деталей. Держим это здесь, в
-  // единственной точке, через которую проходит любое состояние: включил
-  // ручку — режим сам откатился к изделию.
-  if (isPressMode(state.exportMode) && !pressAllowed(state)) state.exportMode = 'vessel';
-  return state;
-}
-
-export const isPressMode = (mode: ExportMode): boolean => mode === 'slump';
-
-/**
- * Можно ли отминать: пласт ложится только на тело вращения (с рельефом) —
- * без ручки, носика любого вида и крышки.
- */
-export function pressAllowed(state: AppState): boolean {
-  return !state.handle.on && !effectiveSpout(state).on && !state.lid.on;
-}
-
-function exportModeOf(raw: unknown): ExportMode {
-  for (const mode of EXPORT_MODES) if (raw === mode) return mode;
-  return 'vessel';
 }
 
 /**

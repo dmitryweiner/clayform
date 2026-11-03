@@ -4,10 +4,11 @@
 
 <img width="764" height="806" alt="image" src="https://github.com/user-attachments/assets/7cbe3f8b-d9f2-4173-808c-dbaf40e35ade" />
 
-**Clay pottery and the molds to cast it — from parameters to STL.**
+**Clay pottery — from parameters to STL.**
 A web app: pick a typical shape, turn its dimensions in millimetres, add
-relief and roulette patterns — and get either a file to print in clay or the
-tooling for slip casting.
+relief and roulette patterns — and get a file to print in clay, or a solid
+piece to build slip-casting molds from in
+[Cast Builder](https://dmitryweiner.github.io/cast-builder/).
 
 A geometric relative of [MathSculpt](../mathsculpt/), but about pottery
 rather than mathematical surfaces: the parameters are called “neck”, “belly”
@@ -93,7 +94,7 @@ There are two kinds of spout. A *pulled lip*, as on a krynka: the cavity
 follows it, so the pour is a channel rather than a solid lump of clay. A
 *tubular* one, as on a teapot: an applied tube arcing from the wall to the
 tip, with attachment height, length, diameters at the base and the tip, and
-the cut angle. In a solid positive (master, tooling) the tube is solid — slip
+the cut angle. In a solid piece (the blank for molds) the tube is solid — slip
 casting makes the spout hollow anyway. In the STL of the piece itself a real
 channel is cut through the wall, with walls as thick as the body, and the tip
 is opened.
@@ -116,64 +117,27 @@ edge (four free fonts with Cyrillic — Rubik, PT Serif, Comfortaa, Oswald),
 optionally followed by the date, and an uploaded logo in the middle
 (brightness is depth, with rotation and size). It reads on the upturned
 piece; “Show base” turns the camera there. The mark travels everywhere the
-piece does: into the printed piece, the master, the mold cavity (a mold with
-a mark always gets a base section — the halves could not release it) and the
-slump mold floor, where it stands raised.
+piece does: into the printed piece and the solid one — and from there into
+the molds Cast Builder makes.
 
 **The rim edge** is smoothed with a radius, as a potter does with a finger:
 the wall is cut lower under the edge and an arc makes up the top, so the
 height stays exactly as set. Zero gives the flat cut of a raw edge.
 
-**Four export modes:**
-
-| Mode | What you get |
-|---|---|
-| Piece | a hollow vessel with the set wall — to print in clay |
-| Master | a positive with a casting spare — for a hand-made silicone mold |
-| Mold boxes | printed boxes to pour silicone into, one per mold part |
-| Press molding | a slump mold shell and its plunger in one file: the slab is pressed inside, the relief ends up outside |
-
-Press molding is available for a body without a handle, spout or lid. The
-mold and the plunger are printed as shells as thick as the “Wall” — only the
-surface the slab touches, no solid block. If the piece will not come out of
-the mold, the app warns you.
-
-The slump mold comes with a **plunger** — the matching part that presses
-the slab to the mold to exactly its thickness (“Slab”). Under its rim the
-mold has three lugs with slots, the plunger has three short hooked legs, and
-the mold floor has a vent with three grooves on the underside leading out
-past the edge — the table would otherwise close it. The workflow: lay the slab on the mold and press
-it in by hand; trim any overhang beyond the rim longer than a centimetre —
-shorter overhang will lie between the wall and the legs. Then seat the
-plunger until its legs rest on the lugs: the lips of the legs hug the lugs
-from outside and centre the plunger, and the soles on the lugs set the
-thickness of the wall and the base. The plunger bottom is rounded (“Bottom
-rounding”: 100 % — a cap from the axis, nearly a hemisphere in a bowl; 0 — a
-flat floor): in the centre the base comes out exactly one slab thick,
-thicker towards the wall, like a piala with a heavy foot. Under the lugs the
-mold has ribs down to its base (for a bowl), which help it stand; they print
-without supports. Remove the plunger (the vent along its axis keeps it from
-sticking by suction) and trim the slab edge along the rim. The mold and the
-plunger lie side by side in one STL; if both do not fit the printer bed,
-“split into parts” in the slicer and print them one at a time.
-
-**A recessed lid in a casting mold** gets a **spare plug** — a separate
-part that goes into the mouth from above and casts the gallery for the lid:
-the plaster of the halves cannot reach there. The plug comes off first,
-upwards; it also holds the sprue.
-
-**The app chooses the parting scheme itself.** A bowl lifts straight out — a
-one-piece mold. A pot's neck is narrower than its belly — two halves with
-keys. A wide flat base adds a separate base section. The analyser counts
-undercuts by the normals and explains its choice in words, and if the relief
-locks the mold, it warns you and says what exactly is wrong with it.
+**Export** gives the piece as it is printed in clay: hollow, with the set
+wall, base and rim — and the lid as a separate file or, with “Lid
+alongside”, in the same one. With **“Solid”** it gives the piece as a solid
+body with the handle and the spout, and the lid solid and upside down, as it
+goes into a mold. That is the blank for the tooling: the master positive,
+the pour boxes for silicone (the parting scheme is chosen from the shape)
+and the slump mold with its punch are built from a ready STL by a separate
+app, [Cast Builder](https://dmitryweiner.github.io/cast-builder/)
+([source](https://github.com/dmitryweiner/cast-builder)).
 
 **The heavy lifting is done by a worker.** Boolean operations (the manifold
-WASM module) live in a separate thread: the main one never loads it. Exporting
-mold boxes at the highest resolution takes seconds (the box positive is
-hollow from below, a shell of the box wall thickness: silicone needs only
-the working surface) — the tab does not freeze,
-and a bar at the bottom shows which stage is running.
+WASM module) live in a separate thread: the main one never loads it.
+Exporting a piece with a handle at the highest resolution takes seconds —
+the tab does not freeze, and a bar at the bottom shows which stage is running.
 
 It also keeps the preview honest. While you drag a slider, the handle and
 spout are drawn as separate bodies — fast and, from outside, identical to the
@@ -195,8 +159,8 @@ place, keeping the piece and the undo history. The choice is remembered.
 hides it, the “⚙ Settings” button at the bottom brings it back. Long builds
 show a progress bar right on the model.
 
-The full casting workflow is described (in Russian) in
-[slip_casting_mold_workflow.md](slip_casting_mold_workflow.md).
+The full casting workflow is described (in Russian) in Cast Builder's
+[docs](https://github.com/dmitryweiner/cast-builder/blob/main/docs/slip-casting-workflow.ru.md).
 
 A detailed user guide — every shape, attachment and export mode with its
 parameters — is in [docs/](docs/README.md) (in Russian).
@@ -206,7 +170,7 @@ parameters — is in [docs/](docs/README.md) (in Russian).
 ```bash
 npm install
 npm run dev       # vite
-npm run check     # tsc + eslint + vitest (398 tests)
+npm run check     # tsc + eslint + vitest
 npm run smoke     # browser smoke; --preview for the production build, --res 384 for export, --slow for the progress bar
 npm run build     # production build → ./dist; GH Actions publishes it to Pages
 ```
@@ -230,13 +194,17 @@ src/geo/       pure geometry core, no Three.js, in millimetres
   roulette     roulette patterns on a tile
   build        silhouette → lathe mesh → relief → mesh
   hollow       the cavity for direct printing
-  handle       handle: a section swept along a Bézier arc
+  bottom       the outer base on its own grid, for the mark
+  mark         maker's mark on the base: a line of text and a logo
+  handle       handle: a section swept along a Bézier arc (sweep)
   spout        spout: pulled lip and applied tube with a channel
   attach       shared by applied parts: sinking an end into the wall
+  lid          lid and its seat: a closed contour revolved (lathe), no CSG
+  layout       the lid beside the piece in one file
+  stl          binary STL; validate — the mesh check before export
   csg          bridge to manifold-3d (WASM) for boolean operations
   assemble     body ∪ handles ∪ spout, and the same minus cavity and channel
   message      messages to the user as codes — the core knows no language
-  mold/        undercut analysis, blocks, master, mold boxes
 src/state/     state, sanitising, presets, links, history
 src/worker/    protocol, the CSG worker and its client
 src/i18n/      ru (reference) and en dictionaries, language, templates
@@ -251,15 +219,14 @@ The invariants everything rests on:
   may assume valid parameters; a person may have edited the link. The worker
   boundary is “outside” too: it sanitises the incoming state again.
 - **`src/main.ts` knows nothing of WASM.** Not a single import path from the
-  main thread leads to `geo/csg.ts` — which is why `geo/mold` is imported
-  there by submodules (`mold/analyze`, `mold/state`), not through the facade.
+  main thread leads to `geo/csg.ts`.
 - **Visible text goes only through the dictionaries.** The core and the worker
   speak in message codes; a test fails on any Cyrillic string literal outside
   `src/i18n/ru.ts`.
 
-The model axis is z, the base of the piece at z = 0. The mold parting plane
-is XZ (y = 0), and the handle and spout must lie in it, or a two-part mold
-would not come off.
+The model axis is z, the base of the piece at z = 0. The handle (x < 0) and
+the spout (x > 0) lie in the XZ plane (y = 0): that is the parting plane of
+the mold Cast Builder makes, and a two-part mold would not come off otherwise.
 
 ## License
 

@@ -7,9 +7,7 @@ import { defaultState, sanitizeState, toBuildParams } from '../src/state/schema'
 import { buildHollowVessel } from '../src/geo/hollow';
 import { lidFit, lidSeat, buildLidMesh } from '../src/geo/lid';
 import { buildProfile } from '../src/geo/profiles';
-import { buildVessel } from '../src/geo/build';
 import { validateMesh } from '../src/geo/validate';
-import { analyzeMold } from '../src/geo/mold';
 import { nextPresetNumber } from '../src/state/userPresets';
 import { autoPresetPrefixes, DICTS, hasKey } from '../src/i18n';
 
@@ -58,14 +56,6 @@ describe('встроенные пресеты', () => {
       const vessel = buildHollowVessel(toBuildParams(state, 96), state.hollow, lidSeat(fit));
       expect(validateMesh(vessel.mesh).watertight, preset.id).toBe(true);
       expect(vessel.capacityMl, preset.id).toBeGreaterThan(10);
-    }
-  });
-
-  it('ни один не требует опор при печати сверх разумного', () => {
-    for (const preset of PRESETS) {
-      const state = preset.build();
-      const scheme = analyzeMold(buildVessel(toBuildParams(state, 96)), { hasHandle: state.handle.on });
-      expect(scheme.warnings, preset.id).toHaveLength(0);
     }
   });
 

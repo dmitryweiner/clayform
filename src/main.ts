@@ -2,10 +2,10 @@
 //
 // Два разных по цене конвейера. Изделие строится здесь же, чисто
 // параметрически, за десяток миллисекунд — и пересобирается на каждое
-// движение ползунка. Всё, что требует булевых операций (оснастка, экспортная
+// движение ползунка. Всё, что требует булевых операций (точная и экспортная
 // сборка изделия с ручкой и носиком), уходит в воркер: WASM-модуль manifold
-// в главный поток не грузится вовсе, и вкладка не замирает. Оснастка вдобавок
-// пересобирается с задержкой — когда пользователь остановился.
+// в главный поток не грузится вовсе, и вкладка не замирает. Оснастку —
+// формы, ванночки, отминку — строит cast-builder по выгруженному STL.
 
 import './style.css';
 import { el } from './ui/dom';
@@ -24,20 +24,14 @@ import { snapshotCards, restoreCards } from './ui/card';
 import { applyStaticText } from './ui/staticText';
 import type { Lang } from './i18n';
 import {
-  initLang, lang, setLang, onLangChange, t, tm, tDynamic, lowerFirst, autoPresetPrefixes,
+  initLang, lang, setLang, onLangChange, t, tm, tDynamic, autoPresetPrefixes,
 } from './i18n';
 import type { SurfaceMesh } from './geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from './geo/layout';
-import type { BuildParams } from './geo/build';
 import { buildVessel, vesselSurface } from './geo/build';
 import { buildHandles } from './geo/handle';
 import { buildAppliedSpout } from './geo/spout';
-// Прямо из подмодулей, минуя фасад geo/mold: тот тянет за собой csg.ts, а с
-// ним и WASM-обвязку manifold. Здесь она не нужна ни строчкой — весь CSG
-// живёт в воркере, и путь импорта это подтверждает.
-import { analyzeMold, pressWarning } from './geo/mold/analyze';
-import { buildSlumpShell, buildPunch } from './geo/press';
-import { markActive, markWarnings } from './geo/mark';
+import { markWarnings } from './geo/mark';
 import type { MarkRaster } from './geo/mark';
 import { markStrip } from './ui/markRaster';
 import { buildHollowVessel } from './geo/hollow';
@@ -49,7 +43,7 @@ import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
 import type { AppState } from './state/schema';
 import {
-  defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, isPressMode, lidRelief,
+  defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, lidRelief,
   RESOLUTIONS,
 } from './state/schema';
 import { PRESETS, presetById } from './state/presets';
@@ -63,8 +57,6 @@ import { CsgClient } from './worker/client';
 
 /** Детализация превью изделия: ~10 мс на пересборку, незаметно при перетаскивании. */
 const PREVIEW_SEGMENTS = 192;
-/** Для оснастки сетку огрубляем: стоимость булевых операций растёт с числом граней. */
-const MOLD_PREVIEW_SEGMENTS = 96;
 /**
  * Для точной сборки изделия — тоже огрубляем, по той же причине: на 192
  * булевы операции стоят больше двух секунд, на 128 — около секунды. Показать
@@ -75,12 +67,10 @@ const EXACT_SEGMENTS = 128;
 /** Полная проверка меша стоит ~70 мс — гоняем её, когда пользователь остановился. */
 const AUDIT_DELAY_MS = 220;
 /**
- * Всё, что считает воркер, — сотни миллисекунд: и оснастка, и точная сборка
- * изделия с ручкой и носиком. Ждём паузы подольше, чем проверки меша.
+ * Всё, что считает воркер, — сотни миллисекунд: точная сборка изделия с
+ * ручкой и носиком. Ждём паузы подольше, чем проверки меша.
  */
 const CSG_DELAY_MS = 400;
-/** Зазор между деталями в «разнесённом» превью, мм. */
-const EXPLODE_GAP_MM = 20;
 /** Зазор между изделием и крышкой рядом — тот же, что воркер кладёт в STL. */
 const BESIDE_GAP_MM = LID_BESIDE_GAP_MM;
 /**
@@ -185,15 +175,7 @@ function renderPanel(): void {
   );
 
   exportPanel = renderExportPanel(
-    {
-      vessel: el('tabVessel', HTMLButtonElement),
-      master: el('tabMaster', HTMLButtonElement),
-      bath: el('tabBath', HTMLButtonElement),
-      slump: el('tabSlump', HTMLButtonElement),
-    },
-    el('pressTabs', HTMLDivElement),
     exportParams,
-    el('schemeNote', HTMLParagraphElement),
     el('partList', HTMLUListElement),
     () => state,
     (next) => applyState(next),
@@ -256,7 +238,6 @@ function updateHistoryButtons(): void {
 let baseWarnings: string[] = [];
 
 let auditTimer: ReturnType<typeof setTimeout> | null = null;
-let moldTimer: ReturnType<typeof setTimeout> | null = null;
 let exactTimer: ReturnType<typeof setTimeout> | null = null;
 /** Растёт на каждую пересборку: поздний ответ от старой сборки не должен перебить свежую. */
 let generation = 0;
@@ -288,7 +269,8 @@ function refresh(): void {
   // превью, и в экспорте её строит один и тот же параметрический код.
   // Надетой её показываем сразу, без ожидания воркера.
   // «Крышка рядом» — в печатном положении, юбкой вниз; иначе — надетой.
-  const beside = Boolean(fit) && state.lidBeside && state.exportMode === 'vessel';
+  // Сплошная крышка всегда уходит отдельным файлом (см. воркер).
+  const beside = Boolean(fit) && state.lidBeside && !state.solid;
   if (fit) {
     const dome = lidDomeContext(fit, state.lid);
     attachRows.setLidBandNote((band) => describeBand(band, dome));
@@ -300,33 +282,11 @@ function refresh(): void {
     })]
     : [];
 
-  // Схему разъёма считаем по телу без ручки: ручка влияет на выбор самим
-  // фактом своего существования (сквозное отверстие), а гонять ради этого
-  // CSG на каждое движение ползунка незачем.
-  const scheme = analyzeMold(outer, {
-    hasHandle: state.handle.on,
-    hasSpout: hasAppliedSpout(),
-    angularRelief: hasAngularRelief(),
-    // утопленной крышке форма добавляет пробку горловины (см. mold/block.ts)
-    hasPlug: Boolean(fit && fit.recessMm > 0),
-    bottomMark: markActive(state.mark),
-  });
-  const press = isPressMode(state.exportMode);
-  // Отминочная форма — скорлупа без CSG, пуансон — тело вращения: строятся
-  // сразу, без воркера. Пуансон стоит рядом с матрицей.
-  const pressMeshes = press ? slumpPair(buildParams) : null;
-  exportPanel.setSchemeNote(press ? t('export.slumpNote') : scheme.reason.map(tm).join(' '));
-
-  if (press) {
-    const undercut = pressWarning(outer);
-    baseWarnings = undercut ? [tm(undercut)] : [];
-  } else {
-    baseWarnings = scheme.warnings.map(tm);
-  }
+  baseWarnings = [];
   if (hasAppliedSpout() && state.spout.tipAt < SPOUT_BELOW_RIM) {
     baseWarnings.push(t('warn.spoutLow'));
   }
-  if (hollow.pinchedFraction > 0 && !press) {
+  if (hollow.pinchedFraction > 0 && !state.solid) {
     baseWarnings.push(t('warn.pinched', { pct: (hollow.pinchedFraction * 100).toFixed(1) }));
   }
   baseWarnings.push(...markWarnings(buildParams.mark, profileRadius(profile, 0)).map(tm));
@@ -346,67 +306,47 @@ function refresh(): void {
     t('status.clay', { v: formatVolume(clayMl) }),
   ].join(' · ');
 
-  if (moldTimer) clearTimeout(moldTimer);
   if (auditTimer) clearTimeout(auditTimer);
   if (exactTimer) clearTimeout(exactTimer);
 
-  if (state.exportMode === 'vessel') {
-    // Пока ползунок в движении, ручку и носик рисуем отдельными мешами: CSG
-    // на каждое движение стоил бы 300 мс вместо 10. Снаружи это выглядит
-    // ровно как объединение — а вот внутри полости торчат утопленные торцы,
-    // и носик стоит заглушенным. Поэтому по паузе картинку заменяет
-    // настоящая сборка из воркера (showExactVessel).
-    const surface = vesselSurface(buildParams);
-    const tube = buildAppliedSpout(effectiveSpout(state), surface.profile, surface.heightMm);
-    const body = [
-      hollow.mesh,
-      ...buildHandles(state.handle, surface.profile, surface.heightMm),
-      ...(tube ? [tube] : []),
-    ];
-    // крышку ставим по габариту тела вместе с ручкой и носиком: точная
-    // сборка потом подменит только тело, а крышка останется где стояла
-    const lids = beside ? placeInRow([body, lidMeshes], BESIDE_GAP_MM)[1] : lidMeshes;
-    scene.setMeshes([...body, ...lids]);
-    const lidNote = fit
-      ? t('size.round', { d: (fit.fieldMm * 2).toFixed(0), h: lidHeightMm(fit, state.lid).toFixed(0) })
-      : '';
-    exportPanel.setParts(beside
-      ? [{ label: t('part.vesselLid'), note: t('part.oneFile') }]
-      : [
-        { label: t('part.vessel'), note: t('part.clay', { v: (clayMl / 1000).toFixed(2) }) },
-        ...(fit ? [{ label: t('part.lid'), note: lidNote }] : []),
-      ]);
-    exportBtn.textContent = t('export.button.vessel');
-    auditEl.textContent = t('audit.checking');
-    // Быстрый вердикт — по оболочке: он приходит через четверть секунды и
-    // почти всегда окончательный. Если есть приставные детали, следом
-    // подъезжает точная сборка из воркера и перепроверяет уже её — то самое,
-    // что уйдёт в STL.
-    auditTimer = setTimeout(() => audit([hollow.mesh, ...lids]), AUDIT_DELAY_MS);
-    if (state.handle.on || hasAppliedSpout()) {
-      exactTimer = setTimeout(() => void showExactVessel(stamp, lids), CSG_DELAY_MS);
-    }
-  } else if (pressMeshes) {
-    // отминочная форма готова сразу — ни задержки, ни воркера
-    scene.setMeshes(pressMeshes);
-    exportPanel.setParts([{ label: t('part.slump'), note: sizeNote(pressMeshes) }]);
-    exportBtn.textContent = t('export.button.slump');
-    auditEl.textContent = t('audit.checking');
-    auditTimer = setTimeout(() => audit(pressMeshes, false), AUDIT_DELAY_MS);
-  } else {
-    exportPanel.setParts(scheme.parts.map((part) => ({ label: partLabel(part.id) })));
-    exportBtn.textContent = t(state.exportMode === 'master' ? 'export.button.master' : 'export.button.bath');
-    auditEl.textContent = t('audit.molding');
-    moldTimer = setTimeout(() => void showMold(stamp), CSG_DELAY_MS);
+  // Пока ползунок в движении, ручку и носик рисуем отдельными мешами: CSG
+  // на каждое движение стоил бы 300 мс вместо 10. Снаружи это выглядит
+  // ровно как объединение — а вот внутри полости торчат утопленные торцы,
+  // и носик стоит заглушенным. Поэтому по паузе картинку заменяет
+  // настоящая сборка из воркера (showExactVessel). Сплошное изделие — то же
+  // тело без полости: заготовка для оснастки в cast-builder.
+  const surface = vesselSurface(buildParams);
+  const tube = buildAppliedSpout(effectiveSpout(state), surface.profile, surface.heightMm);
+  const shell = state.solid ? outer : hollow.mesh;
+  const body = [
+    shell,
+    ...buildHandles(state.handle, surface.profile, surface.heightMm),
+    ...(tube ? [tube] : []),
+  ];
+  // крышку ставим по габариту тела вместе с ручкой и носиком: точная
+  // сборка потом подменит только тело, а крышка останется где стояла
+  const lids = beside ? placeInRow([body, lidMeshes], BESIDE_GAP_MM)[1] : lidMeshes;
+  scene.setMeshes([...body, ...lids]);
+  const lidNote = fit
+    ? t('size.round', { d: (fit.fieldMm * 2).toFixed(0), h: lidHeightMm(fit, state.lid).toFixed(0) })
+    : '';
+  exportPanel.setParts(beside
+    ? [{ label: t('part.vesselLid'), note: t('part.oneFile') }]
+    : [
+      state.solid
+        ? { label: t('part.solid'), note: t('size.round', { d: widthMm.toFixed(0), h: state.heightMm.toFixed(0) }) }
+        : { label: t('part.vessel'), note: t('part.clay', { v: (clayMl / 1000).toFixed(2) }) },
+      ...(fit ? [{ label: t('part.lid'), note: lidNote }] : []),
+    ]);
+  auditEl.textContent = t('audit.checking');
+  // Быстрый вердикт — по оболочке: он приходит через четверть секунды и
+  // почти всегда окончательный. Если есть приставные детали, следом
+  // подъезжает точная сборка из воркера и перепроверяет уже её — то самое,
+  // что уйдёт в STL.
+  auditTimer = setTimeout(() => audit([shell, ...lids]), AUDIT_DELAY_MS);
+  if (state.handle.on || hasAppliedSpout()) {
+    exactTimer = setTimeout(() => void showExactVessel(stamp, lids), CSG_DELAY_MS);
   }
-}
-
-/** Матрица и пуансон рядом, в печатном положении, — ровно то, что уйдёт в STL. */
-function slumpPair(params: BuildParams): SurfaceMesh[] {
-  const { bathWallMm, shrinkPct } = state.mold;
-  const slump = buildSlumpShell(params, state.hollow, bathWallMm, shrinkPct, state.mold.earMm, state.mold.ventMm);
-  const punch = buildPunch(params, state.hollow, bathWallMm, shrinkPct, slump.fit, state.mold.punchRoundPct);
-  return placeInRow([[slump.mesh], [punch]], BESIDE_GAP_MM).flat();
 }
 
 /**
@@ -436,45 +376,6 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
   }
 }
 
-async function showMold(stamp: number): Promise<void> {
-  try {
-    // Ход сборки — и текстом рядом с проверкой меша, и полосой на канвасе.
-    // Полоса появляется, только если сборка затянулась: на быстрой машине
-    // она на полсекунды лишь мельтешила бы.
-    const parts = await progress.track(
-      (onProgress) => csg.run(
-        { kind: 'mold-preview', state, segments: MOLD_PREVIEW_SEGMENTS, markStrip: markRaster },
-        (step) => {
-          onProgress(step);
-          // «собираю» в строке остаётся всё время сборки: по нему и человек, и
-          // смоук понимают, что ответа ещё нет.
-          if (stamp === generation) {
-            auditEl.textContent = t('audit.step', { step: tm(step.label), i: step.step + 1, n: step.total });
-          }
-        },
-      ),
-      { label: 'progress.mold' },
-    );
-    // null — задачу вытеснила более свежая; stamp — её обогнал ответ.
-    if (!parts || stamp !== generation) return;
-
-    scene.setMeshes(placeInRow(parts.map((part) => [toMesh(part)]), EXPLODE_GAP_MM).flat());
-    exportPanel.setParts(parts.map((part) => ({
-      label: partLabel(part.id),
-      note: part.note ? t('size.box', { dims: part.note }) : '',
-    })));
-    const triangles = parts.reduce((sum, part) => sum + part.indices.length / 3, 0);
-    auditEl.textContent = t('audit.parts', { n: parts.length, k: Math.round(triangles / 1000) });
-    blockersEl.textContent = '';
-    exportBtn.disabled = false;
-  } catch (error) {
-    if (stamp !== generation) return;
-    auditEl.textContent = '';
-    blockersEl.textContent = t('error.mold', { error: message(error) });
-    exportBtn.disabled = true;
-  }
-}
-
 /** Меш детали из ответа воркера — буферы пришли переносом, копий нет. */
 function toMesh(part: JobPart): SurfaceMesh {
   return { positions: part.positions, indices: part.indices, normals: part.normals };
@@ -486,12 +387,13 @@ function toMesh(part: JobPart): SurfaceMesh {
  * крышки потолок купола нависает при любых параметрах, и это предупреждение
  * стало бы вечным шумом, от которого отучаются читать и остальные.
  */
-function audit(meshes: SurfaceMesh[], printedInClay = true): void {
+function audit(meshes: SurfaceMesh[]): void {
+  // свесы важны только тому, что печатают глиной; сплошное — заготовка оснастки
+  const printedInClay = !state.solid;
   const reports = meshes.map((mesh) => validateMesh(mesh));
   const assessments = reports.map((report) => assessExport(report, true));
   const triangles = reports.reduce((sum, report) => sum + report.triangleCount, 0);
   const blocking = assessments.flatMap((assessment) => assessment.blocking);
-  // свесы важны только тому, что печатают глиной; форму печатают пластиком
   const overhang = printedInClay ? overhangFraction(meshes[0], 60) : 0;
 
   auditEl.textContent = reports.every((report) => report.watertight)
@@ -515,18 +417,6 @@ function hasAppliedSpout(): boolean {
   return state.spout.on && state.spout.kind === 'applied';
 }
 
-/**
- * Меняется ли рельеф по углу. Именно это — единственная причина, по которой
- * у тела вращения появляются зацепы при разъёме на половины, поэтому
- * анализатор с этим знанием даёт не число, а совет.
- */
-function hasAngularRelief(): boolean {
-  const angular = (axis: string): boolean => axis !== 'z';
-  return (state.relief.wave.on && angular(state.relief.wave.axis))
-    || (state.relief.wave2.on && angular(state.relief.wave2.axis))
-    || state.roulette.bands.some((band) => band.on);
-}
-
 /** Подпись полосы накатки: сколько оттисков ляжет за оборот и с каким шагом. */
 function describeBand(band: RouletteBand, ctx: RouletteContext): string {
   if (band.pattern === 'image' && !band.image) return t('band.noImage');
@@ -538,31 +428,6 @@ function describeBand(band: RouletteBand, ctx: RouletteContext): string {
     gap: layout.gapMm.toFixed(1),
   };
   return t(isContinuous(band.pattern) ? 'band.continuous' : 'band.discrete', params);
-}
-
-/**
- * Название детали оснастки по её `id`: `lid-…` — деталь формы крышки,
- * `bath-…` — ванночка под часть, остальное — сама часть (`part.<id>`).
- */
-function partLabel(id: string): string {
-  if (id.startsWith('lid-')) return t('part.lidOf', { part: lowerFirst(partLabel(id.slice(4))) });
-  if (id.startsWith('bath-')) return t('part.bath', { part: lowerFirst(partLabel(id.slice(5))) });
-  return tDynamic(`part.${id}`);
-}
-
-/** Габарит меша, «Ш×Г×В мм». */
-function sizeNote(meshes: readonly SurfaceMesh[]): string {
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-  for (const mesh of meshes) {
-    for (let i = 0; i < mesh.positions.length; i += 3) {
-      for (let axis = 0; axis < 3; axis++) {
-        min[axis] = Math.min(min[axis], mesh.positions[i + axis]);
-        max[axis] = Math.max(max[axis], mesh.positions[i + axis]);
-      }
-    }
-  }
-  return t('size.box', { dims: max.map((value, axis) => Math.round(value - min[axis])).join('×') });
 }
 
 function outerWidth(positions: Float32Array): number {

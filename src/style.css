@@ -394,11 +394,6 @@ input[type='text'] {
   margin: 3px 2px 0;
 }
 
-.tab[disabled] {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 #warnings {
   color: var(--warn);
   font-size: 12px;
@@ -502,38 +497,6 @@ input[type='text'] {
   background: rgba(217, 139, 95, 0.12);
 }
 
-/* --- Табы экспорта --- */
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.tab {
-  flex: 1;
-  padding: 5px 4px;
-  background: var(--panel);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 11.5px;
-}
-
-.tabs-label {
-  align-self: center;
-  color: var(--muted);
-  font-size: 11.5px;
-  padding-right: 2px;
-}
-
-.tab[aria-selected='true'] {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: rgba(217, 139, 95, 0.12);
-}
-
 /* --- Полосы накатки: каждая в своей рамке --- */
 
 .band-box {
@@ -561,16 +524,16 @@ input[type='text'] {
   border-color: var(--bad);
 }
 
-/* --- Отчёт анализатора разъёма и список деталей оснастки --- */
+/* --- Список деталей экспорта и ссылка на cast-builder --- */
 
-.scheme-note {
+.cast-note {
   font-size: 11.5px;
   color: var(--muted);
-  margin: 6px 0;
+  margin: 8px 0 0;
 }
 
-.scheme-note b {
-  color: var(--text);
+.cast-note a {
+  color: var(--accent);
 }
 
 .part-list {

@@ -21,8 +21,6 @@ export interface CapBand {
 export interface CapSpec {
   /** полосы мелкой сетки; вне их шаг — как у кольца стенки */
   dense?: readonly CapBand[];
-  /** радиус сквозного отверстия по оси, мм; 0 или нет — сплошное дно */
-  holeMm?: number;
   /**
    * Высота плоскости дна. По умолчанию — средняя по кольцу стенки; задавать,
    * когда само кольцо уже поднято рельефом (иначе дно уйдёт вслед за ним).
@@ -37,8 +35,6 @@ export interface Cap {
   positions: Float32Array;
   /** треугольники в абсолютных индексах меша */
   indices: Uint32Array;
-  /** кольцо отверстия (nu вершин, абсолютные индексы) или null */
-  hole: Uint32Array | null;
 }
 
 /** Не ближе этого к стенке внутреннее кольцо: «молния» до неё — одна полоса. */
@@ -67,7 +63,6 @@ export function buildCap(
   }
   z0 = spec.planeZ ?? z0 / nu;
   const wallStep = (2 * Math.PI * edge) / nu;
-  const hole = Math.max(0, spec.holeMm ?? 0);
   const bands = spec.dense ?? [];
   const stepAt = (r: number): number => {
     let step = wallStep;
@@ -76,17 +71,16 @@ export function buildCap(
   };
   const heightAt = spec.heightAt ?? (() => 0);
 
-  // радиусы колец: от отверстия (или от центра) к стенке
+  // радиусы колец: от центра к стенке
   const last = edge - Math.min(EDGE_GAP * wallStep + 0.05, edge * 0.1);
   const radii: number[] = [];
-  let r = hole > 0 ? hole : stepAt(0);
+  let r = stepAt(0);
   while (r < last) {
     radii.push(r);
     r += stepAt(r);
   }
   if (radii.length === 0 || last - radii[radii.length - 1] > stepAt(last) * 0.3) radii.push(last);
   else radii[radii.length - 1] = last;
-  if (hole > 0 && radii[0] !== hole) radii.unshift(hole);
 
   const coords: number[] = [];
   const tris: number[] = [];
@@ -105,8 +99,7 @@ export function buildCap(
     }
     return out;
   };
-  const countAt = (radius: number, forceNu: boolean): number =>
-    forceNu ? nu : Math.max(6, Math.ceil((2 * Math.PI * radius) / stepAt(radius)));
+  const countAt = (radius: number): number => Math.max(6, Math.ceil((2 * Math.PI * radius) / stepAt(radius)));
 
   // треугольник с нормалью вверх; для 'down' обход разворачиваем
   const tri = (a: number, b: number, c: number): void => {
@@ -114,12 +107,10 @@ export function buildCap(
     else tris.push(a, c, b);
   };
 
-  const rings: number[][] = radii.map((radius, k) => ring(radius, countAt(radius, hole > 0 && k === 0)));
-  if (hole === 0) {
-    const centre = vertex(0, 0);
-    const first = rings[0];
-    for (let k = 0; k < first.length; k++) tri(centre, first[k], first[(k + 1) % first.length]);
-  }
+  const rings: number[][] = radii.map((radius) => ring(radius, countAt(radius)));
+  const centre = vertex(0, 0);
+  const first = rings[0];
+  for (let k = 0; k < first.length; k++) tri(centre, first[k], first[(k + 1) % first.length]);
   for (let k = 0; k + 1 < rings.length; k++) zip(rings[k], rings[k + 1], tri);
   const boundary: number[] = [];
   for (let i = 0; i < nu; i++) boundary.push(ringStart + i);
@@ -128,7 +119,6 @@ export function buildCap(
   return {
     positions: new Float32Array(coords),
     indices: new Uint32Array(tris),
-    hole: hole > 0 ? new Uint32Array(rings[0]) : null,
   };
 }
 
