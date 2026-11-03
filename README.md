@@ -130,7 +130,7 @@ alongside”, in the same one. With **“Solid”** it gives the piece as a soli
 body with the handle and the spout, and the lid solid and upside down, as it
 goes into a mold. That is the blank for the tooling: the master positive,
 the pour boxes for silicone (the parting scheme is chosen from the shape)
-and the slump mold with its plunger are built from a ready STL by a separate
+and the slump mold with its punch are built from a ready STL by a separate
 app, [Cast Builder](https://dmitryweiner.github.io/cast-builder/)
 ([source](https://github.com/dmitryweiner/cast-builder)).
 
@@ -170,7 +170,7 @@ parameters — is in [docs/](docs/README.md) (in Russian).
 ```bash
 npm install
 npm run dev       # vite
-npm run check     # tsc + eslint + vitest (398 tests)
+npm run check     # tsc + eslint + vitest
 npm run smoke     # browser smoke; --preview for the production build, --res 384 for export, --slow for the progress bar
 npm run build     # production build → ./dist; GH Actions publishes it to Pages
 ```
@@ -194,9 +194,14 @@ src/geo/       pure geometry core, no Three.js, in millimetres
   roulette     roulette patterns on a tile
   build        silhouette → lathe mesh → relief → mesh
   hollow       the cavity for direct printing
-  handle       handle: a section swept along a Bézier arc
+  bottom       the outer base on its own grid, for the mark
+  mark         maker's mark on the base: a line of text and a logo
+  handle       handle: a section swept along a Bézier arc (sweep)
   spout        spout: pulled lip and applied tube with a channel
   attach       shared by applied parts: sinking an end into the wall
+  lid          lid and its seat: a closed contour revolved (lathe), no CSG
+  layout       the lid beside the piece in one file
+  stl          binary STL; validate — the mesh check before export
   csg          bridge to manifold-3d (WASM) for boolean operations
   assemble     body ∪ handles ∪ spout, and the same minus cavity and channel
   message      messages to the user as codes — the core knows no language

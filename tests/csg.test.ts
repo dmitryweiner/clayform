@@ -1,6 +1,6 @@
 // M1-спайк: адаптер SurfaceMesh ⇄ manifold-3d. Проверяем, что булевы операции
 // возвращают watertight-меши в нашем формате и что объёмы сходятся с
-// аналитическими — это фундамент для ручек (union) и оснастки (difference).
+// аналитическими — это фундамент для ручек (union) и полости (difference).
 
 import { initCSG, toManifold, fromManifold, CsgScope } from '../src/geo/csg';
 import type { CsgApi } from '../src/geo/csg';
@@ -72,29 +72,6 @@ describe('булевы операции', () => {
     const boreVolume = Math.PI * 100 * 40;
     expect(drilled.volume()).toBeCloseTo(60 * 60 * 40 - boreVolume, -2);
     expect(validateMesh(fromManifold(drilled)).watertight).toBe(true);
-    scope.dispose();
-  });
-});
-
-describe('splitByPlane — основа разъёмной формы', () => {
-  it('симметричное тело делится плоскостью y=0 на две равные watertight-половины', () => {
-    const scope = new CsgScope();
-    const pot = scope.keep(toManifold(csg, revolveMesh((t) => 20 + 12 * Math.sin(Math.PI * t), {
-      nu: 64, nv: 32, height: 80,
-    })));
-    const total = pot.volume();
-
-    const [front, back] = pot.splitByPlane([0, 1, 0], 0);
-    scope.keep(front);
-    scope.keep(back);
-
-    expect(front.volume()).toBeCloseTo(back.volume(), 1);
-    expect(front.volume() + back.volume()).toBeCloseTo(total, 1);
-    for (const half of [front, back]) {
-      const report = validateMesh(fromManifold(half));
-      expect(report.watertight).toBe(true);
-      expect(report.volume).toBeGreaterThan(0);
-    }
     scope.dispose();
   });
 });

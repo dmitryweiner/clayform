@@ -9,7 +9,7 @@ import type { SurfaceMesh } from '../geo/surface';
 
 export interface SceneHandle {
   setMesh(mesh: SurfaceMesh): void;
-  /** несколько деталей разом — «взрыв»-превью разъёмной формы */
+  /** несколько мешей разом: тело с ручкой и носиком, крышка рядом */
   setMeshes(meshes: SurfaceMesh[]): void;
   /**
    * Камера снизу, на донышко, — как смотрят на перевёрнутое изделие:
