@@ -159,7 +159,8 @@
 ```bash
 npm install
 npm run dev       # vite
-npm run check     # tsc + eslint + vitest
+npm run check     # tsc (TypeScript 7) + oxlint + prettier + vitest
+npm run format    # prettier
 npm run smoke     # браузерный смоук; --preview для прод-сборки, --res 384 для экспорта, --slow для полосы прогресса
 npm run build     # прод-сборка → ./dist; на Pages публикует GH Actions
 ```

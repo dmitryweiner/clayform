@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "oxlint --type-aware --deny-warnings",
+    "lint": "oxlint --type-aware --deny-warnings && prettier --check .",
+    "format": "prettier --write .",
     "check": "npm run typecheck && npm run lint && npm test",
     "smoke": "node scripts/smoke.mjs"
   },

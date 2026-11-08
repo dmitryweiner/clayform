@@ -168,7 +168,8 @@ parameters — is in [docs/](docs/README.md) (in Russian).
 ```bash
 npm install
 npm run dev       # vite
-npm run check     # tsc + eslint + vitest
+npm run check     # tsc (TypeScript 7) + oxlint + prettier + vitest
+npm run format    # prettier
 npm run smoke     # browser smoke; --preview for the production build, --res 384 for export, --slow for the progress bar
 npm run build     # production build → ./dist; GH Actions publishes it to Pages
 ```
