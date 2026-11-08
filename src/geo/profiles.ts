@@ -62,10 +62,20 @@ export interface FamilyDef {
  * только у тех, у кого есть ножка.
  */
 const BASE_FILLET: ParamSpec = {
-  key: 'baseFillet', min: 0, max: 15, step: 0.5, default: 0, unit: 'mm',
+  key: 'baseFillet',
+  min: 0,
+  max: 15,
+  step: 0.5,
+  default: 0,
+  unit: 'mm',
 };
 const FOOT_FILLET: ParamSpec = {
-  key: 'footFillet', min: 0, max: 20, step: 0.5, default: 0, unit: 'mm',
+  key: 'footFillet',
+  min: 0,
+  max: 20,
+  step: 0.5,
+  default: 0,
+  unit: 'mm',
 };
 
 /** Тоньше глина всё равно не держится; страхует и от нулевого радиуса. */
@@ -110,7 +120,12 @@ const SAMPLES = 25; // нечётное: t = 0.5 попадает в узел
  * 0 — как велит семейство, +1 — ребро.
  */
 const SHARPNESS: ParamSpec = {
-  key: 'sharpness', min: -1, max: 1, step: 0.01, default: 0, unit: 'x',
+  key: 'sharpness',
+  min: -1,
+  max: 1,
+  step: 0.01,
+  default: 0,
+  unit: 'x',
 };
 
 /**
@@ -135,9 +150,7 @@ const SHARP_PEAK_SAMPLES = 32;
  * sharpWarp. Значения радиуса не меняются — ширина остаётся максимумом и
  * стоит на той же высоте. При нулевой остроте точки отдаются как были.
  */
-function sharpenAround(
-  points: ProfilePoint[], lo: number, peak: number, hi: number, sharpness: number,
-): ProfilePoint[] {
+function sharpenAround(points: ProfilePoint[], lo: number, peak: number, hi: number, sharpness: number): ProfilePoint[] {
   if (sharpness === 0 || !(lo < peak && peak < hi)) return points;
   const def: ProfileDef = { familyId: '', heightMm: 1, points };
   const radius = (t: number): number => {
@@ -145,8 +158,12 @@ function sharpenAround(
     if (t <= peak) return profileRadius(def, peak - sharpWarp((peak - t) / (peak - lo), sharpness) * (peak - lo));
     return profileRadius(def, peak + sharpWarp((t - peak) / (hi - peak), sharpness) * (hi - peak));
   };
-  return peakNodes(lo, peak, hi, points.map((q) => q.t))
-    .map((t) => ({ t, r: Math.max(MIN_RADIUS_MM, radius(t)) }));
+  return peakNodes(
+    lo,
+    peak,
+    hi,
+    points.map((q) => q.t),
+  ).map((t) => ({ t, r: Math.max(MIN_RADIUS_MM, radius(t)) }));
 }
 
 /**
@@ -203,7 +220,10 @@ const POT: FamilyDef = {
     // горло не может начинаться ниже тулова — иначе плечо вырождается
     const neckStart = Math.max(bellyAt + 0.1, 1 - p.neckH);
 
-    const points: ProfilePoint[] = [{ t: 0, r: rFoot }, { t: bellyAt, r: rBelly }];
+    const points: ProfilePoint[] = [
+      { t: 0, r: rFoot },
+      { t: bellyAt, r: rBelly },
+    ];
     const hasNeck = neckStart < 0.995;
     if (hasNeck) {
       points.push({
@@ -285,7 +305,12 @@ const QUARTER_ELLIPSE = 0.5523;
  * радиус на заданной высоте находится бисекцией по параметру кривой.
  */
 function bowlWall(
-  rFoot: number, rRim: number, zFoot: number, heightMm: number, curvature: number, baseAngleDeg: number,
+  rFoot: number,
+  rRim: number,
+  zFoot: number,
+  heightMm: number,
+  curvature: number,
+  baseAngleDeg: number,
   kneePow = 1,
 ): (z: number) => number {
   const c = clamp(curvature, 0, 1);
@@ -433,9 +458,7 @@ export function clampFamilyParams(id: string, raw: Partial<Params>): Params {
   const out: Params = {};
   for (const spec of family.params) {
     const value = source[spec.key];
-    out[spec.key] = typeof value === 'number' && Number.isFinite(value)
-      ? clamp(value, spec.min, spec.max)
-      : spec.default;
+    out[spec.key] = typeof value === 'number' && Number.isFinite(value) ? clamp(value, spec.min, spec.max) : spec.default;
   }
   return out;
 }
@@ -561,7 +584,8 @@ function filleted(def: ProfileDef, footZ: number, footFillet: number, baseFillet
   for (const [from, to] of zones) {
     for (let k = 0; k <= FILLET_ARC_POINTS; k++) ts.add(clamp(lerp(from, to, k / FILLET_ARC_POINTS) / H, 0, 1));
   }
-  const points = [...ts].sort((a, b) => a - b)
+  const points = [...ts]
+    .sort((a, b) => a - b)
     .filter((t, i, all) => i === 0 || t - all[i - 1] > 1e-7)
     .map((t) => ({ t, r: Math.max(MIN_RADIUS_MM, final(t * H)) }));
   return { familyId: def.familyId, heightMm: H, points };
@@ -589,11 +613,7 @@ export function profileRadius(def: ProfileDef, t: number): number {
   const x = (t - p1.t) / h;
   const x2 = x * x;
   const x3 = x2 * x;
-  const r =
-    (2 * x3 - 3 * x2 + 1) * p1.r +
-    (x3 - 2 * x2 + x) * h * m1 +
-    (-2 * x3 + 3 * x2) * p2.r +
-    (x3 - x2) * h * m2;
+  const r = (2 * x3 - 3 * x2 + 1) * p1.r + (x3 - 2 * x2 + x) * h * m1 + (-2 * x3 + 3 * x2) * p2.r + (x3 - x2) * h * m2;
   return Math.max(MIN_RADIUS_MM, r);
 }
 

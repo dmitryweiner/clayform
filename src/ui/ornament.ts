@@ -33,8 +33,7 @@ export async function imageFromFile(file: File, maxPx = IMAGE_MAX_PX): Promise<R
 
   const long = Math.max(sw, sh);
   const target = Math.min(maxPx, long);
-  const fit = (side: number): number =>
-    Math.min(maxPx, Math.max(IMAGE_MIN_PX, Math.round((side / long) * target)));
+  const fit = (side: number): number => Math.min(maxPx, Math.max(IMAGE_MIN_PX, Math.round((side / long) * target)));
   const w = fit(sw);
   const h = fit(sh);
 

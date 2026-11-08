@@ -101,8 +101,7 @@ export function defaultMark(): MarkState {
 }
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
-const num = (x: unknown, fallback: number): number =>
-  typeof x === 'number' && Number.isFinite(x) ? x : fallback;
+const num = (x: unknown, fallback: number): number => (typeof x === 'number' && Number.isFinite(x) ? x : fallback);
 
 function asRecord(x: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -215,9 +214,7 @@ export function markLayout(mark: MarkState, strip: MarkRaster | null, flatMm: nu
   if (rIn < TEXT_MIN_RADIUS_MM) {
     return { rOut, rIn, scale: 0, warnings: [{ code: 'mark.noRoom' }] };
   }
-  const warnings: Message[] = scale < 1
-    ? [{ code: 'mark.tooLong', params: { pct: Math.round(scale * 100) } }]
-    : [];
+  const warnings: Message[] = scale < 1 ? [{ code: 'mark.tooLong', params: { pct: Math.round(scale * 100) } }] : [];
   return { rOut, rIn, scale, warnings };
 }
 
@@ -236,10 +233,8 @@ function sample(pixels: Uint8Array, w: number, h: number, col: number, row: numb
   const y0 = Math.floor(y);
   const fx = x - x0;
   const fy = y - y0;
-  const at = (i: number, j: number): number =>
-    i < 0 || j < 0 || i >= w || j >= h ? 0 : pixels[j * w + i] / 255;
-  return (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy)
-    + (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
+  const at = (i: number, j: number): number => (i < 0 || j < 0 || i >= w || j >= h ? 0 : pixels[j * w + i] / 255);
+  return (at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy) + (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy;
 }
 
 let logoCache: { data: string; decoded: DecodedImage | null } | null = null;
@@ -305,12 +300,7 @@ export function markDepth(input: MarkInput, flatMm: number): ((x: number, y: num
  * `maxDepthMm` — сколько дно может отдать оттиску. undefined — клейма нет,
  * дно остаётся веером.
  */
-export function markCap(
-  input: MarkInput | undefined,
-  flatMm: number,
-  stepMm: number,
-  maxDepthMm = Infinity,
-): CapSpec | undefined {
+export function markCap(input: MarkInput | undefined, flatMm: number, stepMm: number, maxDepthMm = Infinity): CapSpec | undefined {
   if (!input) return undefined;
   const depth = markDepth(input, flatMm);
   if (!depth) return undefined;

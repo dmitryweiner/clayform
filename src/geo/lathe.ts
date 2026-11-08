@@ -51,8 +51,7 @@ const STEP_EPS = 1e-7;
  */
 function compact(contour: readonly LathePoint[]): LathePoint[] {
   const points: LathePoint[] = [];
-  const same = (a: LathePoint, b: LathePoint): boolean =>
-    Math.abs(a.r - b.r) < STEP_EPS && Math.abs(a.z - b.z) < STEP_EPS;
+  const same = (a: LathePoint, b: LathePoint): boolean => Math.abs(a.r - b.r) < STEP_EPS && Math.abs(a.z - b.z) < STEP_EPS;
 
   for (const point of contour) {
     const next = { ...point, r: Math.max(0, point.r) };
@@ -67,11 +66,7 @@ function compact(contour: readonly LathePoint[]): LathePoint[] {
  * Меш тела вращения. Контур замыкается сам: последняя точка соединяется с
  * первой. Нормали не считает — как и assembleMesh, см. normals.ts.
  */
-export function lathe(
-  contour: readonly LathePoint[],
-  nu: number,
-  depthAt?: LatheDepth,
-): Omit<SurfaceMesh, 'normals'> {
+export function lathe(contour: readonly LathePoint[], nu: number, depthAt?: LatheDepth): Omit<SurfaceMesh, 'normals'> {
   if (!Number.isFinite(nu) || nu < 3) throw new Error(`lathe: too few segments around: ${nu}`);
   const points = compact(contour);
   if (points.length < 3) throw new Error(`lathe: the contour has ${points.length} points, at least 3 needed`);
@@ -122,12 +117,20 @@ export function lathe(
       const i1 = (i + 1) % nu;
       if (axis[m]) {
         // веер от полюса к кольцу: обход тот же, что у нижней крышки сетки
-        indices[k++] = from; indices[k++] = to + i1; indices[k++] = to + i;
+        indices[k++] = from;
+        indices[k++] = to + i1;
+        indices[k++] = to + i;
       } else if (axis[m1]) {
-        indices[k++] = from + i; indices[k++] = from + i1; indices[k++] = to;
+        indices[k++] = from + i;
+        indices[k++] = from + i1;
+        indices[k++] = to;
       } else {
-        indices[k++] = from + i; indices[k++] = from + i1; indices[k++] = to + i1;
-        indices[k++] = from + i; indices[k++] = to + i1; indices[k++] = to + i;
+        indices[k++] = from + i;
+        indices[k++] = from + i1;
+        indices[k++] = to + i1;
+        indices[k++] = from + i;
+        indices[k++] = to + i1;
+        indices[k++] = to + i;
       }
     }
   }

@@ -23,9 +23,7 @@ import type { PresetRow } from './ui/presetList';
 import { snapshotCards, restoreCards } from './ui/card';
 import { applyStaticText } from './ui/staticText';
 import type { Lang } from './i18n';
-import {
-  initLang, lang, setLang, onLangChange, t, tm, tDynamic, autoPresetPrefixes,
-} from './i18n';
+import { initLang, lang, setLang, onLangChange, t, tm, tDynamic, autoPresetPrefixes } from './i18n';
 import type { SurfaceMesh } from './geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from './geo/layout';
 import { buildVessel, vesselSurface } from './geo/build';
@@ -42,10 +40,7 @@ import type { RouletteBand, RouletteContext } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
 import type { AppState } from './state/schema';
-import {
-  defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, lidRelief,
-  RESOLUTIONS,
-} from './state/schema';
+import { defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, lidRelief, RESOLUTIONS } from './state/schema';
 import { PRESETS, presetById } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
 import { encodePresetFile, decodePresetFile, presetFileName } from './state/presetFile';
@@ -251,10 +246,12 @@ function refresh(): void {
   const profile = buildProfile(state.family, state.shape, state.heightMm);
   drawProfileGraph(profileGraph, profile);
 
-  reliefRows.setBandNote((band) => describeBand(band, {
-    heightMm: state.heightMm,
-    radiusAt: (v) => profileRadius(profile, v),
-  }));
+  reliefRows.setBandNote((band) =>
+    describeBand(band, {
+      heightMm: state.heightMm,
+      radiusAt: (v) => profileRadius(profile, v),
+    }),
+  );
 
   // Строку клейма рисует шрифтом только главный поток; воркеру она уходит
   // готовым растром вместе с задачей.
@@ -275,10 +272,12 @@ function refresh(): void {
     attachRows.setLidBandNote((band) => describeBand(band, dome));
   }
   const lidMeshes = fit
-    ? [buildLidMesh(fit, state.lid, PREVIEW_SEGMENTS, {
-      relief: lidRelief(state),
-      ...(beside ? {} : { liftMm: fit.liftMm }),
-    })]
+    ? [
+        buildLidMesh(fit, state.lid, PREVIEW_SEGMENTS, {
+          relief: lidRelief(state),
+          ...(beside ? {} : { liftMm: fit.liftMm }),
+        }),
+      ]
     : [];
 
   baseWarnings = [];
@@ -297,8 +296,7 @@ function refresh(): void {
   const widthMm = outerWidth(outer.positions);
   // Глина считается по всему, что придётся напечатать: крышка — такая же
   // деталь изделия, как тело.
-  const clayMl = [hollow.mesh, ...lidMeshes]
-    .reduce((sum, mesh) => sum + signedVolume(mesh.positions, mesh.indices), 0) / 1000;
+  const clayMl = [hollow.mesh, ...lidMeshes].reduce((sum, mesh) => sum + signedVolume(mesh.positions, mesh.indices), 0) / 1000;
   statusEl.textContent = [
     t('size.round', { d: widthMm.toFixed(0), h: state.heightMm.toFixed(0) }),
     t('status.capacity', { v: formatVolume(hollow.capacityMl) }),
@@ -316,24 +314,20 @@ function refresh(): void {
   const surface = vesselSurface(buildParams);
   const tube = buildAppliedSpout(effectiveSpout(state), surface.profile, surface.heightMm);
   const shell = hollow.mesh;
-  const body = [
-    shell,
-    ...buildHandles(state.handle, surface.profile, surface.heightMm),
-    ...(tube ? [tube] : []),
-  ];
+  const body = [shell, ...buildHandles(state.handle, surface.profile, surface.heightMm), ...(tube ? [tube] : [])];
   // крышку ставим по габариту тела вместе с ручкой и носиком: точная
   // сборка потом подменит только тело, а крышка останется где стояла
   const lids = beside ? placeInRow([body, lidMeshes], BESIDE_GAP_MM)[1] : lidMeshes;
   scene.setMeshes([...body, ...lids]);
-  const lidNote = fit
-    ? t('size.round', { d: (fit.fieldMm * 2).toFixed(0), h: lidHeightMm(fit, state.lid).toFixed(0) })
-    : '';
-  exportPanel.setParts(beside
-    ? [{ label: t('part.vesselLid'), note: t('part.oneFile') }]
-    : [
-      { label: t('part.vessel'), note: t('part.clay', { v: (clayMl / 1000).toFixed(2) }) },
-      ...(fit ? [{ label: t('part.lid'), note: lidNote }] : []),
-    ]);
+  const lidNote = fit ? t('size.round', { d: (fit.fieldMm * 2).toFixed(0), h: lidHeightMm(fit, state.lid).toFixed(0) }) : '';
+  exportPanel.setParts(
+    beside
+      ? [{ label: t('part.vesselLid'), note: t('part.oneFile') }]
+      : [
+          { label: t('part.vessel'), note: t('part.clay', { v: (clayMl / 1000).toFixed(2) }) },
+          ...(fit ? [{ label: t('part.lid'), note: lidNote }] : []),
+        ],
+  );
   auditEl.textContent = t('audit.checking');
   // Быстрый вердикт — по оболочке: он приходит через четверть секунды и
   // почти всегда окончательный. Если есть приставные детали, следом
@@ -433,9 +427,7 @@ function outerWidth(positions: Float32Array): number {
 }
 
 function formatVolume(millilitres: number): string {
-  return millilitres >= 1000
-    ? t('volume.l', { v: (millilitres / 1000).toFixed(2) })
-    : t('volume.ml', { v: millilitres.toFixed(0) });
+  return millilitres >= 1000 ? t('volume.l', { v: (millilitres / 1000).toFixed(2) }) : t('volume.ml', { v: millilitres.toFixed(0) });
 }
 
 function message(error: unknown): string {
@@ -469,10 +461,10 @@ async function runExport(): Promise<void> {
     // Экспортная детализация — до 384 сегментов; в главном потоке это
     // подвешивало вкладку на секунды, поэтому считает воркер, а полоса
     // показывает, что он не умер.
-    const files = await progress.track(
-      (onProgress) => csg.run({ kind: 'export', state, markStrip: markRaster }, onProgress),
-      { label: 'progress.export', delayMs: 0 },
-    );
+    const files = await progress.track((onProgress) => csg.run({ kind: 'export', state, markStrip: markRaster }, onProgress), {
+      label: 'progress.export',
+      delayMs: 0,
+    });
     if (!files) return;
 
     const blocking = files.flatMap((file) => file.blocking);

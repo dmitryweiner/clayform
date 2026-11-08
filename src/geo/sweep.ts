@@ -98,19 +98,27 @@ export function sweepTube(
       const b = j * ringSize + i1;
       const c = (j + 1) * ringSize + i1;
       const d = (j + 1) * ringSize + i;
-      indices[k++] = a; indices[k++] = c; indices[k++] = b;
-      indices[k++] = a; indices[k++] = d; indices[k++] = c;
+      indices[k++] = a;
+      indices[k++] = c;
+      indices[k++] = b;
+      indices[k++] = a;
+      indices[k++] = d;
+      indices[k++] = c;
     }
   }
   // торец в начале смотрит против касательной, в конце — по ней
   for (let i = 0; i < ringSize; i++) {
     const i1 = (i + 1) % ringSize;
-    indices[k++] = startCap; indices[k++] = i; indices[k++] = i1;
+    indices[k++] = startCap;
+    indices[k++] = i;
+    indices[k++] = i1;
   }
   const last = (rows - 1) * ringSize;
   for (let i = 0; i < ringSize; i++) {
     const i1 = (i + 1) % ringSize;
-    indices[k++] = endCap; indices[k++] = last + i1; indices[k++] = last + i;
+    indices[k++] = endCap;
+    indices[k++] = last + i1;
+    indices[k++] = last + i;
   }
 
   return { positions, indices, normals: meshNormals(positions, indices) };

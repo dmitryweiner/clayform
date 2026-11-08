@@ -82,8 +82,18 @@ interface Limit {
 
 /** Пределы ползунков: одни и те же для UI и для санатора. */
 export const LID_LIMITS: Record<
-  'recessMm' | 'depthMm' | 'clearanceMm' | 'ledgeMm' | 'fieldMm' | 'domeMm'
-  | 'curvature' | 'knobDMm' | 'knobFlat' | 'stemDMm' | 'stemHMm' | 'capHMm',
+  | 'recessMm'
+  | 'depthMm'
+  | 'clearanceMm'
+  | 'ledgeMm'
+  | 'fieldMm'
+  | 'domeMm'
+  | 'curvature'
+  | 'knobDMm'
+  | 'knobFlat'
+  | 'stemDMm'
+  | 'stemHMm'
+  | 'capHMm',
   Limit
 > = {
   recessMm: { min: 0, max: 20 },
@@ -159,8 +169,7 @@ export function sanitizeLid(raw: unknown): LidState {
   if (typeof raw === 'object' && raw !== null) {
     for (const [key, value] of Object.entries(raw)) source[key] = value;
   }
-  const num = (x: unknown, d: number): number =>
-    typeof x === 'number' && Number.isFinite(x) ? x : d;
+  const num = (x: unknown, d: number): number => (typeof x === 'number' && Number.isFinite(x) ? x : d);
   const within = (key: keyof typeof LID_LIMITS, value: unknown): number => {
     const limit = LID_LIMITS[key];
     return clamp(num(value, fallback[key]), limit.min, limit.max);
@@ -224,13 +233,7 @@ export interface LidFit {
  * венчик и вовсе задирает радиус у самого края — юбка, подогнанная по нему,
  * упёрлась бы в горло чуть ниже.
  */
-function narrowestCavity(
-  profile: ProfileDef,
-  heightMm: number,
-  wallMm: number,
-  fromZ: number,
-  toZ: number,
-): number {
+function narrowestCavity(profile: ProfileDef, heightMm: number, wallMm: number, fromZ: number, toZ: number): number {
   const radiusAt = (v: number): number => profileRadius(profile, v);
   // Выборку сгущаем к горловине: у высокой вазы равномерная по всей высоте
   // дала бы на узкую полосу считаные точки.
@@ -242,17 +245,10 @@ function narrowestCavity(
     narrowest = Math.min(narrowest, point.r);
   }
   // Полоса могла оказаться короче шага выборки — тогда меряем по её верху.
-  return Number.isFinite(narrowest)
-    ? narrowest
-    : cavityPoint(radiusAt, heightMm, wallMm, toZ / heightMm).r;
+  return Number.isFinite(narrowest) ? narrowest : cavityPoint(radiusAt, heightMm, wallMm, toZ / heightMm).r;
 }
 
-export function lidFit(
-  profile: ProfileDef,
-  heightMm: number,
-  hollow: HollowState,
-  lid: LidState,
-): LidFit {
+export function lidFit(profile: ProfileDef, heightMm: number, hollow: HollowState, lid: LidState): LidFit {
   const wallMm = clamp(hollow.wallMm, WALL_MIN_MM, WALL_MAX_MM);
   const recessMm = Math.min(lid.recessMm, heightMm * MAX_RECESS_FRACTION);
   const restZMm = heightMm - recessMm;
@@ -261,30 +257,22 @@ export function lidFit(
   // Верх полосы — там, где полость обрывается под заглаженный венчик: выше
   // неё стенки уже нет, и мерить там нечего.
   const rimR = Math.min(hollow.rimRadiusMm, wallMm / 2);
-  const cavityMm = narrowestCavity(
-    profile, heightMm, wallMm, restZMm - depthMm, Math.min(restZMm, heightMm - rimR),
-  );
+  const cavityMm = narrowestCavity(profile, heightMm, wallMm, restZMm - depthMm, Math.min(restZMm, heightMm - rimR));
 
   // Утопленной крышке полочка нужна обязательно — на неё она и опирается.
   // Поэтому при утоплении назначаем минимальную сами: иначе ползунок
   // «утопление» молча не делал бы ничего.
-  const ledgeMm = recessMm > 0
-    ? Math.max(lid.ledgeMm, lid.clearanceMm + MIN_FIELD_MM)
-    : lid.ledgeMm;
+  const ledgeMm = recessMm > 0 ? Math.max(lid.ledgeMm, lid.clearanceMm + MIN_FIELD_MM) : lid.ledgeMm;
   const seatMm = Math.max(cavityMm - ledgeMm, Math.min(cavityMm, MIN_SEAT_MM));
   const plugMm = Math.max(seatMm - lid.clearanceMm, MIN_CAVITY_MM);
 
   // Галерея — полость над полочкой: через неё поле опускается на место.
-  const galleryMm = recessMm > 0
-    ? narrowestCavity(profile, heightMm, wallMm, restZMm, heightMm - rimR)
-    : cavityMm;
+  const galleryMm = recessMm > 0 ? narrowestCavity(profile, heightMm, wallMm, restZMm, heightMm - rimR) : cavityMm;
 
   // Куда позволено вынести поле. Утопленное — не шире галереи, иначе крышку
   // не опустить; лежащее на венчике — не шире наружной стенки, иначе оно
   // свисало бы над изделием козырьком.
-  const fieldMax = recessMm > 0
-    ? Math.min(cavityMm, galleryMm) - lid.clearanceMm
-    : profileRadius(profile, 1);
+  const fieldMax = recessMm > 0 ? Math.min(cavityMm, galleryMm) - lid.clearanceMm : profileRadius(profile, 1);
   const fieldMm = Math.min(seatMm + lid.fieldMm, Math.max(fieldMax, seatMm + MIN_FIELD_MM));
 
   return {
@@ -538,8 +526,7 @@ export interface LidBuildOptions {
 
 /** Есть ли на куполе хоть какой-то рельеф. */
 function hasDomeRelief(lid: LidState, relief: ReliefState | undefined): boolean {
-  return Boolean(relief?.wave.on && relief.wave.ampMm !== 0)
-    || lid.roulette.bands.some((band) => band.on && band.depthMm !== 0);
+  return Boolean(relief?.wave.on && relief.wave.ampMm !== 0) || lid.roulette.bands.some((band) => band.on && band.depthMm !== 0);
 }
 
 /**
@@ -601,12 +588,7 @@ function toMesh(points: LathePoint[], nu: number, depthAt?: LatheDepth): Surface
  * Печатная крышка: полая, стенкой в ту же толщину, что у тела. Ручка
  * остаётся сплошной — полость под ней закрывается, сверлить там нечего.
  */
-export function buildLidMesh(
-  fit: LidFit,
-  lid: LidState,
-  nu: number,
-  options: LidBuildOptions = {},
-): SurfaceMesh {
+export function buildLidMesh(fit: LidFit, lid: LidState, nu: number, options: LidBuildOptions = {}): SurfaceMesh {
   const inner = innerPoints(fit, lid);
   if (inner.length === 0) return buildLidSolid(fit, lid, nu, options);
   const points: LathePoint[] = [
@@ -621,12 +603,7 @@ export function buildLidMesh(
  * Сплошная крышка: весь объём под наружным контуром. Печатной она
  * становится, когда под куполом выбирать нечего (см. buildLidMesh).
  */
-export function buildLidSolid(
-  fit: LidFit,
-  lid: LidState,
-  nu: number,
-  options: LidBuildOptions = {},
-): SurfaceMesh {
+export function buildLidSolid(fit: LidFit, lid: LidState, nu: number, options: LidBuildOptions = {}): SurfaceMesh {
   const points: LathePoint[] = [{ r: 0, z: 0 }, ...outerPoints(fit, lid, domeSteps(lid, nu, options.relief))];
   return toMesh(place(points, options), nu, domeDepth(fit, lid, options.relief));
 }

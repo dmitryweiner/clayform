@@ -43,7 +43,8 @@ export const en: Record<keyof typeof ru, string> = {
   'family.vase.examples': 'vase, amphora, jug, bottle, lekythos',
 
   'param.baseFillet': 'Base fillet',
-  'param.baseFillet.hint': 'radius of the edge where the wall (or foot) meets the base: a sharp edge chips, and clay will not release from a sharp corner of the mold',
+  'param.baseFillet.hint':
+    'radius of the edge where the wall (or foot) meets the base: a sharp edge chips, and clay will not release from a sharp corner of the mold',
   'param.footFillet': 'Foot fillet',
   'param.footFillet.hint': 'radius of the transition from foot to body: ceramics crack in a sharp inner corner',
   'param.sharpness': 'Sharpness',
@@ -238,15 +239,18 @@ export const en: Record<keyof typeof ru, string> = {
   'mark.logoRemove.button': 'Remove',
   'mark.view': 'Show base',
   'lid.title': 'Lid',
-  'lid.desc': 'A separate part: printed and cast on its own, upside down in the mold. A cylindrical seat for it is formed in the mouth of the piece. A lid does not go with a pulled lip — the lip is switched off.',
+  'lid.desc':
+    'A separate part: printed and cast on its own, upside down in the mold. A cylindrical seat for it is formed in the mouth of the piece. A lid does not go with a pulled lip — the lip is switched off.',
   'lid.recess': 'Recess',
   'lid.recess.hint': '0 — the flange rests on the rim; more — the lid sinks into the mouth onto a gallery',
   'lid.depth': 'Skirt',
   'lid.depth.hint': 'how deep the skirt goes into the mouth — it is what keeps the lid from sliding off',
   'lid.ledge': 'Gallery',
-  'lid.ledge.hint': 'how much narrower the seat is than the cavity. 0 — the mouth is simply made cylindrical and the casting comes out of the mold finished; a gallery would be trimmed leather-hard',
+  'lid.ledge.hint':
+    'how much narrower the seat is than the cavity. 0 — the mouth is simply made cylindrical and the casting comes out of the mold finished; a gallery would be trimmed leather-hard',
   'lid.clearance': 'Seat clearance',
-  'lid.clearance.hint': 'between the lid skirt and the seat in the mouth, per side: less — a snugger lid, but the likelier it is to stick after shrinkage',
+  'lid.clearance.hint':
+    'between the lid skirt and the seat in the mouth, per side: less — a snugger lid, but the likelier it is to stick after shrinkage',
   'lid.field': 'Flange',
   'lid.field.hint': 'how far the edge reaches past the seat; never beyond the outer wall of the piece',
   'lid.dome': 'Dome',
@@ -296,7 +300,8 @@ export const en: Record<keyof typeof ru, string> = {
 
   // --- warnings and errors ---
   'warn.spoutLow': 'The spout tip is below the rim: the piece cannot be filled above the spout.',
-  'warn.pinched': 'The relief cuts deeper than the wall over {pct} % of the surface — the wall is thinner than set there. Reduce the wave depth or thicken the wall.',
+  'warn.pinched':
+    'The relief cuts deeper than the wall over {pct} % of the surface — the wall is thinner than set there. Reduce the wave depth or thicken the wall.',
   'warn.lidNarrow': 'The mouth is too narrow for a lid: the seat came out ⌀{d} mm. Widen the neck, or reduce the gallery or the wall.',
   'warn.overhang': 'Overhangs steeper than 60° over {pct} % of the surface — printing in clay will need supports.',
   'error.vessel': 'Could not build the piece: {error}',

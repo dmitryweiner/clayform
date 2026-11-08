@@ -60,10 +60,7 @@ interface Limit {
 }
 
 /** Пределы ползунков приставного носика: одни и те же для UI и для санатора. */
-export const SPOUT_LIMITS: Record<
-  'attachAt' | 'lengthMm' | 'tipAt' | 'baseMm' | 'tipMm' | 'tipAngleDeg',
-  Limit
-> = {
+export const SPOUT_LIMITS: Record<'attachAt' | 'lengthMm' | 'tipAt' | 'baseMm' | 'tipMm' | 'tipAngleDeg', Limit> = {
   attachAt: { min: 0.2, max: 0.85 },
   lengthMm: { min: 15, max: 150 },
   tipAt: { min: 0.5, max: 1.3 },
@@ -100,8 +97,7 @@ export function sanitizeSpout(raw: unknown): SpoutState {
   if (typeof raw === 'object' && raw !== null) {
     for (const [key, value] of Object.entries(raw)) source[key] = value;
   }
-  const num = (x: unknown, d: number): number =>
-    typeof x === 'number' && Number.isFinite(x) ? x : d;
+  const num = (x: unknown, d: number): number => (typeof x === 'number' && Number.isFinite(x) ? x : d);
   const within = (key: keyof typeof SPOUT_LIMITS, value: unknown): number => {
     const limit = SPOUT_LIMITS[key];
     return clamp(num(value, fallback[key]), limit.min, limit.max);
@@ -118,11 +114,7 @@ export function sanitizeSpout(raw: unknown): SpoutState {
     zone: clamp(num(source.zone, fallback.zone), 0.03, 0.6),
     attachAt,
     lengthMm: within('lengthMm', source.lengthMm),
-    tipAt: clamp(
-      num(source.tipAt, fallback.tipAt),
-      Math.max(SPOUT_LIMITS.tipAt.min, attachAt + TIP_ABOVE_ATTACH),
-      SPOUT_LIMITS.tipAt.max,
-    ),
+    tipAt: clamp(num(source.tipAt, fallback.tipAt), Math.max(SPOUT_LIMITS.tipAt.min, attachAt + TIP_ABOVE_ATTACH), SPOUT_LIMITS.tipAt.max),
     baseMm,
     // трубка сужается к устью, а не раздувается
     tipMm: Math.min(within('tipMm', source.tipMm), baseMm),
@@ -271,11 +263,7 @@ function applies(state: SpoutState): boolean {
  * Замкнутая труба с плоскими торцами: основание прячется в стенке при
  * объединении, а торец у кончика вскрывает канал.
  */
-export function buildAppliedSpout(
-  state: SpoutState,
-  profile: ProfileDef,
-  heightMm: number,
-): SurfaceMesh | null {
+export function buildAppliedSpout(state: SpoutState, profile: ProfileDef, heightMm: number): SurfaceMesh | null {
   if (!applies(state)) return null;
   const curve = spoutCurve(state, profile, heightMm);
   return sweepTube(
@@ -299,12 +287,7 @@ export function buildAppliedSpout(
  *
  * Стенку канала диктует вызывающий — у носика она та же, что у тела.
  */
-export function appliedSpoutChannel(
-  state: SpoutState,
-  profile: ProfileDef,
-  heightMm: number,
-  wallMm: number,
-): SurfaceMesh | null {
+export function appliedSpoutChannel(state: SpoutState, profile: ProfileDef, heightMm: number, wallMm: number): SurfaceMesh | null {
   if (!applies(state)) return null;
   const curve = spoutCurve(state, profile, heightMm);
 
@@ -319,10 +302,7 @@ export function appliedSpoutChannel(
     (s) => curvePoint(curve, at(s)),
     (s) => curveTangent(curve, at(s)),
     (s) => {
-      const r = Math.max(
-        MIN_CHANNEL_MM,
-        lerp(curve.baseR, curve.tipR, clamp(at(s), 0, 1)) - wallMm,
-      );
+      const r = Math.max(MIN_CHANNEL_MM, lerp(curve.baseR, curve.tipR, clamp(at(s), 0, 1)) - wallMm);
       return { halfDepth: r, halfWidth: r };
     },
     SEGMENTS,

@@ -36,10 +36,7 @@ export function drawProfileGraph(canvas: HTMLCanvasElement, def: ProfileDef): vo
   const padX = 8;
   const padTop = 6;
   const padBottom = 16; // место под подпись габаритов
-  const scale = Math.min(
-    (w - 2 * padX) / (2 * rMax),
-    (h - padTop - padBottom) / def.heightMm,
-  );
+  const scale = Math.min((w - 2 * padX) / (2 * rMax), (h - padTop - padBottom) / def.heightMm);
   const cx = w / 2;
   const y0 = h - padBottom;
 

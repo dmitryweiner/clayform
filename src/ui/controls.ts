@@ -97,8 +97,7 @@ export interface ButtonControl<T> {
   apply(state: T): T;
 }
 
-export type Control<T> =
-  | RangeControl<T> | SelectControl<T> | CheckControl<T> | ImageControl<T> | TextControl<T> | ButtonControl<T>;
+export type Control<T> = RangeControl<T> | SelectControl<T> | CheckControl<T> | ImageControl<T> | TextControl<T> | ButtonControl<T>;
 
 export interface ControlsHandle<T> {
   /** обновляет отображаемые значения, не пересоздавая DOM */
@@ -222,7 +221,10 @@ export function renderControls<T>(
       const readout = make('output', undefined, format(control, control.get(read())));
       const minus = make('button', 'adj-btn', '−');
       const plus = make('button', 'adj-btn', '+');
-      for (const [button, dir] of [[minus, -1], [plus, 1]] as const) {
+      for (const [button, dir] of [
+        [minus, -1],
+        [plus, 1],
+      ] as const) {
         button.type = 'button';
         button.dataset.slider = slider.id;
         button.dataset.dir = String(dir);

@@ -15,17 +15,14 @@
 
 import { decodeBase64 } from './bytes';
 
-export const ROULETTE_PATTERNS = [
-  'rope', 'zigzag', 'dots', 'diamonds', 'dashes', 'lattice', 'meander', 'band', 'image',
-] as const;
+export const ROULETTE_PATTERNS = ['rope', 'zigzag', 'dots', 'diamonds', 'dashes', 'lattice', 'meander', 'band', 'image'] as const;
 export type RoulettePattern = (typeof ROULETTE_PATTERNS)[number];
 
 /**
  * Непрерывные узоры — лента без разрывов: просвета у них нет, тайлы
  * стыкуются встык. Остальные — одиночные оттиски с гладкой стенкой между.
  */
-export const CONTINUOUS: ReadonlySet<RoulettePattern> =
-  new Set<RoulettePattern>(['band', 'rope', 'zigzag', 'lattice', 'meander']);
+export const CONTINUOUS: ReadonlySet<RoulettePattern> = new Set<RoulettePattern>(['band', 'rope', 'zigzag', 'lattice', 'meander']);
 export const isContinuous = (p: RoulettePattern): boolean => CONTINUOUS.has(p);
 
 export interface RouletteBand {
@@ -161,6 +158,8 @@ function ridge(x: number, half = 0.5): number {
  * Соседние звенья разделены ровно одной пустой клеткой (правый столбец), а
  * рельс идёт через весь тайл и связывает звенья в непрерывную ленту.
  */
+// сетка и есть рисунок — в одну строку её не тянуть
+// prettier-ignore
 export const MEANDER_CLASSIC: readonly string[] = [
   '######.',
   '#....#.',
@@ -176,6 +175,8 @@ export const MEANDER_CLASSIC: readonly string[] = [
  * клетку, иначе соседние штрихи сольются. Рельс, идущий через весь тайл, —
  * строка из одних `#`: она замыкается сама с собой через шов.
  */
+// сетка и есть рисунок — в одну строку её не тянуть
+// prettier-ignore
 export const MEANDER_GRIDS = {
   /** классический ключ: рельс снизу, спираль в полтора оборота */
   classic: MEANDER_CLASSIC,
@@ -258,8 +259,7 @@ export function gridPattern(rows: readonly string[]): GridPattern {
   const cx = (k: number): number => (k + 0.5) / width;
   // ряд 0 — верхний, а q растёт снизу вверх
   const cy = (r: number): number => 1 - (r + 0.5) / height;
-  const filled = (r: number, c: number): boolean =>
-    rows[r]?.[((c % width) + width) % width] === '#';
+  const filled = (r: number, c: number): boolean => rows[r]?.[((c % width) + width) % width] === '#';
   const segments: Segment[] = [];
   // клетки, которые ни в один прогон длиннее одной клетки не попали
   const covered = new Set<string>();
@@ -320,9 +320,7 @@ export const meanderGrid = (kind: MeanderKind = 'classic'): GridPattern => MEAND
  * Отношение ширины тайла к ширине пояска. Тайл перестаёт быть квадратным,
  * если сетка узора не квадратная: клетки должны остаться квадратными.
  */
-export function tileAspect(
-  band: Pick<RouletteBand, 'pattern' | 'image'> & { meander?: MeanderKind },
-): number {
+export function tileAspect(band: Pick<RouletteBand, 'pattern' | 'image'> & { meander?: MeanderKind }): number {
   if (band.pattern === 'meander') {
     const grid = meanderGrid(band.meander);
     return grid.width / grid.height;
@@ -347,11 +345,7 @@ function gridValue(grid: GridPattern, s: number, q: number, tile: TileContext): 
 }
 
 /** Расстояние в миллиметрах от точки тайла до отрезка тайла. */
-function segmentDistanceMm(
-  s: number, q: number,
-  x0: number, y0: number, x1: number, y1: number,
-  tile: TileContext,
-): number {
+function segmentDistanceMm(s: number, q: number, x0: number, y0: number, x1: number, y1: number, tile: TileContext): number {
   const ax = (s - x0) * tile.elementMm;
   const ay = (q - y0) * tile.bandMm;
   const bx = (x1 - x0) * tile.elementMm;
@@ -362,12 +356,7 @@ function segmentDistanceMm(
 }
 
 /** Значение узора на тайле; периодично по s, значения 0…1. */
-export function patternValue(
-  pattern: RoulettePattern,
-  s: number,
-  q: number,
-  tile: TileContext,
-): number {
+export function patternValue(pattern: RoulettePattern, s: number, q: number, tile: TileContext): number {
   switch (pattern) {
     case 'rope':
       // косые валики: за высоту пояска гребень уходит ровно на один шаг
@@ -479,10 +468,7 @@ interface PreparedBand {
  * повторов у каждой считается один раз: оно одно на всю полосу, иначе узор
  * поехал бы по высоте.
  */
-export function makeRoulette(
-  state: RouletteState,
-  ctx: RouletteContext,
-): (u: number, v: number) => number {
+export function makeRoulette(state: RouletteState, ctx: RouletteContext): (u: number, v: number) => number {
   const prepared: PreparedBand[] = [];
   for (const band of state.bands) {
     if (!band.on || band.depthMm === 0) continue;
@@ -562,8 +548,7 @@ function asRecord(x: unknown): Record<string, unknown> {
   return out;
 }
 
-const num = (x: unknown, fallback: number): number =>
-  typeof x === 'number' && Number.isFinite(x) ? x : fallback;
+const num = (x: unknown, fallback: number): number => (typeof x === 'number' && Number.isFinite(x) ? x : fallback);
 
 export function sanitizeBand(raw: unknown): RouletteBand {
   const source = asRecord(raw);

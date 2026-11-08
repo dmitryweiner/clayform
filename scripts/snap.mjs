@@ -68,10 +68,7 @@ if (rawUrl) {
 }
 
 label('boot');
-await page.waitForFunction(
-  () => (document.querySelector('#status')?.textContent ?? '').length > 0,
-  { timeout: 20000 },
-);
+await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0, { timeout: 20000 });
 
 const family = flags.get('family');
 if (family) {

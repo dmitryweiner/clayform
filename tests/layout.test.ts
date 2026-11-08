@@ -44,7 +44,8 @@ describe('mergeMeshes', () => {
     expect(report.watertight).toBe(true);
     expect(report.triangleCount).toBe((a.indices.length + b.indices.length) / 3);
     expect(signedVolume(merged.positions, merged.indices)).toBeCloseTo(
-      signedVolume(a.positions, a.indices) + signedVolume(b.positions, b.indices), 0,
+      signedVolume(a.positions, a.indices) + signedVolume(b.positions, b.indices),
+      0,
     );
   });
 });

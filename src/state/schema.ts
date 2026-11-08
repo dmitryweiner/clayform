@@ -106,13 +106,8 @@ function numericRecord(x: unknown): Partial<Params> {
 export function sanitizeState(raw: unknown): AppState {
   const source = asRecord(raw);
   const fallback = defaultState();
-  const family = typeof source.family === 'string' && isFamilyId(source.family)
-    ? source.family
-    : fallback.family;
-  const heightMm = Math.min(
-    HEIGHT_MAX_MM,
-    Math.max(HEIGHT_MIN_MM, num(source.heightMm, familyById(family).defaultHeightMm)),
-  );
+  const family = typeof source.family === 'string' && isFamilyId(source.family) ? source.family : fallback.family;
+  const heightMm = Math.min(HEIGHT_MAX_MM, Math.max(HEIGHT_MIN_MM, num(source.heightMm, familyById(family).defaultHeightMm)));
   const wanted = num(source.resolution, fallback.resolution);
   const resolution = RESOLUTIONS.includes(wanted) ? wanted : fallback.resolution;
   return {
@@ -161,11 +156,7 @@ export function lidRelief(state: AppState): ReliefState {
  * Состояние + детализация → параметры сборки геометрии. `markStrip` — растр
  * строки клейма: шрифтом его рисует главный поток, в состоянии его нет.
  */
-export function toBuildParams(
-  state: AppState,
-  segments: number,
-  markStrip: MarkRaster | null = null,
-): BuildParams {
+export function toBuildParams(state: AppState, segments: number, markStrip: MarkRaster | null = null): BuildParams {
   return {
     family: state.family,
     shape: state.shape,

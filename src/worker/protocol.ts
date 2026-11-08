@@ -15,10 +15,7 @@ import type { MarkRaster } from '../geo/mark';
  * Задача воркеру. Обе — про булевы операции, ради которых он и заведён:
  * точное превью изделия на огрублённой сетке и экспортная сборка на полной.
  */
-export type CsgJob = (
-  | { kind: 'vessel-preview'; state: AppState; segments: number }
-  | { kind: 'export'; state: AppState }
-) & {
+export type CsgJob = ({ kind: 'vessel-preview'; state: AppState; segments: number } | { kind: 'export'; state: AppState }) & {
   /**
    * Растр строки клейма. Шрифты есть только у главного потока, поэтому
    * строку рисует он; это производное от состояния, а не его часть, и

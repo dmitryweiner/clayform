@@ -11,9 +11,7 @@ import type { CsgApi } from '../src/geo/csg';
 import { CsgScope, toManifold } from '../src/geo/csg';
 import { buildPrintableVessel, unionAll } from '../src/geo/assemble';
 import { buildHandles, defaultHandle, sanitizeHandle } from '../src/geo/handle';
-import {
-  defaultSpout, sanitizeSpout, makeSpout, buildAppliedSpout, appliedSpoutChannel, SPOUT_LIMITS,
-} from '../src/geo/spout';
+import { defaultSpout, sanitizeSpout, makeSpout, buildAppliedSpout, appliedSpoutChannel, SPOUT_LIMITS } from '../src/geo/spout';
 import { buildVessel, defaultBuildParams, vesselGrid, gridRadiusAt } from '../src/geo/build';
 import { sanitizeHollow, buildHollowVessel } from '../src/geo/hollow';
 import { assembleMesh } from '../src/geo/surface';
@@ -35,8 +33,7 @@ const cup = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-const handleOn = (over: Record<string, unknown> = {}) =>
-  sanitizeHandle({ ...defaultHandle(), on: true, ...over });
+const handleOn = (over: Record<string, unknown> = {}) => sanitizeHandle({ ...defaultHandle(), on: true, ...over });
 
 /** Род поверхности: 0 — шар, 1 — кружка с ручкой, 2 — амфора с двумя. */
 function genusOf(mesh: { positions: Float32Array; indices: Uint32Array }): number {
@@ -83,13 +80,9 @@ describe('buildHandles', () => {
       const state = handleOn({ reachMm });
       const [handle] = buildHandles(state, profile, 95);
       const farthest = -validateMesh(handle).bbox.min[0];
-      const wall = Math.max(
-        profileRadius(profile, state.topAt),
-        profileRadius(profile, state.bottomAt),
-      );
+      const wall = Math.max(profileRadius(profile, state.topAt), profileRadius(profile, state.bottomAt));
       // слайдер задаёт вынос осевой линии, поэтому вычитаем половину сечения
-      expect(farthest - state.thicknessMm / 2 - wall, `reach=${reachMm}`)
-        .toBeCloseTo(reachMm, 0);
+      expect(farthest - state.thicknessMm / 2 - wall, `reach=${reachMm}`).toBeCloseTo(reachMm, 0);
     }
   });
 
@@ -105,9 +98,7 @@ describe('buildHandles', () => {
 
   it('угол нижнего крепления опускает низ дуги, не трогая верх', () => {
     const flat = validateMesh(buildHandles(handleOn(), profile, 95)[0]).bbox;
-    const dropped = validateMesh(
-      buildHandles(handleOn({ bottomAngleDeg: -50 }), profile, 95)[0],
-    ).bbox;
+    const dropped = validateMesh(buildHandles(handleOn({ bottomAngleDeg: -50 }), profile, 95)[0]).bbox;
     expect(dropped.min[2]).toBeLessThan(flat.min[2] - 3);
     expect(dropped.max[2]).toBeCloseTo(flat.max[2], 0);
   });
@@ -133,16 +124,18 @@ describe('buildHandles', () => {
       const heightMm = familyById(family).defaultHeightMm;
       const shape = buildProfile(family, defaultFamilyParams(family), heightMm);
       for (const thicknessMm of [4, 11, 24]) {
-        for (const [topAt, bottomAt] of [[0.82, 0.3], [0.95, 0.6], [0.5, 0.15]]) {
+        for (const [topAt, bottomAt] of [
+          [0.82, 0.3],
+          [0.95, 0.6],
+          [0.5, 0.15],
+        ]) {
           const state = handleOn({ topAt, bottomAt, thicknessMm, widthRatio: 1 });
           const [handle] = buildHandles(state, shape, heightMm);
           const tag = `${family}/${thicknessMm}/${topAt}`;
           for (const cap of Object.values(capCentres(handle))) {
             let checked = 0;
             for (let i = 0; i < handle.positions.length; i += 3) {
-              const [x, y, z] = [
-                handle.positions[i], handle.positions[i + 1], handle.positions[i + 2],
-              ];
+              const [x, y, z] = [handle.positions[i], handle.positions[i + 1], handle.positions[i + 2]];
               if (Math.abs(x - cap.x) > 1e-4) continue;
               checked++;
               expect(Math.hypot(x, y), tag).toBeLessThan(profileRadius(shape, z / heightMm));
@@ -208,9 +201,7 @@ describe('изделие с ручкой', () => {
 
 describe('полая кружка с ручкой', () => {
   it('замкнута, с отверстием ручки, и полость на месте', () => {
-    const result = buildPrintableVessel(
-      csg, cup(), sanitizeHollow({ wallMm: 3, baseMm: 4 }), handleOn(), defaultSpout(),
-    );
+    const result = buildPrintableVessel(csg, cup(), sanitizeHollow({ wallMm: 3, baseMm: 4 }), handleOn(), defaultSpout());
     const report = validateMesh(result.mesh);
     expect(report.watertight).toBe(true);
     expect(report.volume).toBeGreaterThan(0);
@@ -247,9 +238,7 @@ describe('полая кружка с ручкой', () => {
     const plain = buildPrintableVessel(csg, params, hollow, sanitizeHandle({ on: false }), defaultSpout());
     // объём материала вырос ровно на ручку снаружи; если бы утопленные
     // торцы остались внутри полости, прирост был бы заметно больше
-    const handleVolume = validateMesh(buildHandles(
-      handleOn(), buildProfile('cup', defaultFamilyParams('cup'), 95), 95,
-    )[0]).volume;
+    const handleVolume = validateMesh(buildHandles(handleOn(), buildProfile('cup', defaultFamilyParams('cup'), 95), 95)[0]).volume;
     const grew = validateMesh(withHandle.mesh).volume - validateMesh(plain.mesh).volume;
     expect(grew).toBeGreaterThan(handleVolume * 0.5);
     expect(grew).toBeLessThan(handleVolume);
@@ -268,8 +257,7 @@ describe('unionAll', () => {
 });
 
 describe('носик-слив', () => {
-  const withSpout = (over: Record<string, unknown> = {}) =>
-    cup({ spout: sanitizeSpout({ ...defaultSpout(), on: true, ...over }) });
+  const withSpout = (over: Record<string, unknown> = {}) => cup({ spout: sanitizeSpout({ ...defaultSpout(), on: true, ...over }) });
 
   it('вытягивает край только в свою сторону', () => {
     const plain = vesselGrid(cup());
@@ -360,8 +348,7 @@ describe('приставной носик', () => {
   const HEIGHT_MM = 140;
   const profile = buildProfile('pot', defaultFamilyParams('pot'), HEIGHT_MM);
 
-  const teapotSpout = (over: Record<string, unknown> = {}) =>
-    sanitizeSpout({ ...defaultSpout(), on: true, kind: 'applied', ...over });
+  const teapotSpout = (over: Record<string, unknown> = {}) => sanitizeSpout({ ...defaultSpout(), on: true, kind: 'applied', ...over });
 
   const teapot = (over: Record<string, unknown> = {}) =>
     cup({
@@ -425,8 +412,7 @@ describe('приставной носик', () => {
     const state = teapotSpout();
     const along = tipDirection(state.tipAngleDeg);
     // вперёд канал выходит за торец трубки — иначе устье осталось бы глухим
-    expect(farthestAlong(channelOf(state, wallMm), along))
-      .toBeGreaterThan(farthestAlong(tubeOf(state), along) + 1);
+    expect(farthestAlong(channelOf(state, wallMm), along)).toBeGreaterThan(farthestAlong(tubeOf(state), along) + 1);
     // назад — за внутреннюю поверхность стенки, то есть в саму полость
     const attachR = profileRadius(profile, state.attachAt);
     expect(validateMesh(channelOf(state, wallMm)).bbox.min[0]).toBeLessThan(attachR - wallMm);
@@ -509,9 +495,7 @@ describe('приставной носик', () => {
     const params = teapot();
     const hollow = sanitizeHollow({ wallMm: 3, baseMm: 4 });
     const spout = teapotSpout();
-    const printable = buildPrintableVessel(
-      csg, params, hollow, sanitizeHandle({ on: false }), spout,
-    );
+    const printable = buildPrintableVessel(csg, params, hollow, sanitizeHandle({ on: false }), spout);
     const along = tipDirection(spout.tipAngleDeg);
     const tip = capCentres(tubeOf(spout)).end;
     const probeR = Math.min(3, Math.max(1, spout.tipMm / 2 - hollow.wallMm - 0.5));
@@ -520,9 +504,7 @@ describe('приставной носик', () => {
     try {
       const solid = scope.keep(toManifold(csg, printable.mesh));
       for (const back of [2, 6, 12]) {
-        const probe = scope.keep(csg.Manifold.sphere(probeR, 24).translate([
-          tip.x - along.x * back, 0, tip.z - along.z * back,
-        ]));
+        const probe = scope.keep(csg.Manifold.sphere(probeR, 24).translate([tip.x - along.x * back, 0, tip.z - along.z * back]));
         const filled = scope.keep(solid.intersect(probe)).volume() / probe.volume();
         expect(filled, `в ${back} мм от кончика`).toBeLessThan(0.02);
       }
@@ -532,9 +514,7 @@ describe('приставной носик', () => {
   });
 
   it('носик и ручка уживаются на одном изделии', () => {
-    const mesh = buildPrintableVessel(
-      csg, teapot(), sanitizeHollow({ wallMm: 3, baseMm: 4 }), handleOn(), teapotSpout(),
-    ).mesh;
+    const mesh = buildPrintableVessel(csg, teapot(), sanitizeHollow({ wallMm: 3, baseMm: 4 }), handleOn(), teapotSpout()).mesh;
     expect(validateMesh(mesh).watertight).toBe(true);
   });
 
@@ -592,11 +572,15 @@ describe('санация ручки и носика', () => {
 
   it('параметры трубки зажимаются в свои пределы', () => {
     const huge = sanitizeSpout({
-      kind: 'applied', attachAt: 9, lengthMm: 1e6, tipAt: -3,
-      baseMm: 1e6, tipMm: 1e6, tipAngleDeg: 1e6,
+      kind: 'applied',
+      attachAt: 9,
+      lengthMm: 1e6,
+      tipAt: -3,
+      baseMm: 1e6,
+      tipMm: 1e6,
+      tipAngleDeg: 1e6,
     });
-    const keys: (keyof typeof SPOUT_LIMITS)[] =
-      ['attachAt', 'lengthMm', 'tipAt', 'baseMm', 'tipMm', 'tipAngleDeg'];
+    const keys: (keyof typeof SPOUT_LIMITS)[] = ['attachAt', 'lengthMm', 'tipAt', 'baseMm', 'tipMm', 'tipAngleDeg'];
     for (const key of keys) {
       expect(huge[key], key).toBeGreaterThanOrEqual(SPOUT_LIMITS[key].min);
       expect(huge[key], key).toBeLessThanOrEqual(SPOUT_LIMITS[key].max);

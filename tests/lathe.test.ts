@@ -34,7 +34,10 @@ describe('lathe', () => {
   it('цилиндр: замкнут, нормали наружу, объём как у цилиндра', () => {
     const nu = 96;
     const contour: LathePoint[] = [
-      { r: 0, z: 0 }, { r: 20, z: 0 }, { r: 20, z: 50 }, { r: 0, z: 50 },
+      { r: 0, z: 0 },
+      { r: 20, z: 0 },
+      { r: 20, z: 50 },
+      { r: 0, z: 50 },
     ];
     const report = validateMesh(withNormals(lathe(contour, nu)));
     expect(report.watertight).toBe(true);
@@ -47,7 +50,10 @@ describe('lathe', () => {
     // Труба: наружная стенка вверх, внутренняя вниз. Полюсов нет вовсе —
     // ни одного веера, только полосы квадов.
     const contour: LathePoint[] = [
-      { r: 10, z: 0 }, { r: 20, z: 0 }, { r: 20, z: 30 }, { r: 10, z: 30 },
+      { r: 10, z: 0 },
+      { r: 20, z: 0 },
+      { r: 20, z: 30 },
+      { r: 10, z: 30 },
     ];
     const report = validateMesh(withNormals(lathe(contour, 64)));
     expect(report.watertight).toBe(true);
@@ -58,8 +64,12 @@ describe('lathe', () => {
     // Так устроена полая крышка: наружная поверхность сходится в вершину,
     // контур спускается по оси и идёт обратно уже изнанкой.
     const contour: LathePoint[] = [
-      { r: 8, z: 0 }, { r: 12, z: 0 }, { r: 12, z: 4 }, { r: 0, z: 20 },
-      { r: 0, z: 16 }, { r: 8, z: 4 },
+      { r: 8, z: 0 },
+      { r: 12, z: 0 },
+      { r: 12, z: 4 },
+      { r: 0, z: 20 },
+      { r: 0, z: 16 },
+      { r: 8, z: 4 },
     ];
     const mesh = lathe(contour, 48);
     const report = validateMesh(withNormals(mesh));
@@ -72,15 +82,28 @@ describe('lathe', () => {
 
   it('полюс схлопнут в одну вершину, а не в кольцо совпадающих', () => {
     const nu = 32;
-    const mesh = lathe([{ r: 0, z: 0 }, { r: 10, z: 0 }, { r: 10, z: 10 }, { r: 0, z: 10 }], nu);
+    const mesh = lathe(
+      [
+        { r: 0, z: 0 },
+        { r: 10, z: 0 },
+        { r: 10, z: 10 },
+        { r: 0, z: 10 },
+      ],
+      nu,
+    );
     // 2 полюса + 2 кольца
     expect(mesh.positions.length / 3).toBe(2 + 2 * nu);
   });
 
   it('повторы точек и замыкающий дубль не рвут меш', () => {
     const contour: LathePoint[] = [
-      { r: 0, z: 0 }, { r: 0, z: 0 }, { r: 15, z: 0 }, { r: 15, z: 0 },
-      { r: 15, z: 20 }, { r: 0, z: 20 }, { r: 0, z: 0 },
+      { r: 0, z: 0 },
+      { r: 0, z: 0 },
+      { r: 15, z: 0 },
+      { r: 15, z: 0 },
+      { r: 15, z: 20 },
+      { r: 0, z: 20 },
+      { r: 0, z: 0 },
     ];
     const report = validateMesh(withNormals(lathe(contour, 40)));
     expect(report.watertight).toBe(true);
@@ -89,7 +112,10 @@ describe('lathe', () => {
 
   it('обход по часовой даёт вывернутый меш — это ошибка вызывающего', () => {
     const forward: LathePoint[] = [
-      { r: 0, z: 0 }, { r: 10, z: 0 }, { r: 10, z: 10 }, { r: 0, z: 10 },
+      { r: 0, z: 0 },
+      { r: 10, z: 0 },
+      { r: 10, z: 10 },
+      { r: 0, z: 10 },
     ];
     const volume = (points: LathePoint[]) => validateMesh(withNormals(lathe(points, 32))).volume;
     expect(volume(forward)).toBeGreaterThan(0);
@@ -97,12 +123,39 @@ describe('lathe', () => {
   });
 
   it('не бросает на разумном мусоре, но отказывается от бессмысленного', () => {
-    expect(() => lathe([{ r: 5, z: 0 }, { r: 5, z: 1 }], 32)).toThrow(/at least 3/);
-    expect(() => lathe([{ r: 0, z: 0 }, { r: 5, z: 0 }, { r: 5, z: 1 }], 2)).toThrow(/too few segments/);
+    expect(() =>
+      lathe(
+        [
+          { r: 5, z: 0 },
+          { r: 5, z: 1 },
+        ],
+        32,
+      ),
+    ).toThrow(/at least 3/);
+    expect(() =>
+      lathe(
+        [
+          { r: 0, z: 0 },
+          { r: 5, z: 0 },
+          { r: 5, z: 1 },
+        ],
+        2,
+      ),
+    ).toThrow(/too few segments/);
     // отрицательный радиус подтягивается к оси, а не выворачивает меш
-    const report = validateMesh(withNormals(
-      lathe([{ r: -3, z: 0 }, { r: 10, z: 0 }, { r: 10, z: 8 }, { r: -1, z: 8 }], 32),
-    ));
+    const report = validateMesh(
+      withNormals(
+        lathe(
+          [
+            { r: -3, z: 0 },
+            { r: 10, z: 0 },
+            { r: 10, z: 8 },
+            { r: -1, z: 8 },
+          ],
+          32,
+        ),
+      ),
+    );
     expect(report.watertight).toBe(true);
   });
 });

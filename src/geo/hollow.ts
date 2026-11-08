@@ -99,8 +99,7 @@ export function sanitizeHollow(raw: unknown): HollowState {
   if (typeof raw === 'object' && raw !== null) {
     for (const [key, value] of Object.entries(raw)) source[key] = value;
   }
-  const num = (x: unknown, d: number): number =>
-    typeof x === 'number' && Number.isFinite(x) ? x : d;
+  const num = (x: unknown, d: number): number => (typeof x === 'number' && Number.isFinite(x) ? x : d);
   return {
     wallMm: clamp(num(source.wallMm, fallback.wallMm), WALL_MIN_MM, WALL_MAX_MM),
     baseMm: clamp(num(source.baseMm, fallback.baseMm), BASE_MIN_MM, BASE_MAX_MM),
@@ -119,13 +118,7 @@ export function sanitizeHollow(raw: unknown): HollowState {
  * зазор между поверхностями больше толщины, и общий радиус загнал бы дугу
  * в стенку.
  */
-function rimRings(
-  outer: Grid,
-  inner: Float32Array,
-  nu: number,
-  nv: number,
-  rimR: number,
-): Float32Array[] {
+function rimRings(outer: Grid, inner: Float32Array, nu: number, nv: number, rimR: number): Float32Array[] {
   if (rimR < 1e-6) return [];
   const rings: Float32Array[] = [];
   for (let m = 1; m < RIM_STEPS; m++) rings.push(new Float32Array(nu * 3));
@@ -156,8 +149,8 @@ function rimRings(
         z = zo + radius * Math.sin(a);
       } else if (s < arc + flat) {
         const t = flat > 1e-9 ? (s - arc) / flat : 0;
-        r = (ro - radius) + t * ((ri + radius) - (ro - radius));
-        z = (zo + radius) + t * ((zi + radius) - (zo + radius));
+        r = ro - radius + t * (ri + radius - (ro - radius));
+        z = zo + radius + t * (zi + radius - (zo + radius));
       } else {
         const a = Math.PI / 2 + (s - arc - flat) / Math.max(radius, 1e-9);
         r = ri + radius + radius * Math.cos(a);
@@ -178,12 +171,7 @@ function rimRings(
  * geo/lid.ts меряет горловину: крышка обязана входить в ту самую полость,
  * которую строит этот модуль, а не в свою приблизительную копию.
  */
-export function cavityPoint(
-  radiusAt: (v: number) => number,
-  heightMm: number,
-  wallMm: number,
-  v: number,
-): { r: number; z: number } {
+export function cavityPoint(radiusAt: (v: number) => number, heightMm: number, wallMm: number, v: number): { r: number; z: number } {
   const h = 1e-4;
   const lo = Math.max(0, v - h);
   const hi = Math.min(1, v + h);
@@ -197,12 +185,7 @@ export function cavityPoint(
 }
 
 /** Доля высоты, на которой офсет силуэта поднимается до уровня пола. */
-function floorParam(
-  radiusAt: (v: number) => number,
-  heightMm: number,
-  wallMm: number,
-  floorZ: number,
-): number {
+function floorParam(radiusAt: (v: number) => number, heightMm: number, wallMm: number, floorZ: number): number {
   if (cavityPoint(radiusAt, heightMm, wallMm, 0).z >= floorZ) return 0;
   let lo = 0;
   let hi = 1;
@@ -214,11 +197,7 @@ function floorParam(
   return hi;
 }
 
-export function buildHollowVessel(
-  p: BuildParams,
-  hollow: HollowState,
-  seat?: SeatFit,
-): HollowResult {
+export function buildHollowVessel(p: BuildParams, hollow: HollowState, seat?: SeatFit): HollowResult {
   const wallMm = clamp(hollow.wallMm, WALL_MIN_MM, WALL_MAX_MM);
   // Рельефу внутрь оставляем ровно столько, чтобы стенка не истончилась
   // ниже MIN_WALL_MM: остаток стенки = wallMm + depth, потому что полость —
@@ -285,9 +264,7 @@ export function buildHollowVessel(
 
   // клеймо вдавливается в дно, но не глубже, чем оставит минимальную стенку
   const mark = vesselBottom(p, outer, floorZ - MIN_WALL_MM);
-  const shell = assembleHollowMesh(
-    outer, inner, rimRings(outer, inner, nu, nv, rimR), mark ? { outer: mark } : undefined,
-  );
+  const shell = assembleHollowMesh(outer, inner, rimRings(outer, inner, nu, nv, rimR), mark ? { outer: mark } : undefined);
   const cavity = assembleMesh({ nu, nv, positions: inner }, 'both');
   return {
     mesh: { ...shell, normals: meshNormals(shell.positions, shell.indices) },

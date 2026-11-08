@@ -39,11 +39,7 @@ export interface FamilyPickerHandle {
   setActive(id: string): void;
 }
 
-export function renderFamilyPicker(
-  container: HTMLElement,
-  active: string,
-  onPick: (id: string) => void,
-): FamilyPickerHandle {
+export function renderFamilyPicker(container: HTMLElement, active: string, onPick: (id: string) => void): FamilyPickerHandle {
   container.textContent = '';
   const buttons = new Map<string, HTMLButtonElement>();
 

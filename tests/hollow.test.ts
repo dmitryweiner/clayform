@@ -8,9 +8,7 @@ import { buildHollowVessel, defaultHollow, sanitizeHollow } from '../src/geo/hol
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
 import { sanitizeSpout, makeSpout } from '../src/geo/spout';
 import { validateMesh } from '../src/geo/validate';
-import {
-  FAMILY_IDS, defaultFamilyParams, familyById, buildProfile, profileRadius,
-} from '../src/geo/profiles';
+import { FAMILY_IDS, defaultFamilyParams, familyById, buildProfile, profileRadius } from '../src/geo/profiles';
 import { sanitizeRelief } from '../src/geo/relief';
 
 const params = (family: string, over: Record<string, unknown> = {}) => ({
@@ -59,10 +57,7 @@ describe('buildHollowVessel', () => {
     // середина по высоте — вдали от пола и венчика
     const j = Math.round(inner.nv * 0.5);
     for (let i = 0; i < inner.nu; i += 11) {
-      const rIn = Math.hypot(
-        inner.positions[(j * inner.nu + i) * 3],
-        inner.positions[(j * inner.nu + i) * 3 + 1],
-      );
+      const rIn = Math.hypot(inner.positions[(j * inner.nu + i) * 3], inner.positions[(j * inner.nu + i) * 3 + 1]);
       expect(40 - rIn).toBeCloseTo(3.5, 2);
     }
   });
@@ -127,7 +122,7 @@ describe('buildHollowVessel', () => {
       const profile = buildProfile(family, defaultFamilyParams(family), p.heightMm);
       const inner = buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 5 })).innerGrid;
       for (let j = 0; j <= inner.nv; j++) {
-        const base = (j * inner.nu) * 3;
+        const base = j * inner.nu * 3;
         const rIn = Math.hypot(inner.positions[base], inner.positions[base + 1]);
         const z = inner.positions[base + 2];
         expect(rIn, `${family} j=${j}`).toBeLessThan(profileRadius(profile, z / p.heightMm));

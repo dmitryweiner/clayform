@@ -43,8 +43,7 @@ describe('словари', () => {
   });
 
   it('у множественного числа столько форм, сколько категорий у языка', () => {
-    const forms = (template: string): number[] =>
-      [...template.matchAll(/\{\w+\|([^}]*)\}/g)].map((match) => match[1].split('|').length);
+    const forms = (template: string): number[] => [...template.matchAll(/\{\w+\|([^}]*)\}/g)].map((match) => match[1].split('|').length);
     for (const key of KEYS) {
       for (const count of forms(DICTS.ru[key])) expect(count, `ru:${key}`).toBe(3);
       for (const count of forms(DICTS.en[key])) expect(count, `en:${key}`).toBe(2);
@@ -117,8 +116,21 @@ describe('format', () => {
 
   it('шаблоны словарей с правдоподобными параметрами не оставляют дыр', () => {
     const params = {
-      n: 3, i: 2, k: 74, d: '120', h: '90', v: '1.20', pct: '4.5', deg: '30', step: '12.5', gap: '1.5',
-      dims: '120×120×90', error: 'boom', name: 'X', part: 'half A', count: 5,
+      n: 3,
+      i: 2,
+      k: 74,
+      d: '120',
+      h: '90',
+      v: '1.20',
+      pct: '4.5',
+      deg: '30',
+      step: '12.5',
+      gap: '1.5',
+      dims: '120×120×90',
+      error: 'boom',
+      name: 'X',
+      part: 'half A',
+      count: 5,
     };
     for (const lang of LANGS) {
       for (const key of KEYS) {
@@ -190,8 +202,9 @@ describe('страж непереведённого', () => {
 
   it('в src/ кириллица в строках есть только в русском словаре', () => {
     const root = join(__dirname, '..', 'src');
-    const files = readdirSync(root, { recursive: true, encoding: 'utf8' })
-      .filter((file) => file.endsWith('.ts') && join('src', file) !== join('src', 'i18n', 'ru.ts'));
+    const files = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter(
+      (file) => file.endsWith('.ts') && join('src', file) !== join('src', 'i18n', 'ru.ts'),
+    );
     expect(files.length).toBeGreaterThan(20);
     const offenders: string[] = [];
     for (const file of files) {

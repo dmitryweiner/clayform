@@ -53,9 +53,7 @@ export async function ensureServer(preview) {
   // код позапрошлой недели и падал на непонятном месте
   if (preview) await run('npx', ['vite', 'build']);
   const port = preview ? 4173 : 5173;
-  const cmd = preview
-    ? ['vite', 'preview', '--port', String(port), '--strictPort']
-    : ['vite', '--port', String(port), '--strictPort'];
+  const cmd = preview ? ['vite', 'preview', '--port', String(port), '--strictPort'] : ['vite', '--port', String(port), '--strictPort'];
   const proc = spawn('npx', cmd, { stdio: 'ignore' });
   for (let i = 0; i < 40 && !(await serverUp(base)); i++) {
     await new Promise((r) => setTimeout(r, 500));

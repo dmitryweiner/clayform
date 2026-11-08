@@ -4,10 +4,7 @@
 // бегущая вокруг изделия, обязана попасть сама в себя при u = 2π. Дробное
 // число гребней даёт ступеньку по шву, которую видно и на печати, и в форме.
 
-import {
-  waveform, axisCoord, zoneWeight, reliefDepth, defaultRelief, sanitizeRelief,
-  WAVE_SHAPES, WAVE_AXES,
-} from '../src/geo/relief';
+import { waveform, axisCoord, zoneWeight, reliefDepth, defaultRelief, sanitizeRelief, WAVE_SHAPES, WAVE_AXES } from '../src/geo/relief';
 
 const TAU = Math.PI * 2;
 
@@ -91,8 +88,7 @@ describe('шов θ = 0 / 2π', () => {
           for (const v of [0.2, 0.5, 0.9]) {
             const start = reliefDepth(relief, 0, v);
             const end = reliefDepth(relief, TAU, v);
-            expect(Math.abs(end - start), `${axis} freq=${freq} k=${spiralK} v=${v}`)
-              .toBeLessThan(1e-6);
+            expect(Math.abs(end - start), `${axis} freq=${freq} k=${spiralK} v=${v}`).toBeLessThan(1e-6);
           }
         }
       }
@@ -135,10 +131,7 @@ describe('шов θ = 0 / 2π', () => {
           wave: { on: true, axis: 'spiral', shape: 'rounded', freq, ampMm: 3, phase: 0, spiralK },
         });
         for (const v of [0.15, 0.6, 0.9]) {
-          expect(
-            Math.abs(reliefDepth(relief, TAU, v) - reliefDepth(relief, 0, v)),
-            `freq=${freq} k=${spiralK} v=${v}`,
-          ).toBeLessThan(1e-6);
+          expect(Math.abs(reliefDepth(relief, TAU, v) - reliefDepth(relief, 0, v)), `freq=${freq} k=${spiralK} v=${v}`).toBeLessThan(1e-6);
         }
       }
     }
@@ -146,11 +139,12 @@ describe('шов θ = 0 / 2π', () => {
 });
 
 describe('волна волны: режим «плетение»', () => {
-  const weave = (over: Record<string, unknown> = {}) => sanitizeRelief({
-    wave: { on: true, axis: 'theta', shape: 'sin', freq: 12, ampMm: 4, phase: 0, spiralK: 0 },
-    wave2: { on: true, mode: 'weave', axis: 'z', shape: 'sin', freq: 6, phase: 0, spiralK: 0, ...over },
-    zone: { from: 0, to: 1, fade: 0 },
-  });
+  const weave = (over: Record<string, unknown> = {}) =>
+    sanitizeRelief({
+      wave: { on: true, axis: 'theta', shape: 'sin', freq: 12, ampMm: 4, phase: 0, spiralK: 0 },
+      wave2: { on: true, mode: 'weave', axis: 'z', shape: 'sin', freq: 6, phase: 0, spiralK: 0, ...over },
+      zone: { from: 0, to: 1, fade: 0 },
+    });
 
   it('это произведение двух волн: обнуляется там, где обнуляется любая из них', () => {
     const relief = weave();

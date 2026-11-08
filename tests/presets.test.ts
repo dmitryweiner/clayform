@@ -72,7 +72,11 @@ describe('встроенные пресеты', () => {
     expect(presetById('jug')?.build().spout.kind).toBe('lip');
     expect(presetById('teapot')?.build().spout.kind).toBe('applied');
     expect(presetById('skyphos')?.build().handle.count).toBe(2);
-    expect(presetById('rouletted-pot')?.build().roulette.bands.some((b) => b.on)).toBe(true);
+    expect(
+      presetById('rouletted-pot')
+        ?.build()
+        .roulette.bands.some((b) => b.on),
+    ).toBe(true);
     expect(presetById('ridged-vase')?.build().relief.wave.on).toBe(true);
     expect(presetById('tumbler')?.build().handle.on).toBe(false);
   });
@@ -124,11 +128,35 @@ describe('автоимя своего пресета', () => {
     const prefixes = autoPresetPrefixes();
     expect(prefixes).toEqual(['Изделие', 'Piece', 'Моё']);
     expect(nextPresetNumber([], prefixes)).toBe(1);
-    expect(nextPresetNumber([{ name: 'Изделие 2', state }, { name: 'Моё 5', state }, { name: 'Ваза', state }], prefixes))
-      .toBe(6);
-    expect(nextPresetNumber([{ name: 'Изделие 2', state }, { name: 'Piece 7', state }], prefixes)).toBe(8);
+    expect(
+      nextPresetNumber(
+        [
+          { name: 'Изделие 2', state },
+          { name: 'Моё 5', state },
+          { name: 'Ваза', state },
+        ],
+        prefixes,
+      ),
+    ).toBe(6);
+    expect(
+      nextPresetNumber(
+        [
+          { name: 'Изделие 2', state },
+          { name: 'Piece 7', state },
+        ],
+        prefixes,
+      ),
+    ).toBe(8);
     // приставка без номера или номер без пробела — не автоимя
-    expect(nextPresetNumber([{ name: 'Piece', state }, { name: 'Piece7', state }], prefixes)).toBe(1);
+    expect(
+      nextPresetNumber(
+        [
+          { name: 'Piece', state },
+          { name: 'Piece7', state },
+        ],
+        prefixes,
+      ),
+    ).toBe(1);
     expect(DICTS.ru['presets.auto']).toBe('Изделие {n}');
   });
 });

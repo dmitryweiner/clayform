@@ -68,7 +68,10 @@ export function renderParams(
 
     const minus = make('button', 'adj-btn', '−');
     const plus = make('button', 'adj-btn', '+');
-    for (const [btn, dir] of [[minus, -1], [plus, 1]] as const) {
+    for (const [btn, dir] of [
+      [minus, -1],
+      [plus, 1],
+    ] as const) {
       btn.type = 'button';
       btn.dataset.slider = slider.id;
       btn.dataset.dir = String(dir);

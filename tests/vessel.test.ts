@@ -69,7 +69,7 @@ describe('vesselGrid', () => {
     expect(grid.nv).toBe(16);
     expect(grid.positions.length).toBe(32 * 17 * 3);
     expect(grid.positions[2]).toBeCloseTo(0, 6);
-    expect(grid.positions[(16 * 32) * 3 + 2]).toBeCloseTo(120, 6);
+    expect(grid.positions[16 * 32 * 3 + 2]).toBeCloseTo(120, 6);
   });
 
   it('в каждом кольце радиус одинаков — тело вращения без рельефа', () => {

@@ -89,7 +89,11 @@ function fitOf(state: AppState): LidFit | null {
 function printableVessel(csg: CsgApi, state: AppState, segments: number): SurfaceMesh {
   const fit = fitOf(state);
   return buildPrintableVessel(
-    csg, toBuildParams(state, segments, markStrip), state.hollow, state.handle, effectiveSpout(state),
+    csg,
+    toBuildParams(state, segments, markStrip),
+    state.hollow,
+    state.handle,
+    effectiveSpout(state),
     fit ? lidSeat(fit) : undefined,
   ).mesh;
 }
@@ -116,9 +120,7 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
   const progress = new Progress(jobId, fit ? 3 : 2);
   progress.next({ code: 'progress.vessel' });
 
-  const meshes: { id: string; mesh: SurfaceMesh }[] = [
-    { id: state.family, mesh: printableVessel(csg, state, segments) },
-  ];
+  const meshes: { id: string; mesh: SurfaceMesh }[] = [{ id: state.family, mesh: printableVessel(csg, state, segments) }];
   if (fit) {
     progress.next({ code: 'progress.lid' });
     const lid = buildLidMesh(fit, state.lid, segments, { relief: lidRelief(state) });
@@ -135,18 +137,10 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
   }
 
   progress.next({ code: 'progress.checkMeshes' });
-  return meshes.map((item) => part(
-    item.id, sizeNote(item.mesh), item.mesh,
-    assessExport(validateMesh(item.mesh), true).blocking,
-  ));
+  return meshes.map((item) => part(item.id, sizeNote(item.mesh), item.mesh, assessExport(validateMesh(item.mesh), true).blocking));
 }
 
-function part(
-  id: string,
-  note: string,
-  mesh: SurfaceMesh,
-  blocking: Message[],
-): JobPart {
+function part(id: string, note: string, mesh: SurfaceMesh, blocking: Message[]): JobPart {
   return {
     id,
     note,
@@ -182,7 +176,10 @@ function sizeNote(mesh: SurfaceMesh): string {
 class Progress {
   private step = 0;
 
-  constructor(private readonly jobId: number, private readonly total: number) {}
+  constructor(
+    private readonly jobId: number,
+    private readonly total: number,
+  ) {}
 
   next(label: Message): void {
     send({ type: 'progress', jobId: this.jobId, step: this.step++, total: this.total, label });

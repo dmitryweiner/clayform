@@ -27,10 +27,7 @@ const resolution = flags.get('res');
 
 /** Аудит меша отложен, чтобы не тормозить превью — ждём его вердикт. */
 async function auditVerdict(page) {
-  await page.waitForFunction(
-    () => !(document.querySelector('#audit')?.textContent ?? '').includes('проверка'),
-    { timeout: 15000 },
-  );
+  await page.waitForFunction(() => !(document.querySelector('#audit')?.textContent ?? '').includes('проверка'), { timeout: 15000 });
   return page.locator('#audit').textContent();
 }
 
@@ -39,21 +36,19 @@ const { page, errors, label } = app;
 
 // иконка должна реально отдаваться, а не 404 — вкладку по ней и находят
 label('favicon');
-const faviconStatus = await page.evaluate(
-  () => fetch('./favicon.svg').then((r) => r.status, () => 0),
+const faviconStatus = await page.evaluate(() =>
+  fetch('./favicon.svg').then(
+    (r) => r.status,
+    () => 0,
+  ),
 );
 if (faviconStatus !== 200) errors.push(`[favicon] favicon.svg отдаёт ${faviconStatus}`);
 
 label('boot');
-await page.waitForFunction(
-  () => (document.querySelector('#status')?.textContent ?? '').length > 0,
-  { timeout: 20000 },
-);
+await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0, { timeout: 20000 });
 
 // каждое семейство выбирается, строится и объявляет себя замкнутым
-const families = await page.$$eval('#familyGrid .family-btn', (nodes) =>
-  nodes.map((n) => n.textContent.trim()),
-);
+const families = await page.$$eval('#familyGrid .family-btn', (nodes) => nodes.map((n) => n.textContent.trim()));
 if (families.length !== 4) errors.push(`[boot] семейств на панели: ${families.length}, ожидалось 4`);
 
 for (let i = 0; i < families.length; i++) {
@@ -181,10 +176,11 @@ for (const pattern of await page.$$eval('#roul0_pattern option', (o) => o.map((x
 label('roulette-image');
 await page.selectOption('#roul0_pattern', 'image');
 await page.setInputFiles('#roul0_image', 'tests/fixtures/ornament.png');
-await page.waitForFunction(
-  () => (document.querySelector('#card_roulette .band-box .fcard-desc')?.textContent ?? '').includes('по ⌀'),
-  { timeout: 5000 },
-).catch(() => errors.push('[image] картинка не легла на полосу'));
+await page
+  .waitForFunction(() => (document.querySelector('#card_roulette .band-box .fcard-desc')?.textContent ?? '').includes('по ⌀'), {
+    timeout: 5000,
+  })
+  .catch(() => errors.push('[image] картинка не легла на полосу'));
 const imageVerdict = await auditVerdict(page);
 if (!imageVerdict.includes('замкнуто ✓')) errors.push(`[image] audit="${imageVerdict}"`);
 if (!(await page.locator('#roul0_invert').isVisible())) errors.push('[image] нет флажка инверсии');
@@ -238,10 +234,7 @@ await page.fill('#roul0_gap', '0');
 // каждый встроенный пресет открывается и строится
 label('presets');
 await page.click('#presetBtn');
-const presetValues = await page.$$eval(
-  '#presetList [data-preset^="b:"]',
-  (nodes) => nodes.map((n) => n.dataset.preset),
-);
+const presetValues = await page.$$eval('#presetList [data-preset^="b:"]', (nodes) => nodes.map((n) => n.dataset.preset));
 await page.click('#presetsClose');
 if (presetValues.length < 10) errors.push(`[presets] пресетов ${presetValues.length}, ожидалось ≥10`);
 for (const value of presetValues) {
@@ -282,10 +275,7 @@ await pickPreset(presetValues[2]);
 await auditVerdict(page);
 const beforeFile = await page.locator('#status').textContent();
 page.once('dialog', (dialog) => dialog.accept(dialog.defaultValue()));
-const [presetDownload] = await Promise.all([
-  page.waitForEvent('download'),
-  page.click('#fileSaveBtn'),
-]);
+const [presetDownload] = await Promise.all([page.waitForEvent('download'), page.click('#fileSaveBtn')]);
 if (!/^clayform-.+\.json$/.test(presetDownload.suggestedFilename())) {
   errors.push(`[preset-file] имя файла "${presetDownload.suggestedFilename()}"`);
 }
@@ -314,7 +304,7 @@ if (!(await page.locator(`#presetList [data-preset="${savedRef}"]`).count())) {
 }
 const statusBeforeDelete = await page.locator('#status').textContent();
 await page.click(`#presetList [data-del="${savedRef}"]`);
-if (await page.locator(`#presetList [data-preset="${savedRef}"]`).count() !== 1) {
+if ((await page.locator(`#presetList [data-preset="${savedRef}"]`).count()) !== 1) {
   errors.push('[preset-delete] пресет удалился с первого касания');
 }
 await page.click(`#presetList [data-del="${savedRef}"]`);
@@ -354,13 +344,26 @@ await page.uncheck('#on_wave2');
 await page.uncheck('#on_roulette');
 await page.check('#on_handle');
 await page.check('#on_spout');
-for (const [id, value] of [['handle_reach', '3'], ['handle_reach', '120'], ['handle_reach', '28'],
-                           ['handle_thickness', '3'], ['handle_thickness', '40'], ['handle_thickness', '11'],
-                           ['handle_count', '2'], ['handle_count', '1'],
-                           ['handle_topAngle', '-75'], ['handle_topAngle', '75'], ['handle_topAngle', '0'],
-                           ['handle_bottomAngle', '-75'], ['handle_bottomAngle', '75'], ['handle_bottomAngle', '0'],
-                           ['spout_pull', '60'], ['spout_width', '180'], ['spout_pull', '14'],
-                           ['spout_width', '60']]) {
+for (const [id, value] of [
+  ['handle_reach', '3'],
+  ['handle_reach', '120'],
+  ['handle_reach', '28'],
+  ['handle_thickness', '3'],
+  ['handle_thickness', '40'],
+  ['handle_thickness', '11'],
+  ['handle_count', '2'],
+  ['handle_count', '1'],
+  ['handle_topAngle', '-75'],
+  ['handle_topAngle', '75'],
+  ['handle_topAngle', '0'],
+  ['handle_bottomAngle', '-75'],
+  ['handle_bottomAngle', '75'],
+  ['handle_bottomAngle', '0'],
+  ['spout_pull', '60'],
+  ['spout_width', '180'],
+  ['spout_pull', '14'],
+  ['spout_width', '60'],
+]) {
   const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
   if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
   else await page.fill(`#${id}`, value);
@@ -376,12 +379,26 @@ await page.waitForTimeout(150);
 if (await page.locator('#spout_pull').isVisible()) {
   errors.push('[spout-applied] ползунки оттянутого края видны у трубчатого носика');
 }
-for (const [id, value] of [['spout_length', '15'], ['spout_length', '150'], ['spout_length', '70'],
-                           ['spout_attach', '0.2'], ['spout_attach', '0.85'], ['spout_attach', '0.4'],
-                           ['spout_tip', '0.5'], ['spout_tip', '1.3'], ['spout_tip', '1'],
-                           ['spout_base', '12'], ['spout_base', '80'], ['spout_base', '32'],
-                           ['spout_tipD', '6'], ['spout_tipD', '40'], ['spout_tipD', '15'],
-                           ['spout_angle', '20'], ['spout_angle', '85'], ['spout_angle', '55']]) {
+for (const [id, value] of [
+  ['spout_length', '15'],
+  ['spout_length', '150'],
+  ['spout_length', '70'],
+  ['spout_attach', '0.2'],
+  ['spout_attach', '0.85'],
+  ['spout_attach', '0.4'],
+  ['spout_tip', '0.5'],
+  ['spout_tip', '1.3'],
+  ['spout_tip', '1'],
+  ['spout_base', '12'],
+  ['spout_base', '80'],
+  ['spout_base', '32'],
+  ['spout_tipD', '6'],
+  ['spout_tipD', '40'],
+  ['spout_tipD', '15'],
+  ['spout_angle', '20'],
+  ['spout_angle', '85'],
+  ['spout_angle', '55'],
+]) {
   await page.fill(`#${id}`, value);
   const verdict = await auditVerdict(page);
   if (!verdict.includes('замкнуто ✓')) errors.push(`[spout:${id}=${value}] audit="${verdict}"`);
@@ -401,18 +418,40 @@ await page.waitForTimeout(150);
 const withLidParts = await page.locator('#partList li').count();
 if (withLidParts !== 2) errors.push(`[lid] деталей ${withLidParts}, ожидалось 2 (изделие и крышка)`);
 
-for (const [id, value] of [['lid_dome', '1'], ['lid_dome', '80'], ['lid_dome', '16'],
-                           ['lid_curvature', '0'], ['lid_curvature', '1'], ['lid_curvature', '0.55'],
-                           ['lid_depth', '3'], ['lid_depth', '30'], ['lid_depth', '8'],
-                           ['lid_ledge', '0'], ['lid_ledge', '10'], ['lid_ledge', '0'],
-                           ['lid_clearance', '0.2'], ['lid_clearance', '2'], ['lid_clearance', '0.6'],
-                           ['lid_field', '0'], ['lid_field', '30'], ['lid_field', '6'],
-                           ['lid_recess', '20'], ['lid_recess', '0'],
-                           ['lid_knob', 'tee'], ['lid_capH', '1.5'], ['lid_capH', '15'],
-                           ['lid_knobD', '6'], ['lid_knobD', '50'], ['lid_stemD', '30'],
-                           ['lid_stemH', '0'], ['lid_stemH', '30'],
-                           ['lid_knob', 'ball'], ['lid_knobD', '18'], ['lid_stemD', '8'],
-                           ['lid_stemH', '6']]) {
+for (const [id, value] of [
+  ['lid_dome', '1'],
+  ['lid_dome', '80'],
+  ['lid_dome', '16'],
+  ['lid_curvature', '0'],
+  ['lid_curvature', '1'],
+  ['lid_curvature', '0.55'],
+  ['lid_depth', '3'],
+  ['lid_depth', '30'],
+  ['lid_depth', '8'],
+  ['lid_ledge', '0'],
+  ['lid_ledge', '10'],
+  ['lid_ledge', '0'],
+  ['lid_clearance', '0.2'],
+  ['lid_clearance', '2'],
+  ['lid_clearance', '0.6'],
+  ['lid_field', '0'],
+  ['lid_field', '30'],
+  ['lid_field', '6'],
+  ['lid_recess', '20'],
+  ['lid_recess', '0'],
+  ['lid_knob', 'tee'],
+  ['lid_capH', '1.5'],
+  ['lid_capH', '15'],
+  ['lid_knobD', '6'],
+  ['lid_knobD', '50'],
+  ['lid_stemD', '30'],
+  ['lid_stemH', '0'],
+  ['lid_stemH', '30'],
+  ['lid_knob', 'ball'],
+  ['lid_knobD', '18'],
+  ['lid_stemD', '8'],
+  ['lid_stemH', '6'],
+]) {
   const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
   if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
   else await page.fill(`#${id}`, value);
@@ -466,9 +505,17 @@ if (noLidParts !== 1) errors.push(`[lid] после выключения дет�
 
 // стенка и дно: крайние значения не должны рвать полость
 label('hollow');
-for (const [id, value] of [['print_wall', '0.8'], ['print_wall', '60'], ['print_wall', '3'],
-                           ['print_base', '1'], ['print_base', '60'], ['print_base', '4'],
-                           ['print_rim', '0'], ['print_rim', '8'], ['print_rim', '1.5']]) {
+for (const [id, value] of [
+  ['print_wall', '0.8'],
+  ['print_wall', '60'],
+  ['print_wall', '3'],
+  ['print_base', '1'],
+  ['print_base', '60'],
+  ['print_base', '4'],
+  ['print_rim', '0'],
+  ['print_rim', '8'],
+  ['print_rim', '1.5'],
+]) {
   await page.fill(`#${id}`, value);
   const verdict = await auditVerdict(page);
   if (!verdict.includes('замкнуто ✓')) errors.push(`[hollow:${id}=${value}] audit="${verdict}"`);
@@ -487,11 +534,9 @@ await pickPreset('b:teapot');
 const quickVerdict = await auditVerdict(page);
 const exactStarted = Date.now();
 try {
-  await page.waitForFunction(
-    (before) => (document.querySelector('#audit')?.textContent ?? '') !== before,
-    quickVerdict,
-    { timeout: 30000 },
-  );
+  await page.waitForFunction((before) => (document.querySelector('#audit')?.textContent ?? '') !== before, quickVerdict, {
+    timeout: 30000,
+  });
   console.log(`точная сборка изделия: ${Date.now() - exactStarted} мс после быстрого вердикта`);
 } catch {
   errors.push(`[exact-preview] точная сборка не доехала: audit так и остался "${quickVerdict}"`);
@@ -502,9 +547,13 @@ if (!exactVerdict.includes('замкнуто ✓')) errors.push(`[exact-preview]
 // Полоса прогресса в превью: точная сборка идёт дольше задержки появления
 // полосы — та обязана показаться и потом спрятаться.
 label('preview-progress');
-await expectPreviewProgress('exact', async () => {
-  await page.fill('#handle_reach', '34');
-}, true);
+await expectPreviewProgress(
+  'exact',
+  async () => {
+    await page.fill('#handle_reach', '34');
+  },
+  true,
+);
 
 // чайник экспортируется целиком: тело с ручкой и трубкой носика — тот самый
 // STL, где сходится весь CSG изделия, — и крышка отдельным файлом, как её и
@@ -542,10 +591,19 @@ label('mark');
 await page.locator('#familyGrid .family-btn').nth(0).click();
 await page.check('#on_mark');
 await page.fill('#mark_text', 'Мастерская');
-for (const [id, value] of [['mark_font', 'ptSerif'], ['mark_font', 'comfortaa'], ['mark_font', 'oswald'],
-                           ['mark_font', 'rubik'], ['mark_size', '2'], ['mark_size', '15'],
-                           ['mark_size', '5'], ['mark_margin', '30'], ['mark_margin', '1.5'],
-                           ['mark_depth', '1.5'], ['mark_start', '180']]) {
+for (const [id, value] of [
+  ['mark_font', 'ptSerif'],
+  ['mark_font', 'comfortaa'],
+  ['mark_font', 'oswald'],
+  ['mark_font', 'rubik'],
+  ['mark_size', '2'],
+  ['mark_size', '15'],
+  ['mark_size', '5'],
+  ['mark_margin', '30'],
+  ['mark_margin', '1.5'],
+  ['mark_depth', '1.5'],
+  ['mark_start', '180'],
+]) {
   const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
   if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
   else await page.fill(`#${id}`, value);
@@ -569,10 +627,7 @@ await expectDownloads(1, 'mark');
 await page.fill('#mark_size', '15');
 await page.fill('#mark_text', 'Очень длинная строка клейма, которая по кругу никак не влезет');
 try {
-  await page.waitForFunction(
-    () => (document.querySelector('#warnings')?.textContent ?? '').includes('ужат'),
-    { timeout: 10000 },
-  );
+  await page.waitForFunction(() => (document.querySelector('#warnings')?.textContent ?? '').includes('ужат'), { timeout: 10000 });
 } catch {
   errors.push('[mark] нет предупреждения о длинной строке');
 }
@@ -680,8 +735,7 @@ async function expectPreviewProgress(tag, action, required) {
   try {
     await action();
     try {
-      await page.waitForFunction(() => !document.querySelector('#progressWrap')?.hidden,
-        { timeout: slow ? 30000 : 5000, polling: 20 });
+      await page.waitForFunction(() => !document.querySelector('#progressWrap')?.hidden, { timeout: slow ? 30000 : 5000, polling: 20 });
     } catch {
       if (required || slow) errors.push(`[progress:${tag}] полоса не показалась`);
       return;
@@ -722,8 +776,9 @@ async function expectDownloads(count, tag, watchProgress = false) {
     await page.waitForTimeout(200);
   }
   page.off('download', collect);
-  console.log(`export ${tag}: ${seen.length} файл(ов) за ${Date.now() - started} мс`
-    + `${resolution ? `, детализация ${resolution}` : ''}`);
+  console.log(
+    `export ${tag}: ${seen.length} файл(ов) за ${Date.now() - started} мс` + `${resolution ? `, детализация ${resolution}` : ''}`,
+  );
   if (watchProgress && !progressSeen) errors.push(`[${tag}] полоса прогресса ни разу не показалась`);
   // файлы уходят по одному с паузой, так что полоса гаснет чуть позже
   // последней загрузки — ждём, а не проверяем мгновенно
