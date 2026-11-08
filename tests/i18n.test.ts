@@ -14,7 +14,7 @@ const CYRILLIC = /[А-Яа-яЁё]/;
 const KEYS = Object.keys(DICTS.ru).filter(hasKey);
 /** Самоназвание языка на кнопке переключения — кириллица в английском законна. */
 const ENDONYMS: readonly Key[] = ['lang.switch.title'];
-const ENDONYM_TEXTS: readonly string[] = ENDONYMS.map((key) => DICTS.en[key]);
+const ENDONYM_TEXTS: ReadonlySet<string> = new Set(ENDONYMS.map((key) => DICTS.en[key]));
 
 describe('словари', () => {
   it('у английского те же ключи, что у русского', () => {
@@ -196,7 +196,7 @@ describe('страж непереведённого', () => {
     const offenders: string[] = [];
     for (const file of files) {
       for (const text of literals(readFileSync(join(root, file), 'utf8'))) {
-        if (CYRILLIC.test(text) && !ENDONYM_TEXTS.includes(text)) offenders.push(`${file}: ${text.slice(0, 60)}`);
+        if (CYRILLIC.test(text) && !ENDONYM_TEXTS.has(text)) offenders.push(`${file}: ${text.slice(0, 60)}`);
       }
     }
     expect(offenders).toEqual([]);

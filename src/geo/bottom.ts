@@ -27,7 +27,7 @@ export interface CapSpec {
    */
   planeZ?: number;
   /** смещение по z, мм, в точке (x, y) */
-  heightAt?(x: number, y: number): number;
+  heightAt?: (x: number, y: number) => number;
 }
 
 export interface Cap {

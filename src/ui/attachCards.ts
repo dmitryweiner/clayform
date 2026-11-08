@@ -247,19 +247,19 @@ const LID_CONTROLS: Control<LidState>[] = [
 
 /** Откуда карточки берут состояние и куда возвращают изменённое. */
 export interface AttachSources {
-  handle(): HandleState;
-  spout(): SpoutState;
-  lid(): LidState;
-  mark(): MarkState;
+  handle: () => HandleState;
+  spout: () => SpoutState;
+  lid: () => LidState;
+  mark: () => MarkState;
 }
 
 export interface AttachSinks {
-  handle(next: HandleState): void;
-  spout(next: SpoutState): void;
-  lid(next: LidState): void;
-  mark(next: MarkState): void;
+  handle: (next: HandleState) => void;
+  spout: (next: SpoutState) => void;
+  lid: (next: LidState) => void;
+  mark: (next: MarkState) => void;
   /** развернуть камеру на донышко */
-  viewBottom(): void;
+  viewBottom: () => void;
 }
 
 export interface AttachCardsHandle {

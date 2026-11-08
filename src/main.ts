@@ -485,6 +485,7 @@ async function runExport(): Promise<void> {
       const name = `clayform-${state.family}-${file.id}.stl`;
       download(encodeSTL(toMesh(file), { name: file.id }), name);
       // браузер глотает пачку одновременных загрузок — разносим по времени
+      // oxlint-disable-next-line no-await-in-loop -- по одной нарочно
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   } catch (error) {

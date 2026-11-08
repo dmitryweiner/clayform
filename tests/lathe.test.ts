@@ -97,8 +97,8 @@ describe('lathe', () => {
   });
 
   it('не бросает на разумном мусоре, но отказывается от бессмысленного', () => {
-    expect(() => lathe([{ r: 5, z: 0 }, { r: 5, z: 1 }], 32)).toThrow();
-    expect(() => lathe([{ r: 0, z: 0 }, { r: 5, z: 0 }, { r: 5, z: 1 }], 2)).toThrow();
+    expect(() => lathe([{ r: 5, z: 0 }, { r: 5, z: 1 }], 32)).toThrow(/at least 3/);
+    expect(() => lathe([{ r: 0, z: 0 }, { r: 5, z: 0 }, { r: 5, z: 1 }], 2)).toThrow(/too few segments/);
     // отрицательный радиус подтягивается к оси, а не выворачивает меш
     const report = validateMesh(withNormals(
       lathe([{ r: -3, z: 0 }, { r: 10, z: 0 }, { r: 10, z: 8 }, { r: -1, z: 8 }], 32),

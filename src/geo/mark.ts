@@ -118,7 +118,7 @@ const turn = (deg: number): number => ((deg % 360) + 360) % 360;
 /** Строка без управляющих символов, не длиннее предела в символах. */
 export function sanitizeMarkText(raw: unknown): string {
   if (typeof raw !== 'string') return '';
-  // eslint-disable-next-line no-control-regex
+  // oxlint-disable-next-line no-control-regex -- управляющие символы и ищем
   const clean = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ');
   return [...clean].slice(0, MARK_TEXT_MAX).join('');
 }

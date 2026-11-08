@@ -53,10 +53,9 @@ describe('golden-силуэты семейств', () => {
     for (const id of FAMILY_IDS) golden[id] = snapshot(id);
     writeFileSync(GOLDEN_PATH, JSON.stringify(golden, null, 1));
   } else {
-    expect(
-      existsSync(GOLDEN_PATH),
-      `нет эталона ${GOLDEN_PATH}; сгенерируйте: UPDATE_GOLDEN=1 npx vitest run tests/golden.test.ts`,
-    ).toBe(true);
+    if (!existsSync(GOLDEN_PATH)) {
+      throw new Error(`нет эталона ${GOLDEN_PATH}; сгенерируйте: UPDATE_GOLDEN=1 npx vitest run tests/golden.test.ts`);
+    }
     Object.assign(golden, JSON.parse(readFileSync(GOLDEN_PATH, 'utf8')));
   }
 

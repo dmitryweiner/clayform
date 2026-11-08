@@ -56,7 +56,7 @@ export function createProgress({ wrap, fill, label }: ProgressElements): Progres
   let hideFrame = 0;
 
   function render(): void {
-    const shown = active.filter((tracker) => tracker.visible).at(-1);
+    const shown = active.findLast((tracker) => tracker.visible);
     if (!shown) {
       // Две задачи подряд — окончание одной и старт следующей в том же
       // кадре — не должны мигать полосой: прячем на кадр позже.

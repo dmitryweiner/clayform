@@ -114,7 +114,7 @@ export function renderMarkCard(
   const view = make('button', 'tb-btn', t('mark.view'));
   view.type = 'button';
   view.id = 'mark_view';
-  view.onclick = onView;
+  view.addEventListener('click', onView);
   const host = make('div');
   card.body.append(view, host);
   const rows = renderControls(host, MARK_CONTROLS, read, write, 'mark');

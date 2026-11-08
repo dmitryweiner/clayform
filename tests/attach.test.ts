@@ -96,13 +96,11 @@ describe('buildHandles', () => {
   it('углы задают наклон, под которым дуга отходит от стенки', () => {
     // Касательная в начале смотрит на первую управляющую точку, поэтому угол
     // читается прямо по началу дуги: берём точку чуть дальше крепления.
-    for (const topAngleDeg of [-45, 0, 45]) {
-      const [handle] = buildHandles(handleOn({ topAngleDeg, bottomAngleDeg: 0 }), profile, 95);
-      const top = validateMesh(handle).bbox.max[2];
-      const flat = validateMesh(buildHandles(handleOn(), profile, 95)[0]).bbox.max[2];
-      if (topAngleDeg > 0) expect(top, `${topAngleDeg}°`).toBeGreaterThan(flat + 3);
-      if (topAngleDeg < 0) expect(top, `${topAngleDeg}°`).toBeLessThanOrEqual(flat + 0.5);
-    }
+    const topAt = (topAngleDeg: number): number =>
+      validateMesh(buildHandles(handleOn({ topAngleDeg, bottomAngleDeg: 0 }), profile, 95)[0]).bbox.max[2];
+    const flat = validateMesh(buildHandles(handleOn(), profile, 95)[0]).bbox.max[2];
+    expect(topAt(45)).toBeGreaterThan(flat + 3);
+    expect(topAt(-45)).toBeLessThanOrEqual(flat + 0.5);
   });
 
   it('угол нижнего крепления опускает низ дуги, не трогая верх', () => {
