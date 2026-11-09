@@ -134,9 +134,7 @@ export function reliefDepth(relief: ReliefState, u: number, v: number): number {
   const { wave, wave2 } = relief;
   if (!wave.on || wave.ampMm === 0) return 0;
 
-  const inner = wave2.on
-    ? waveform(wave2.shape, wave2.freq * axisCoord(wave2.axis, u, v, wave2.spiralK) + wave2.phase)
-    : 0;
+  const inner = wave2.on ? waveform(wave2.shape, wave2.freq * axisCoord(wave2.axis, u, v, wave2.spiralK) + wave2.phase) : 0;
 
   let phase = wave.phase;
   let amp = wave.ampMm;
@@ -158,8 +156,16 @@ export function defaultRelief(): ReliefState {
   return {
     wave: { on: false, onLid: false, axis: 'z', shape: 'rounded', freq: 12, ampMm: 2, phase: 0, spiralK: 1 },
     wave2: {
-      on: false, onLid: false, mode: 'weave', axis: 'theta', shape: 'sin', freq: 8,
-      phase: 0, fm: 0.2, am: 0.5, spiralK: 1,
+      on: false,
+      onLid: false,
+      mode: 'weave',
+      axis: 'theta',
+      shape: 'sin',
+      freq: 8,
+      phase: 0,
+      fm: 0.2,
+      am: 0.5,
+      spiralK: 1,
     },
     zone: { from: 0.08, to: 0.95, fade: 0.06 },
   };
@@ -173,8 +179,7 @@ function asRecord(x: unknown): Record<string, unknown> {
   return out;
 }
 
-const num = (x: unknown, fallback: number): number =>
-  typeof x === 'number' && Number.isFinite(x) ? x : fallback;
+const num = (x: unknown, fallback: number): number => (typeof x === 'number' && Number.isFinite(x) ? x : fallback);
 
 const bool = (x: unknown, fallback: boolean): boolean => (typeof x === 'boolean' ? x : fallback);
 

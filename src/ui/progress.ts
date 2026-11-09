@@ -56,7 +56,7 @@ export function createProgress({ wrap, fill, label }: ProgressElements): Progres
   let hideFrame = 0;
 
   function render(): void {
-    const shown = active.filter((tracker) => tracker.visible).at(-1);
+    const shown = active.findLast((tracker) => tracker.visible);
     if (!shown) {
       // Две задачи подряд — окончание одной и старт следующей в том же
       // кадре — не должны мигать полосой: прячем на кадр позже.
@@ -79,9 +79,7 @@ export function createProgress({ wrap, fill, label }: ProgressElements): Progres
     wrap.hidden = false;
     const indeterminate = shown.indeterminate || shown.total === null || shown.step === null;
     wrap.classList.toggle('indeterminate', indeterminate);
-    fill.style.width = indeterminate
-      ? ''
-      : `${Math.round(((shown.step ?? 0) / Math.max(1, shown.total ?? 1)) * 100)}%`;
+    fill.style.width = indeterminate ? '' : `${Math.round(((shown.step ?? 0) / Math.max(1, shown.total ?? 1)) * 100)}%`;
     label.textContent = typeof shown.label === 'string' ? t(shown.label) : tm(shown.label);
   }
 

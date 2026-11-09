@@ -80,14 +80,18 @@ describe('рельеф на сетке', () => {
         expect(gridRadiusAt(grid, i, j)).toBeGreaterThan(0);
       }
     }
-    expect(validateMesh(buildVessel({
-      ...base(),
-      family: 'vase',
-      relief: sanitizeRelief({
-        wave: { on: true, axis: 'z', shape: 'sin', freq: 14, ampMm: -20, phase: 0, spiralK: 0 },
-        zone: { from: 0, to: 1, fade: 0.02 },
-      }),
-    })).watertight).toBe(true);
+    expect(
+      validateMesh(
+        buildVessel({
+          ...base(),
+          family: 'vase',
+          relief: sanitizeRelief({
+            wave: { on: true, axis: 'z', shape: 'sin', freq: 14, ampMm: -20, phase: 0, spiralK: 0 },
+            zone: { from: 0, to: 1, fade: 0.02 },
+          }),
+        }),
+      ).watertight,
+    ).toBe(true);
   });
 
   it('накатка живёт только в своём пояске', () => {

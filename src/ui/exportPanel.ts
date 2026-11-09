@@ -11,18 +11,33 @@ import { make } from './dom';
 
 const HOLLOW_CONTROLS: Control<HollowState>[] = [
   {
-    kind: 'range', key: 'wall', label: 'export.wall', min: WALL_MIN_MM, max: WALL_MAX_MM, step: 0.1,
+    kind: 'range',
+    key: 'wall',
+    label: 'export.wall',
+    min: WALL_MIN_MM,
+    max: WALL_MAX_MM,
+    step: 0.1,
     hint: 'export.wall.hint',
     get: (s) => s.wallMm,
     set: (s, v) => ({ ...s, wallMm: v }),
   },
   {
-    kind: 'range', key: 'base', label: 'export.base', min: BASE_MIN_MM, max: BASE_MAX_MM, step: 0.5,
+    kind: 'range',
+    key: 'base',
+    label: 'export.base',
+    min: BASE_MIN_MM,
+    max: BASE_MAX_MM,
+    step: 0.5,
     get: (s) => s.baseMm,
     set: (s, v) => ({ ...s, baseMm: v }),
   },
   {
-    kind: 'range', key: 'rim', label: 'export.rim', min: 0, max: RIM_MAX_MM, step: 0.1,
+    kind: 'range',
+    key: 'rim',
+    label: 'export.rim',
+    min: 0,
+    max: RIM_MAX_MM,
+    step: 0.1,
     hint: 'export.rim.hint',
     get: (s) => s.rimRadiusMm,
     set: (s, v) => ({ ...s, rimRadiusMm: v }),
@@ -32,7 +47,9 @@ const HOLLOW_CONTROLS: Control<HollowState>[] = [
 /** Над всем состоянием: «Крышка рядом» зависит от того, включена ли крышка. */
 const PIECE_CONTROLS: Control<AppState>[] = [
   {
-    kind: 'check', key: 'lidBeside', label: 'export.lidBeside',
+    kind: 'check',
+    key: 'lidBeside',
+    label: 'export.lidBeside',
     hint: 'export.lidBeside.hint',
     when: (s) => s.lid.on,
     get: (s) => s.lidBeside,

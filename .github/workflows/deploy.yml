@@ -20,14 +20,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version-file: .node-version
           cache: npm
       - run: npm ci
       - run: npm run check
       - run: npm run build
       # главный поток не знает про WASM (CLAUDE.md, инварианты): в главном
       # чанке не должно быть ни одного упоминания manifold
-      - run: "! grep -l manifold dist/assets/index-*.js"
+      - run: '! grep -l manifold dist/assets/index-*.js'
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:

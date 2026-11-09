@@ -35,10 +35,7 @@ function shiftX(mesh: SurfaceMesh, dx: number): SurfaceMesh {
  * то, что двигается целиком: изделие с ручкой и носиком, пока они ещё
  * отдельные меши, — одна группа. Первая группа остаётся на месте.
  */
-export function placeInRow(
-  groups: readonly (readonly SurfaceMesh[])[],
-  gapMm: number,
-): SurfaceMesh[][] {
+export function placeInRow(groups: readonly (readonly SurfaceMesh[])[], gapMm: number): SurfaceMesh[][] {
   const placed: SurfaceMesh[][] = [];
   let cursor = 0;
   groups.forEach((group, index) => {

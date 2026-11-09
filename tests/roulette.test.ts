@@ -6,16 +6,31 @@
 // приходится замазывать вручную.
 
 import {
-  ROULETTE_PATTERNS, patternValue, bandRepeats, bandLayout, makeRoulette,
-  defaultRoulette, defaultBand, sanitizeRoulette, sanitizeBand, MAX_BANDS,
-  MEANDER_CLASSIC, MEANDER_GRIDS, MEANDER_KINDS, meanderGrid, gridPattern, isContinuous, decodeImage, tileAspect,
+  ROULETTE_PATTERNS,
+  patternValue,
+  bandRepeats,
+  bandLayout,
+  makeRoulette,
+  defaultRoulette,
+  defaultBand,
+  sanitizeRoulette,
+  sanitizeBand,
+  MAX_BANDS,
+  MEANDER_CLASSIC,
+  MEANDER_GRIDS,
+  MEANDER_KINDS,
+  meanderGrid,
+  gridPattern,
+  isContinuous,
+  decodeImage,
+  tileAspect,
 } from '../src/geo/roulette';
 import type { RouletteBand, RouletteImage, TileContext } from '../src/geo/roulette';
 import { encodeBase64 } from '../src/geo/bytes';
 
 /** Шахматка: белая клетка — полная глубина. Строки сверху вниз. */
 function checker(w: number, h: number, invert = false): RouletteImage {
-  const bytes = Uint8Array.from({ length: w * h }, (_, k) => ((k % w) + Math.floor(k / w)) % 2 ? 255 : 0);
+  const bytes = Uint8Array.from({ length: w * h }, (_, k) => (((k % w) + Math.floor(k / w)) % 2 ? 255 : 0));
   return { w, h, data: encodeBase64(bytes), invert };
 }
 const CHECKER = checker(8, 8);
@@ -23,14 +38,17 @@ const CHECKER = checker(8, 8);
 const TAU = Math.PI * 2;
 const CTX = { heightMm: 150, radiusAt: () => 80 };
 
-const tile = (over: Partial<TileContext> = {}): TileContext =>
-  ({ elementMm: 20, bandMm: 20, depthMm: 1.5, image: decodeImage(CHECKER) ?? undefined, ...over });
+const tile = (over: Partial<TileContext> = {}): TileContext => ({
+  elementMm: 20,
+  bandMm: 20,
+  depthMm: 1.5,
+  image: decodeImage(CHECKER) ?? undefined,
+  ...over,
+});
 
-const band = (over: Partial<RouletteBand> = {}): RouletteBand =>
-  ({ ...defaultBand(), on: true, image: CHECKER, ...over });
+const band = (over: Partial<RouletteBand> = {}): RouletteBand => ({ ...defaultBand(), on: true, image: CHECKER, ...over });
 
-const one = (over: Partial<RouletteBand> = {}) =>
-  sanitizeRoulette({ bands: [band(over)] });
+const one = (over: Partial<RouletteBand> = {}) => sanitizeRoulette({ bands: [band(over)] });
 
 describe('patternValue', () => {
   it('все узоры лежат в [0, 1] и заметно меняются по тайлу', () => {
@@ -54,8 +72,7 @@ describe('patternValue', () => {
   it('каждый узор периодичен по горизонтали — тайлы стыкуются', () => {
     for (const pattern of ROULETTE_PATTERNS) {
       for (const q of [0.15, 0.5, 0.85]) {
-        expect(patternValue(pattern, 0, q, tile()), pattern)
-          .toBeCloseTo(patternValue(pattern, 1, q, tile()), 9);
+        expect(patternValue(pattern, 0, q, tile()), pattern).toBeCloseTo(patternValue(pattern, 1, q, tile()), 9);
       }
     }
   });
@@ -113,7 +130,10 @@ describe('греческий меандр', () => {
       const rows = MEANDER_GRIDS[kind];
       const w = rows[0].length;
       const h = rows.length;
-      expect(rows.every((row) => row.length === w && /^[#.]+$/.test(row)), kind).toBe(true);
+      expect(
+        rows.every((row) => row.length === w && /^[#.]+$/.test(row)),
+        kind,
+      ).toBe(true);
       // клетка 7 мм, тайл в пропорциях сетки
       const sized = tile({ elementMm: w * 7, bandMm: h * 7, meander: meanderGrid(kind) });
       for (let r = 0; r < h; r++) {
@@ -123,8 +143,10 @@ describe('греческий меандр', () => {
           else expect(value, `${kind} .(${r},${c})`).toBeLessThan(1e-9);
         }
         // шов тайла: край строки смыкается с началом следующего тайла
-        expect(patternValue('meander', 0, 1 - (r + 0.5) / h, sized), `${kind} шов ${r}`)
-          .toBeCloseTo(patternValue('meander', 1, 1 - (r + 0.5) / h, sized), 9);
+        expect(patternValue('meander', 0, 1 - (r + 0.5) / h, sized), `${kind} шов ${r}`).toBeCloseTo(
+          patternValue('meander', 1, 1 - (r + 0.5) / h, sized),
+          9,
+        );
       }
       expect(tileAspect({ pattern: 'meander', image: undefined, meander: kind })).toBeCloseTo(w / h, 9);
     }
@@ -143,7 +165,7 @@ describe('греческий меандр', () => {
 
   it('тайл меандра квадратный в клетках — сетка задаёт пропорции', () => {
     const one = bandLayout(band({ pattern: 'meander', bandWidthMm: 20 }), CTX);
-    expect(one.stepMm).toBeCloseTo(20 * W / H, 0);
+    expect(one.stepMm).toBeCloseTo((20 * W) / H, 0);
   });
 
   it('толщина линии одинакова по обеим осям, даже если тайл не квадратный', () => {
@@ -174,8 +196,7 @@ describe('точки — оттиск шара', () => {
   it('глубокий оттиск — полусфера с крутым бортиком, мелкий сходит на нет полого', () => {
     // след радиусом 10 мм; вдавили шар на всю глубину — это полусфера,
     // на половине радиуса высота √(1 − ½²) = 0.866
-    expect(patternValue('dots', 0.5 + 5 / 20, 0.5, tile({ depthMm: 10 })))
-      .toBeCloseTo(Math.sqrt(3) / 2, 4);
+    expect(patternValue('dots', 0.5 + 5 / 20, 0.5, tile({ depthMm: 10 }))).toBeCloseTo(Math.sqrt(3) / 2, 4);
 
     // У самого края следа видна разница: полусфера обрывается почти отвесно,
     // а мелко вдавленный шар выходит к поверхности полого — без кратерного
@@ -203,8 +224,7 @@ describe('bandRepeats', () => {
   });
 
   it('узкий поясок — больше мелких оттисков, широкий — меньше крупных', () => {
-    expect(bandRepeats(band({ bandWidthMm: 6 }), CTX))
-      .toBeGreaterThan(bandRepeats(band({ bandWidthMm: 30 }), CTX));
+    expect(bandRepeats(band({ bandWidthMm: 6 }), CTX)).toBeGreaterThan(bandRepeats(band({ bandWidthMm: 30 }), CTX));
   });
 
   it('на изделии вдвое толще укладывается примерно вдвое больше оттисков', () => {
@@ -276,14 +296,11 @@ describe('шов θ = 0 / 2π', () => {
       for (const bandWidthMm of [9, 30, 47]) {
         for (const angle of [0, 0.4, -0.9]) {
           for (const gapMm of [0, 5]) {
-            const roll = makeRoulette(
-              one({ pattern, angle, gapMm, bandWidthMm }), CTX,
-            );
+            const roll = makeRoulette(one({ pattern, angle, gapMm, bandWidthMm }), CTX);
             for (const v of [0.35, 0.5, 0.62]) {
-              expect(
-                Math.abs(roll(TAU, v) - roll(0, v)),
-                `${pattern} w=${bandWidthMm} angle=${angle} gap=${gapMm} v=${v}`,
-              ).toBeLessThan(1e-6);
+              expect(Math.abs(roll(TAU, v) - roll(0, v)), `${pattern} w=${bandWidthMm} angle=${angle} gap=${gapMm} v=${v}`).toBeLessThan(
+                1e-6,
+              );
             }
           }
         }
@@ -356,12 +373,15 @@ describe('несколько полос', () => {
 
   it('перекрывающиеся полосы складываются, а не подменяют друг друга', () => {
     const alone = makeRoulette(one({ pattern: 'band', bandCenter: 0.5, bandWidthMm: 30, depthMm: 1 }), CTX);
-    const doubled = makeRoulette(sanitizeRoulette({
-      bands: [
-        band({ pattern: 'band', bandCenter: 0.5, bandWidthMm: 30, depthMm: 1 }),
-        band({ pattern: 'band', bandCenter: 0.5, bandWidthMm: 30, depthMm: 1 }),
-      ],
-    }), CTX);
+    const doubled = makeRoulette(
+      sanitizeRoulette({
+        bands: [
+          band({ pattern: 'band', bandCenter: 0.5, bandWidthMm: 30, depthMm: 1 }),
+          band({ pattern: 'band', bandCenter: 0.5, bandWidthMm: 30, depthMm: 1 }),
+        ],
+      }),
+      CTX,
+    );
     expect(doubled(0.4, 0.5)).toBeCloseTo(2 * alone(0.4, 0.5), 6);
   });
 
@@ -413,8 +433,7 @@ describe('sanitizeRoulette', () => {
 });
 
 describe('орнамент картинкой', () => {
-  const at = (s: number, q: number, image = CHECKER) =>
-    patternValue('image', s, q, tile({ image: decodeImage(image) ?? undefined }));
+  const at = (s: number, q: number, image = CHECKER) => patternValue('image', s, q, tile({ image: decodeImage(image) ?? undefined }));
 
   it('в центрах клеток — 0 или 1, на границе соседних — половина', () => {
     for (let row = 0; row < 8; row++) {
@@ -429,7 +448,11 @@ describe('орнамент картинкой', () => {
 
   it('инверсия меняет рисунок и фон местами', () => {
     const inverted = checker(8, 8, true);
-    for (const [s, q] of [[0.0625, 0.9375], [0.3, 0.41], [0.77, 0.2]]) {
+    for (const [s, q] of [
+      [0.0625, 0.9375],
+      [0.3, 0.41],
+      [0.77, 0.2],
+    ]) {
       expect(at(s, q, inverted)).toBeCloseTo(1 - at(s, q), 9);
     }
   });

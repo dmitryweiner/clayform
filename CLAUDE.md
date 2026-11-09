@@ -43,15 +43,23 @@ cast-builder стоят на STL, выгруженных ядром clayform (`f
 GitHub Pages публикует `.github/workflows/deploy.yml` на каждый пуш в
 `main`: `npm ci`, `npm run check`, `npm run build`, проверка, что в главном
 чанке нет `manifold`, и выкладка `dist/`. Сборка в репозиторий больше не
-коммитится (`dist/` в `.gitignore`); Node — из `.nvmrc`.
+коммитится (`dist/` в `.gitignore`); Node — из `.node-version`.
 
 ## Команды
 
 ```bash
-npm run check     # tsc + eslint (запрещает `as`-касты) + vitest
+npm run check     # tsc (TypeScript 7) + oxlint --type-aware (запрещает `as`-касты) + prettier --check + vitest
+npm run format    # prettier --write (кроме *.md и golden: .prettierignore)
 npm run smoke     # браузерный смоук; --preview для прод-сборки
 npm run build     # прод-сборка → ./dist; на Pages публикует GH Actions
 ```
+
+Линтер — oxlint (`.oxlintrc.json`): typescript-eslint TS 7 не понимает.
+`as`-касты запрещает `typescript/consistent-type-assertions`, `as const`
+можно; каждое выключенное там правило подписано, почему. Форматирует
+prettier; коммит переформатирования — в `.git-blame-ignore-revs`
+(`git config blame.ignoreRevsFile .git-blame-ignore-revs`). Сетки меандра
+стоят под `// prettier-ignore`: строки сетки и есть рисунок.
 
 Golden-тесты пиннят геометрию семейств; пересоздавать осознанно:
 `UPDATE_GOLDEN=1 npx vitest run tests/golden.test.ts`.
@@ -195,6 +203,8 @@ Golden-тесты пиннят геометрию семейств; пересо
 | CSG: полое изделие с ручкой и носиком | ~2 с; на сетке 128 — 0,8 с |
 | экспорт изделия с ручкой на 384 | ~10 с (в воркере, вкладку не держит) |
 | экспорт чайника с ручкой, носиком и крышкой на 192 | ~3,6 с (смоук) |
+| `tsc --noEmit` (TypeScript 7) | 0,3 с (на TS 5 было 2 с) |
+| `oxlint --type-aware` | 0,4 с |
 
 Вес сборки: наш код 129 КБ (из них ~40 КБ — два словаря i18n; шрифты клейма ~120 КБ лежат отдельно и грузятся только с клеймом), Three.js 490 КБ (122 КБ gzip), WASM
 manifold 541 КБ — и он грузится только воркером и только под CSG, вкладку не

@@ -30,17 +30,30 @@ describe('файл пресета', () => {
   });
 
   it('мусор и чужой JSON — null, а не сброс к умолчанию', () => {
-    for (const text of ['', 'не json', '[]', 'null', '42', '{"a":1}', '{"app":"other","state":{}}',
-                        '{"app":"clayform"}', '{"family":"teapot-ish"}']) {
+    for (const text of [
+      '',
+      'не json',
+      '[]',
+      'null',
+      '42',
+      '{"a":1}',
+      '{"app":"other","state":{}}',
+      '{"app":"clayform"}',
+      '{"family":"teapot-ish"}',
+    ]) {
       expect(decodePresetFile(text), text).toBeNull();
     }
   });
 
   it('старая или кривая версия даёт санированное состояние', () => {
-    const decoded = decodePresetFile(JSON.stringify({
-      app: 'clayform', version: 0, name: 7,
-      state: { family: 'vase', heightMm: 99999, roulette: { bands: [{ repeats: 12, pattern: 'dots' }] } },
-    }));
+    const decoded = decodePresetFile(
+      JSON.stringify({
+        app: 'clayform',
+        version: 0,
+        name: 7,
+        state: { family: 'vase', heightMm: 99999, roulette: { bands: [{ repeats: 12, pattern: 'dots' }] } },
+      }),
+    );
     expect(decoded).not.toBeNull();
     expect(decoded?.name).toBe('');
     expect(decoded?.state).toEqual(sanitizeState(decoded?.state));

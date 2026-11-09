@@ -61,8 +61,7 @@ export function defaultBuildParams(): BuildParams {
   };
 }
 
-const clampInt = (x: number, lo: number, hi: number): number =>
-  Number.isFinite(x) ? Math.min(hi, Math.max(lo, Math.round(x))) : lo;
+const clampInt = (x: number, lo: number, hi: number): number => (Number.isFinite(x) ? Math.min(hi, Math.max(lo, Math.round(x))) : lo);
 
 /** Разобранное на части описание поверхности изделия. */
 export interface VesselSurface {

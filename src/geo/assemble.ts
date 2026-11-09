@@ -65,17 +65,14 @@ export function buildPrintableVessel(
     // вскрывать полостью, а полость обрывается на радиус кромки ниже верха —
     // изделие оставалось бы запечатанным.
     const shell = scope.keep(toManifold(csg, result.mesh));
-    const outside = scope.keep(csg.Manifold.union([
-      shell,
-      ...[...handles, ...maybe(tube)].map((mesh) => scope.keep(toManifold(csg, mesh))),
-    ]));
+    const outside = scope.keep(
+      csg.Manifold.union([shell, ...[...handles, ...maybe(tube)].map((mesh) => scope.keep(toManifold(csg, mesh)))]),
+    );
     // Утопленные в стенку торцы ручки торчат внутрь полости — срезаем их,
     // чтобы внутри кружки не осталось бугра. Тем же вычитанием канал носика
     // пробивает стенку и вскрывает устье трубки.
     const cavity = scope.keep(toManifold(csg, assembleMesh(result.innerGrid, 'both')));
-    const inside = channel
-      ? scope.keep(csg.Manifold.union([cavity, scope.keep(toManifold(csg, channel))]))
-      : cavity;
+    const inside = channel ? scope.keep(csg.Manifold.union([cavity, scope.keep(toManifold(csg, channel))])) : cavity;
     const mesh = fromManifold(scope.keep(outside.subtract(inside)));
     // Вместимость считаем по полости тела: вклад канала — единицы миллилитров,
     // и на выбор посуды он не влияет.

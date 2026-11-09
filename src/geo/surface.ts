@@ -165,8 +165,12 @@ export function assembleHollowMesh(
       const b = oBase + j * nu + i1;
       const c = oBase + (j + 1) * nu + i1;
       const d = oBase + (j + 1) * nu + i;
-      indices[k++] = a; indices[k++] = b; indices[k++] = c;
-      indices[k++] = a; indices[k++] = c; indices[k++] = d;
+      indices[k++] = a;
+      indices[k++] = b;
+      indices[k++] = c;
+      indices[k++] = a;
+      indices[k++] = c;
+      indices[k++] = d;
     }
   }
   // внутренние стенки (нормаль внутрь = обратный обход)
@@ -177,13 +181,19 @@ export function assembleHollowMesh(
       const b = iBase + (j + 1) * nu + i;
       const c = iBase + (j + 1) * nu + i1;
       const d = iBase + j * nu + i1;
-      indices[k++] = a; indices[k++] = b; indices[k++] = c;
-      indices[k++] = a; indices[k++] = c; indices[k++] = d;
+      indices[k++] = a;
+      indices[k++] = b;
+      indices[k++] = c;
+      indices[k++] = a;
+      indices[k++] = c;
+      indices[k++] = d;
     }
   }
 
   const centroid = (base: number, dst: number): void => {
-    let x = 0, y = 0, z = 0;
+    let x = 0,
+      y = 0,
+      z = 0;
     for (let i = 0; i < nu; i++) {
       const p = (base + i) * 3;
       x += outPos[p];
@@ -202,26 +212,33 @@ export function assembleHollowMesh(
 
     // внешнее дно (нормаль вниз)
     for (let i = 0; i < nu; i++) {
-      indices[k++] = oCap; indices[k++] = oBase + ((i + 1) % nu); indices[k++] = oBase + i;
+      indices[k++] = oCap;
+      indices[k++] = oBase + ((i + 1) % nu);
+      indices[k++] = oBase + i;
     }
     // дно полости (нормаль вверх)
     for (let i = 0; i < nu; i++) {
-      indices[k++] = iCap; indices[k++] = iBase + i; indices[k++] = iBase + ((i + 1) % nu);
+      indices[k++] = iCap;
+      indices[k++] = iBase + i;
+      indices[k++] = iBase + ((i + 1) % nu);
     }
   }
   // Кромка: полосы от внешнего верха через кольца дуги к внутреннему верху.
   // Нормаль наружу-вверх, обход тот же, что у плоского кольца.
   const oTop = oBase + nv * nu;
   const iTop = iBase + nv * nu;
-  const rimRow = (m: number): number =>
-    m < 0 ? oTop : m >= rimCount ? iTop : rimBase + m * nu;
+  const rimRow = (m: number): number => (m < 0 ? oTop : m >= rimCount ? iTop : rimBase + m * nu);
   for (let m = -1; m < rimCount; m++) {
     const from = rimRow(m);
     const to = rimRow(m + 1);
     for (let i = 0; i < nu; i++) {
       const i1 = (i + 1) % nu;
-      indices[k++] = from + i; indices[k++] = from + i1; indices[k++] = to + i1;
-      indices[k++] = from + i; indices[k++] = to + i1; indices[k++] = to + i;
+      indices[k++] = from + i;
+      indices[k++] = from + i1;
+      indices[k++] = to + i1;
+      indices[k++] = from + i;
+      indices[k++] = to + i1;
+      indices[k++] = to + i;
     }
   }
   const shell = { positions: outPos, indices };
@@ -237,11 +254,7 @@ export function assembleHollowMesh(
  * Собирает меш из сетки: боковые треугольники + крышки веером из центроида
  * граничного кольца. Нормали не считает — см. normals.ts/meshNormals.
  */
-export function assembleMesh(
-  grid: Grid,
-  caps: CapMode,
-  bottomCap?: CapSpec,
-): Omit<SurfaceMesh, 'normals'> {
+export function assembleMesh(grid: Grid, caps: CapMode, bottomCap?: CapSpec): Omit<SurfaceMesh, 'normals'> {
   const { nu, nv, positions } = grid;
   if (bottomCap && (caps === 'both' || caps === 'bottom')) {
     // дно своей сеткой: собираем без низа и дописываем его
@@ -264,7 +277,9 @@ export function assembleMesh(
   let nextVertex = nGrid;
 
   const centroid = (j: number): [number, number, number] => {
-    let x = 0, y = 0, z = 0;
+    let x = 0,
+      y = 0,
+      z = 0;
     for (let i = 0; i < nu; i++) {
       const p = (j * nu + i) * 3;
       x += positions[p];

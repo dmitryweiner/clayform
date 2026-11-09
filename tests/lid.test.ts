@@ -5,10 +5,7 @@
 // горловины. Подгонять диаметры руками пользователь не должен, поэтому вся
 // цепочка выводится от полости тела и обязана сходиться на любом силуэте.
 
-import {
-  defaultLid, sanitizeLid, lidFit, lidSeat, lidHeightMm,
-  buildLidMesh, buildLidSolid, LID_LIMITS,
-} from '../src/geo/lid';
+import { defaultLid, sanitizeLid, lidFit, lidSeat, lidHeightMm, buildLidMesh, buildLidSolid, LID_LIMITS } from '../src/geo/lid';
 import type { LidState } from '../src/geo/lid';
 import { buildHollowVessel, sanitizeHollow } from '../src/geo/hollow';
 import { defaultBuildParams } from '../src/geo/build';
@@ -94,8 +91,7 @@ describe('lidFit', () => {
   it('утопление опускает опору ровно на заданное, пока не упрётся в предел', () => {
     const p = params('pot');
     const profile = buildProfile('pot', p.shape, p.heightMm);
-    const at = (recessMm: number) =>
-      lidFit(profile, p.heightMm, hollowState, sanitizeLid({ on: true, recessMm }));
+    const at = (recessMm: number) => lidFit(profile, p.heightMm, hollowState, sanitizeLid({ on: true, recessMm }));
     expect(at(0).restZMm).toBeCloseTo(p.heightMm, 6);
     expect(at(8).restZMm).toBeCloseTo(p.heightMm - 8, 6);
     // четверть высоты — предел: ниже крышка утонула бы в изделии

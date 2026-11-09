@@ -11,17 +11,37 @@
     <div id="app">
       <header id="topbar">
         <span id="brand">ClayForm</span>
-        <button id="presetBtn" class="tb-btn preset-btn" data-i18n="topbar.presets" data-i18n-title="topbar.presets.title" title="Built-in and saved presets">Presets…</button>
+        <button
+          id="presetBtn"
+          class="tb-btn preset-btn"
+          data-i18n="topbar.presets"
+          data-i18n-title="topbar.presets.title"
+          title="Built-in and saved presets"
+        >
+          Presets…
+        </button>
         <button id="saveBtn" class="tb-btn" data-i18n-title="topbar.save.title" title="Save as a preset">💾</button>
-        <button id="fileOpenBtn" class="tb-btn" data-i18n-title="topbar.fileOpen.title" title="Open a preset file (or drop the file onto the window)">📂</button>
+        <button
+          id="fileOpenBtn"
+          class="tb-btn"
+          data-i18n-title="topbar.fileOpen.title"
+          title="Open a preset file (or drop the file onto the window)"
+        >
+          📂
+        </button>
         <button id="fileSaveBtn" class="tb-btn" data-i18n-title="topbar.fileSave.title" title="Save the preset to a file">⬇️</button>
         <input type="file" id="fileInput" accept=".json,application/json" hidden />
         <button id="shareBtn" class="tb-btn" data-i18n-title="topbar.share.title" title="Copy link">🔗</button>
         <button id="undoBtn" class="tb-btn" data-i18n-title="topbar.undo.title" title="Undo (Ctrl/Cmd+Z)" disabled>↩️</button>
         <button id="redoBtn" class="tb-btn" data-i18n-title="topbar.redo.title" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↪️</button>
         <span class="tb-spacer"></span>
-        <button id="panelBtn" class="tb-btn" data-i18n="topbar.panel" data-i18n-title="topbar.panel.title" title="Settings" hidden>⚙ Settings</button>
-        <label id="heightLab"><span data-i18n="topbar.height">Height</span> <input type="number" id="heightMm" min="20" max="400" step="1" value="140" /> <span data-i18n="unit.mm">mm</span></label>
+        <button id="panelBtn" class="tb-btn" data-i18n="topbar.panel" data-i18n-title="topbar.panel.title" title="Settings" hidden>
+          ⚙ Settings
+        </button>
+        <label id="heightLab"
+          ><span data-i18n="topbar.height">Height</span> <input type="number" id="heightMm" min="20" max="400" step="1" value="140" />
+          <span data-i18n="unit.mm">mm</span></label
+        >
         <button id="langBtn" class="tb-btn lang-btn" data-i18n="lang.switch" data-i18n-title="lang.switch.title">RU</button>
       </header>
       <div id="content">
@@ -47,7 +67,8 @@
             <button id="exportBtn" class="tb-btn primary" style="width: 100%" data-i18n="export.button.vessel">Export STL</button>
             <p class="cast-note">
               <span data-i18n="export.cast">Molds, pour boxes and slump molds are built in</span>
-              <a id="castLink" href="https://dmitryweiner.github.io/cast-builder/" target="_blank" rel="noopener">Cast Builder</a><span data-i18n="export.cast.tail">: export the piece and open the file there, the lid as a separate file.</span>
+              <a id="castLink" href="https://dmitryweiner.github.io/cast-builder/" target="_blank" rel="noopener">Cast Builder</a
+              ><span data-i18n="export.cast.tail">: export the piece and open the file there, the lid as a separate file.</span>
             </p>
           </section>
 
@@ -70,7 +91,17 @@
           <canvas id="view"></canvas>
           <div id="presets" hidden>
             <div id="presetsBox" role="dialog" aria-labelledby="presetsTitle">
-              <button id="presetsClose" class="panel-close" type="button" data-i18n-title="presets.close.title" data-i18n-aria="presets.close" title="Close (Esc)" aria-label="Close">✕</button>
+              <button
+                id="presetsClose"
+                class="panel-close"
+                type="button"
+                data-i18n-title="presets.close.title"
+                data-i18n-aria="presets.close"
+                title="Close (Esc)"
+                aria-label="Close"
+              >
+                ✕
+              </button>
               <h2 id="presetsTitle" data-i18n="presets.title">Presets</h2>
               <div id="presetList"></div>
             </div>

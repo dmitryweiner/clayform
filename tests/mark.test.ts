@@ -1,10 +1,7 @@
 // Клеймо на донышке: состояние, раскладка строки по кругу, чтение снизу,
 // лого и то, как клеймо садится в изделие, полое изделие, форму и матрицу.
 
-import {
-  sanitizeMark, defaultMark, markText, markLayout, markDepth, markActive,
-  sanitizeMarkRaster, MARK_TEXT_MAX,
-} from '../src/geo/mark';
+import { sanitizeMark, defaultMark, markText, markLayout, markDepth, markActive, sanitizeMarkRaster, MARK_TEXT_MAX } from '../src/geo/mark';
 import type { MarkRaster, MarkState } from '../src/geo/mark';
 import { encodeBase64 } from '../src/geo/bytes';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
@@ -73,7 +70,11 @@ describe('состояние клейма', () => {
 
 describe('раскладка строки', () => {
   it('влезает — кегль как есть, верх букв на отступ от края', () => {
-    const layout = markLayout(mark({ marginMm: 2 }), strip(200, 50, () => true), 40);
+    const layout = markLayout(
+      mark({ marginMm: 2 }),
+      strip(200, 50, () => true),
+      40,
+    );
     expect(layout?.scale).toBe(1);
     expect(layout?.rOut).toBe(38);
     expect(layout?.rIn).toBeCloseTo(33, 6);
@@ -81,7 +82,11 @@ describe('раскладка строки', () => {
   });
 
   it('длиннее окружности — ужимается и предупреждает', () => {
-    const layout = markLayout(mark(), strip(4000, 50, () => true), 30);
+    const layout = markLayout(
+      mark(),
+      strip(4000, 50, () => true),
+      30,
+    );
     expect(layout?.scale).toBeLessThan(1);
     expect(layout?.warnings[0]?.code).toBe('mark.tooLong');
     // ужатая строка укладывается в окружность по средней линии
@@ -91,7 +96,13 @@ describe('раскладка строки', () => {
   });
 
   it('на крошечном дне строке нет места', () => {
-    expect(markLayout(mark({ marginMm: 2 }), strip(100, 50, () => true), 5)?.warnings[0]?.code).toBe('mark.noRoom');
+    expect(
+      markLayout(
+        mark({ marginMm: 2 }),
+        strip(100, 50, () => true),
+        5,
+      )?.warnings[0]?.code,
+    ).toBe('mark.noRoom');
   });
 });
 

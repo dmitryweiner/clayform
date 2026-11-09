@@ -2,8 +2,13 @@
 // Он обязан переваривать любой мусор, не бросая: ссылку мог править человек.
 
 import {
-  defaultState, sanitizeState, stateForFamily, toBuildParams,
-  HEIGHT_MIN_MM, HEIGHT_MAX_MM, STATE_VERSION,
+  defaultState,
+  sanitizeState,
+  stateForFamily,
+  toBuildParams,
+  HEIGHT_MIN_MM,
+  HEIGHT_MAX_MM,
+  STATE_VERSION,
 } from '../src/state/schema';
 import { defaultFamilyParams, familyById } from '../src/geo/profiles';
 import { buildVessel } from '../src/geo/build';
@@ -44,8 +49,7 @@ describe('sanitizeState', () => {
   });
 
   it('нечисловая высота берётся из семейства, а не из другого семейства', () => {
-    expect(sanitizeState({ family: 'vase', heightMm: 'высокая' }).heightMm)
-      .toBe(familyById('vase').defaultHeightMm);
+    expect(sanitizeState({ family: 'vase', heightMm: 'высокая' }).heightMm).toBe(familyById('vase').defaultHeightMm);
   });
 
   it('нестандартная детализация откатывается к дефолтной', () => {

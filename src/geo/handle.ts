@@ -77,8 +77,7 @@ export function sanitizeHandle(raw: unknown): HandleState {
   if (typeof raw === 'object' && raw !== null) {
     for (const [key, value] of Object.entries(raw)) source[key] = value;
   }
-  const num = (x: unknown, d: number): number =>
-    typeof x === 'number' && Number.isFinite(x) ? x : d;
+  const num = (x: unknown, d: number): number => (typeof x === 'number' && Number.isFinite(x) ? x : d);
 
   const topAt = clamp(num(source.topAt, fallback.topAt), 0.15, 0.98);
   return {
@@ -99,11 +98,7 @@ export function sanitizeHandle(raw: unknown): HandleState {
  * Меши ручек (одна или две). Пустой массив, если ручка выключена.
  * Каждый меш — замкнутая труба с торцами внутри тела.
  */
-export function buildHandles(
-  state: HandleState,
-  profile: ProfileDef,
-  heightMm: number,
-): SurfaceMesh[] {
+export function buildHandles(state: HandleState, profile: ProfileDef, heightMm: number): SurfaceMesh[] {
   if (!state.on) return [];
 
   const rTop = profileRadius(profile, state.topAt);
@@ -113,16 +108,17 @@ export function buildHandles(
 
   // Каждый конец топим по своей стенке: наверху и внизу силуэт изогнут
   // по-разному, а торцы у ручки толстые — общей глубины на двоих не хватает.
-  const embed = (at: number, angleDeg: number): number => embedDepth({
-    profile,
-    heightMm,
-    at,
-    tangent: tangentOf(angleDeg),
-    halfDepth,
-    halfWidth,
-    marginMm: EMBED_MM,
-    maxFraction: MAX_EMBED_FRACTION,
-  });
+  const embed = (at: number, angleDeg: number): number =>
+    embedDepth({
+      profile,
+      heightMm,
+      at,
+      tangent: tangentOf(angleDeg),
+      halfDepth,
+      halfWidth,
+      marginMm: EMBED_MM,
+      maxFraction: MAX_EMBED_FRACTION,
+    });
 
   const p0: Vec3 = {
     x: -(rTop - embed(state.topAt, state.topAngleDeg)),
@@ -163,14 +159,7 @@ function tangentOf(angleDeg: number): AxialTangent {
  * приходит от c1, поэтому углы и задают, под каким наклоном ручка отходит от
  * стенки вверху и внизу.
  */
-function controlPoints(
-  state: HandleState,
-  p0: Vec3,
-  p1: Vec3,
-  rTop: number,
-  rBottom: number,
-  push: number,
-): [Vec3, Vec3] {
+function controlPoints(state: HandleState, p0: Vec3, p1: Vec3, rTop: number, rBottom: number, push: number): [Vec3, Vec3] {
   const top = (state.topAngleDeg * Math.PI) / 180;
   const bottom = (state.bottomAngleDeg * Math.PI) / 180;
   return [

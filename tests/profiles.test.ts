@@ -6,8 +6,15 @@
 // «диаметр тулова 180 мм» превращается в 190.
 
 import {
-  FAMILIES, FAMILY_IDS, familyById, isFamilyId, defaultFamilyParams,
-  clampFamilyParams, buildProfile, profileRadius, MIN_RADIUS_MM,
+  FAMILIES,
+  FAMILY_IDS,
+  familyById,
+  isFamilyId,
+  defaultFamilyParams,
+  clampFamilyParams,
+  buildProfile,
+  profileRadius,
+  MIN_RADIUS_MM,
 } from '../src/geo/profiles';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
 import { validateMesh } from '../src/geo/validate';
@@ -197,7 +204,7 @@ describe('cup — чашка/стакан/кружка', () => {
 
   it('старая «бочка» переводится в мм от среднего радиуса, и перевод идемпотентен', () => {
     const once = clampFamilyParams('cup', { dRim: 88, dFoot: 70, barrel: 0.08 });
-    expect(once.bulgeMm).toBeCloseTo(0.08 * (88 + 70) / 4, 9);
+    expect(once.bulgeMm).toBeCloseTo((0.08 * (88 + 70)) / 4, 9);
     expect(once).not.toHaveProperty('barrel');
     expect(clampFamilyParams('cup', once)).toEqual(once);
     // нынешний ключ главнее старого
@@ -209,10 +216,7 @@ describe('cup — чашка/стакан/кружка', () => {
 
 /** Наклон силуэта dr/dt по обе стороны от t: излом — разные знаки и крутизна. */
 function slopes(def: ReturnType<typeof buildProfile>, t: number, h = 1e-3): [number, number] {
-  return [
-    (profileRadius(def, t) - profileRadius(def, t - h)) / h,
-    (profileRadius(def, t + h) - profileRadius(def, t)) / h,
-  ];
+  return [(profileRadius(def, t) - profileRadius(def, t - h)) / h, (profileRadius(def, t + h) - profileRadius(def, t)) / h];
 }
 
 describe('острота горба — горшок, ваза, чашка', () => {
@@ -325,13 +329,10 @@ describe('vase — ваза/амфора/бутылка', () => {
 
   it('отгиб венчика раскрывает устье сверх заданного диаметра', () => {
     const params = { ...base, dBelly: 160, dNeck: 50, dRim: 74 };
-    expect(profileRadius(buildProfile('vase', { ...params, rimFlare: 0 }, 260), 1) * 2)
-      .toBeCloseTo(74, 6);
-    expect(profileRadius(buildProfile('vase', { ...params, rimFlare: 0.5 }, 260), 1) * 2)
-      .toBeCloseTo(111, 6);
+    expect(profileRadius(buildProfile('vase', { ...params, rimFlare: 0 }, 260), 1) * 2).toBeCloseTo(74, 6);
+    expect(profileRadius(buildProfile('vase', { ...params, rimFlare: 0.5 }, 260), 1) * 2).toBeCloseTo(111, 6);
     // отрицательный подбирает край внутрь
-    expect(profileRadius(buildProfile('vase', { ...params, rimFlare: -0.2 }, 260), 1) * 2)
-      .toBeCloseTo(59.2, 6);
+    expect(profileRadius(buildProfile('vase', { ...params, rimFlare: -0.2 }, 260), 1) * 2).toBeCloseTo(59.2, 6);
   });
 });
 
@@ -386,7 +387,10 @@ describe('скругления у дна и у ножки', () => {
       const plain = buildProfile(family, defaultFamilyParams(family), 120);
       const zero = buildProfile(family, { ...defaultFamilyParams(family), baseFillet: 0, footFillet: 0 }, 120);
       expect(zero.points).toEqual(plain.points);
-      expect(familyById(family).params.some((spec) => spec.key === 'baseFillet'), family).toBe(true);
+      expect(
+        familyById(family).params.some((spec) => spec.key === 'baseFillet'),
+        family,
+      ).toBe(true);
     }
     expect(familyById('pot').params.some((spec) => spec.key === 'footFillet')).toBe(false);
     expect(familyById('cup').params.some((spec) => spec.key === 'footFillet')).toBe(false);
