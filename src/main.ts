@@ -54,7 +54,7 @@ import { validateMesh, assessExport, signedVolume } from 'maker-kit/3d/validate'
 import { overhangFraction } from './geo/overhang';
 import type { AppState } from './state/schema';
 import { defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, lidRelief } from './state/schema';
-import { PRESETS, presetById, presetSignature } from './state/presets';
+import { BLANK_PRESET, PRESETS, presetById, presetSignature } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
 import { encodePresetFile, decodePresetFile, presetFileName } from './state/presetFile';
 import type { ClayPreset } from './state/userPresets';
@@ -618,6 +618,10 @@ function deletePreset(id: string): void {
   showPresetButton();
   renderPresets();
 }
+
+// 📄 — пустой пресет: изделие по умолчанию под именем «Новое изделие»,
+// один шаг отмены назад к прежнему
+el('newBtn', HTMLButtonElement).addEventListener('click', () => openPreset(`b:${BLANK_PRESET.id}`));
 
 presetBtn.addEventListener('click', () => {
   if (presetsDialog.isOpen()) {

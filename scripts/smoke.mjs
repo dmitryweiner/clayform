@@ -69,6 +69,8 @@ async function scenario() {
 
   label('boot');
   await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0, { timeout: 20000 });
+  // изделие по умолчанию — с ним сверяется 📄 «Новое»
+  const defaultStatus = await page.locator('#status').textContent();
   const wide = await horizontalOverflow(page);
   if (wide > 0) errors.push(`[boot] страница шире окна на ${wide} px`);
 
@@ -276,6 +278,20 @@ async function scenario() {
     const warnings = await messages('warn');
     if (warnings.includes('Поднутрения')) errors.push(`[${value}] warnings="${warnings}"`);
   }
+
+  // 📄: пустой пресет — изделие по умолчанию под своим именем, один шаг отмены
+  label('new');
+  await pickPreset(presetValues[1]);
+  await auditVerdict(page);
+  const beforeNew = await page.locator('#status').textContent();
+  await page.click('#newBtn');
+  await auditVerdict(page);
+  const newName = (await page.locator('#presetBtn').textContent()).trim();
+  if (newName !== 'Новое изделие') errors.push(`[new] на кнопке имени «${newName}»`);
+  if ((await page.locator('#status').textContent()) !== defaultStatus) errors.push('[new] не изделие по умолчанию');
+  await page.click('#undoBtn');
+  await auditVerdict(page);
+  if ((await page.locator('#status').textContent()) !== beforeNew) errors.push('[new] отмена не вернула прежнее изделие');
 
   // ссылка переносит состояние: открываем её в чистой вкладке и сверяем статус
   label('share');

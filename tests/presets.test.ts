@@ -1,7 +1,7 @@
 // Пресеты и ссылки. Пресет — это обещание: нажал и получил рабочее изделие,
 // а не просто «оно не упало».
 
-import { PRESETS, presetById, presetSignature } from '../src/state/presets';
+import { BLANK_PRESET, PRESETS, presetById, presetSignature } from '../src/state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from '../src/state/share';
 import { defaultState, sanitizeState, toBuildParams } from '../src/state/schema';
 import { buildHollowVessel } from '../src/geo/hollow';
@@ -143,5 +143,17 @@ describe('подпись пресета', () => {
     expect(presetSignature({ ...teapot, resolution: 384 })).toBe(signature);
     expect(presetSignature({ ...teapot, lidBeside: !teapot.lidBeside })).toBe(signature);
     expect(presetSignature({ ...teapot, heightMm: teapot.heightMm + 1 })).not.toBe(signature);
+  });
+});
+
+describe('📄 Новое', () => {
+  it('пустой пресет — состояние по умолчанию под своим именем, в списке его нет, по ссылке находится', () => {
+    expect(BLANK_PRESET.id).toBe('blank');
+    expect(BLANK_PRESET.listed).toBe(false);
+    expect(BLANK_PRESET.build()).toEqual(defaultState());
+    expect(PRESETS.some((preset) => preset.id === 'blank')).toBe(false);
+    expect(presetById('blank')).toBe(BLANK_PRESET);
+    expect(DICTS.ru['preset.blank']).toBe('Новое изделие');
+    expect(DICTS.en['preset.blank']).toBe('New piece');
   });
 });

@@ -321,6 +321,7 @@ export const ru = {
   'presets.prompt': 'Имя пресета',
   'presets.auto': 'Изделие',
 
+  'preset.blank': 'Новое изделие',
   'preset.pot': 'Горшок',
   'preset.pot.note': 'русский печной горшок',
   'preset.krynka': 'Крынка',

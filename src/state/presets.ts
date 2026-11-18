@@ -13,6 +13,8 @@ import { defaultFamilyParams } from '../geo/profiles';
 export interface Preset {
   id: string;
   build(): AppState;
+  /** false — не в списке пресетов (пустой, что открывает 📄) */
+  listed?: boolean;
 }
 
 function make(id: string, family: string, shape: Record<string, number>, extra: Record<string, unknown> = {}): Preset {
@@ -226,6 +228,15 @@ export function presetSignature(state: AppState): string {
   return JSON.stringify({ ...state, resolution: 0, lidBeside: false });
 }
 
+/**
+ * Что открывает 📄 «Новое» (пустой пресет кита, `listed: false`): состояние,
+ * с которого приложение стартует, под своим именем («Новое изделие»). В
+ * списке его нет, но по ссылке он находится — кнопка имени знает, что
+ * проект всё ещё он.
+ */
+export const BLANK_PRESET: Preset = { id: 'blank', build: defaultState, listed: false };
+
 export function presetById(id: string): Preset | null {
+  if (id === BLANK_PRESET.id) return BLANK_PRESET;
   return PRESETS.find((preset) => preset.id === id) ?? null;
 }
