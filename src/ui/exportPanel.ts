@@ -5,9 +5,9 @@
 import type { HollowState } from '../geo/hollow';
 import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM, RIM_MAX_MM } from '../geo/hollow';
 import type { AppState } from '../state/schema';
-import type { Control } from './controls';
+import { make } from 'maker-kit/ui/dom';
+import type { Change, Control } from './controls';
 import { renderControls } from './controls';
-import { make } from './dom';
 
 const HOLLOW_CONTROLS: Control<HollowState>[] = [
   {
@@ -66,9 +66,9 @@ export function renderExportPanel(
   paramsHost: HTMLElement,
   partList: HTMLElement,
   read: () => AppState,
-  onChange: (state: AppState) => void,
+  onChange: Change<AppState>,
 ): ExportPanelHandle {
-  const onHollow = (hollow: HollowState): void => onChange({ ...read(), hollow });
+  const onHollow: Change<HollowState> = (hollow, final) => onChange({ ...read(), hollow }, final);
 
   const hollowHost = make('div');
   const pieceHost = make('div');

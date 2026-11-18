@@ -24,8 +24,8 @@ export const en: Record<keyof typeof ru, string> = {
   'topbar.redo.title': 'Redo (Ctrl/Cmd+Shift+Z)',
   'topbar.panel': '⚙ Settings',
   'topbar.panel.title': 'Settings',
-  'topbar.height': 'Height',
   'unit.mm': 'mm',
+  'unit.deg': '°',
 
   // --- panel sections ---
   'panel.shape': 'Shape',
@@ -51,7 +51,8 @@ export const en: Record<keyof typeof ru, string> = {
   'param.footFillet.hint': 'radius of the transition from foot to body: ceramics crack in a sharp inner corner',
   'param.sharpness': 'Sharpness',
   'param.sharpness.hint': '−1 — fuller, towards a plateau; 0 — smooth; +1 — a sharp ridge',
-  'param.auto': 'auto',
+  'param.heightMm': 'Height',
+  'param.auto': 'auto: as the roundness dictates',
 
   'param.pot.dBelly': 'Width',
   'param.pot.dBelly.hint': 'diameter at the widest point, mm',
@@ -99,6 +100,7 @@ export const en: Record<keyof typeof ru, string> = {
   'ctl.depth': 'Depth',
   'ctl.width': 'Width',
   'ctl.height': 'Height',
+  'ctl.on': 'On',
   'ctl.onLid': 'On the lid too',
   'ctl.axis': 'Direction',
   'ctl.shape': 'Shape',

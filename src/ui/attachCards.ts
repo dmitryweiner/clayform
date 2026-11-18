@@ -7,17 +7,24 @@ import type { SpoutState } from '../geo/spout';
 import { PULL_MAX_MM, SPOUT_LIMITS } from '../geo/spout';
 import type { LidState } from '../geo/lid';
 import type { RouletteBand } from '../geo/roulette';
+import { createCard } from 'maker-kit/ui/card';
+import { make } from 'maker-kit/ui/dom';
 import { renderBandList } from './reliefCards';
-import { make } from './dom';
 import { t } from '../i18n';
 import { LID_LIMITS } from '../geo/lid';
-import type { Control } from './controls';
+import type { Change, Control } from './controls';
 import { renderControls } from './controls';
-import { createCard } from './card';
 import type { MarkState } from '../geo/mark';
 import { renderMarkCard } from './markCard';
 
 const HANDLE_CONTROLS: Control<HandleState>[] = [
+  {
+    kind: 'check',
+    key: 'on',
+    label: 'ctl.on',
+    get: (s) => s.on,
+    set: (s, v) => ({ ...s, on: v }),
+  },
   {
     kind: 'select',
     key: 'count',
@@ -110,6 +117,13 @@ const isLip = (s: SpoutState): boolean => s.kind === 'lip';
 const isApplied = (s: SpoutState): boolean => s.kind === 'applied';
 
 const SPOUT_CONTROLS: Control<SpoutState>[] = [
+  {
+    kind: 'check',
+    key: 'on',
+    label: 'ctl.on',
+    get: (s) => s.on,
+    set: (s, v) => ({ ...s, on: v }),
+  },
   {
     kind: 'select',
     key: 'kind',
@@ -232,6 +246,13 @@ const SPOUT_CONTROLS: Control<SpoutState>[] = [
 const isTee = (s: LidState): boolean => s.knobKind === 'tee';
 
 const LID_CONTROLS: Control<LidState>[] = [
+  {
+    kind: 'check',
+    key: 'on',
+    label: 'ctl.on',
+    get: (s) => s.on,
+    set: (s, v) => ({ ...s, on: v }),
+  },
   {
     kind: 'range',
     key: 'recess',
@@ -385,10 +406,10 @@ export interface AttachSources {
 }
 
 export interface AttachSinks {
-  handle: (next: HandleState) => void;
-  spout: (next: SpoutState) => void;
-  lid: (next: LidState) => void;
-  mark: (next: MarkState) => void;
+  handle: Change<HandleState>;
+  spout: Change<SpoutState>;
+  lid: Change<LidState>;
+  mark: Change<MarkState>;
   /** развернуть камеру на донышко */
   viewBottom: () => void;
 }
@@ -407,7 +428,7 @@ export function renderAttachCards(container: HTMLElement, read: AttachSources, w
     title: 'handle.title',
     desc: 'handle.desc',
     enabled: read.handle().on,
-    onToggle: (on) => write.handle({ ...read.handle(), on }),
+    t,
   });
   const handleRows = renderControls(handleCard.body, HANDLE_CONTROLS, read.handle, write.handle, 'handle');
 
@@ -416,7 +437,7 @@ export function renderAttachCards(container: HTMLElement, read: AttachSources, w
     title: 'spout.title',
     desc: 'spout.desc',
     enabled: read.spout().on,
-    onToggle: (on) => write.spout({ ...read.spout(), on }),
+    t,
   });
   const spoutRows = renderControls(spoutCard.body, SPOUT_CONTROLS, read.spout, write.spout, 'spout');
 
@@ -425,7 +446,7 @@ export function renderAttachCards(container: HTMLElement, read: AttachSources, w
     title: 'lid.title',
     desc: 'lid.desc',
     enabled: read.lid().on,
-    onToggle: (on) => write.lid({ ...read.lid(), on }),
+    t,
   });
   const lidRows = renderControls(lidCard.body, LID_CONTROLS, read.lid, write.lid, 'lid');
   // Накатка на куполе — свои полосы. Высота полосы здесь — доля дуги купола.
@@ -435,7 +456,7 @@ export function renderAttachCards(container: HTMLElement, read: AttachSources, w
   const lidBands = renderBandList(
     lidBandsHost,
     () => read.lid().roulette,
-    (roulette) => write.lid({ ...read.lid(), roulette }),
+    (roulette, final) => write.lid({ ...read.lid(), roulette }, final),
     'lidroul',
   );
   let describeLidBand: (band: RouletteBand) => string = () => '';

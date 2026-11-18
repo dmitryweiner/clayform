@@ -1,34 +1,20 @@
 :root {
+  /*
+   * Своя тёплая палитра поверх токенов кита (maker-kit/styles/tokens.css):
+   * бурые нейтральные и терракотовый акцент. Остальное — плотность,
+   * отступы, шрифт — китовое. Свои правила вне слоя kit побеждают его.
+   */
   --bg: #17130f;
   --panel: #211b16;
   --card: #2b231c;
   --text: #ece4dc;
   --muted: #a4948a;
-  --accent: #d98b5f;
-  --warn: #e3b341;
-  --bad: #e06c5c;
   --line: #3b3028;
-  color-scheme: dark;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-/* hidden-атрибут должен побеждать display:flex/block из классов (.row и др.) */
-[hidden] {
-  display: none !important;
-}
-
-body {
-  margin: 0;
-  font:
-    14px/1.45 system-ui,
-    -apple-system,
-    'Segoe UI',
-    sans-serif;
-  background: var(--bg);
-  color: var(--text);
+  --accent: #d98b5f;
+  --accent-strong: #eaa982;
+  --accent-soft: rgb(217 139 95 / 14%);
+  --on-accent: #1a0f08;
+  --overlay: rgb(23 19 15 / 75%);
 }
 
 #app {
@@ -208,15 +194,6 @@ body {
   border-color: var(--warn);
 }
 
-#heightLab {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-#heightLab input {
-  width: 56px;
-}
-
 #content {
   display: flex;
   flex: 1;
@@ -224,7 +201,7 @@ body {
 }
 
 #panel {
-  width: 320px;
+  width: var(--panel-w);
   flex: none;
   padding: 12px;
   background: var(--panel);
@@ -239,75 +216,12 @@ body {
   color: var(--muted);
 }
 
-.card,
-.fcard {
-  background: var(--card);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-}
-
-.card h2 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--muted);
-}
-
-.fcard {
-  padding: 6px 10px;
-}
-
-.fcard-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  user-select: none;
-  min-height: 26px;
-}
-
-.fcard-title {
-  font-weight: 600;
-}
-
-.fcard-tag {
-  font-size: 11px;
-  color: var(--accent);
-  background: rgba(217, 139, 95, 0.14);
-  border-radius: 10px;
-  padding: 1px 8px;
-}
-
-.fcard-caret {
-  margin-left: auto;
-  color: var(--muted);
-}
-
 /* подзаголовок внутри карточки — например «Накатка на куполе» у крышки */
 .sub-title {
   margin: 12px 0 4px;
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
-}
-
-.fcard-desc {
-  color: var(--muted);
-  font-size: 11.5px;
-  margin: 4px 0 6px;
-}
-
-.fcard.collapsed .fcard-body {
-  display: none;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 5px 0;
 }
 
 /* орнамент картинкой: миниатюра того, что ляжет на стенку */
@@ -324,59 +238,20 @@ body {
   font-size: 11px;
 }
 
-/* чекбокс-строка: подпись не ужимается в колонку ползунков */
-.row.check-row > span {
-  width: auto;
+/* кнопка, миниатюра и размер картинки — одна ячейка строки */
+.image-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.row > span {
-  flex: none;
-  width: 88px;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.row input[type='range'] {
-  flex: 1;
-  min-width: 0;
-  accent-color: var(--accent);
-}
-
-.row output {
-  flex: none;
-  width: 42px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-}
-
-.adj-btn {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  line-height: 1;
-  background: var(--panel);
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.adj-btn:hover {
-  color: var(--text);
-  border-color: var(--accent);
-}
-
-select,
-input[type='number'],
-input[type='text'] {
-  flex: 1;
-  min-width: 0;
+/* поля шапки и старой строки детализации — до разметки кита (m4-ui) */
+#topbar select,
+label.row select {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 4px 6px;
 }
 
@@ -625,10 +500,6 @@ input[type='text'] {
     margin-top: -6px;
   }
 
-  #heightLab {
-    margin-left: auto;
-  }
-
   #content {
     /* опора для абсолютного листа и подложки */
     position: relative;
@@ -696,9 +567,5 @@ input[type='text'] {
   /* самые узкие телефоны: кнопки и высота обязаны уместиться во второй строке */
   #topbar .tb-btn {
     padding: 4px 5px;
-  }
-
-  #heightLab input {
-    width: 54px;
   }
 }
