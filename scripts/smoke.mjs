@@ -364,13 +364,21 @@ async function scenario() {
     errors.push('[preset-delete] удаление пресета поменяло изделие');
   }
 
-  // отмена возвращает к прежнему состоянию, повтор — обратно
-  label('undo');
+  // изделие живёт в браузере: страница, открытая заново без ссылки, — с ним же
+  label('reload');
+  const beforeReload = await page.locator('#status').textContent();
   await page.goto(shared.split('#')[0]);
+  await auditVerdict(page);
+  const afterReload = await page.locator('#status').textContent();
+  if (afterReload !== beforeReload) errors.push(`[reload] изделие не пережило перезагрузку: "${beforeReload}" → "${afterReload}"`);
+
+  // отмена возвращает к прежнему состоянию, повтор — обратно; дальше — с изделия по умолчанию
+  label('undo');
+  await page.click('#newBtn');
   await auditVerdict(page);
   const initial = await page.locator('#status').textContent();
   await page.fill('#p_heightMm', '260');
-  await page.waitForTimeout(900); // дольше склейки истории
+  await page.waitForTimeout(300);
   const changed = await page.locator('#status').textContent();
   if (changed === initial) errors.push('[undo] высота не изменилась, проверять нечего');
   await page.click('#undoBtn');
