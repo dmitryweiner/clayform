@@ -3,8 +3,8 @@
 // есть контур крутится вокруг оси ровно так, как задумано.
 
 import { lathe } from '../src/geo/lathe';
-import { meshNormals } from '../src/geo/normals';
-import { validateMesh } from '../src/geo/validate';
+import { meshNormals } from 'maker-kit/3d/mesh';
+import { validateMesh } from 'maker-kit/3d/validate';
 import type { LathePoint } from '../src/geo/lathe';
 
 const withNormals = (mesh: ReturnType<typeof lathe>) => ({

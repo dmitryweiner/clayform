@@ -304,13 +304,6 @@ export const en: Record<keyof typeof ru, string> = {
   // --- core messages (geo/message.ts) ---
   'mark.tooLong': 'The mark text is longer than the circle — letters shrunk to {pct} %.',
   'mark.noRoom': 'No room for the mark text on the base: reduce the letter size or the edge margin.',
-  'mesh.nonFinite': 'The mesh has non-finite coordinates or normals.',
-  'mesh.badIndices': 'The mesh has invalid triangle indices.',
-  'mesh.empty': 'The mesh is empty.',
-  'mesh.flat': 'The mesh is flat along at least one axis.',
-  'mesh.open': 'The solid is not watertight.',
-  'mesh.inverted': 'The solid is inside out.',
-  'mesh.degenerate': '{count} degenerate {count|triangle|triangles} ({pct} %).',
   'progress.loading': 'loading the boolean operations module',
   'progress.vessel': 'building the piece',
   'progress.lid': 'building the lid',

@@ -5,24 +5,29 @@
 // выгруженному STL — здесь только само изделие.
 //
 // Внутри — ровно те же вызовы ядра, что раньше стояли в main.ts. Никакого
-// DOM и никакого Three.js: воркер видит только чистую геометрию.
+// DOM и никакого Three.js: воркер видит только чистую геометрию. Очередь,
+// ответы и время задачи — китовые (`serveJobs`); мост к manifold — тоже
+// (`maker-kit/csg/manifold`).
 
-import type { CsgApi } from '../geo/csg';
-import { initCSG } from '../geo/csg';
-import type { SurfaceMesh } from '../geo/surface';
+import type { CsgApi } from 'maker-kit/csg/manifold';
+import { initCSG } from 'maker-kit/csg/manifold';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
 import { mergeMeshes } from '../geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from '../geo/layout';
 import { buildProfile } from '../geo/profiles';
 import type { LidFit } from '../geo/lid';
 import { lidFit, lidSeat, buildLidMesh } from '../geo/lid';
 import { buildPrintableVessel } from '../geo/assemble';
-import { validateMesh, assessExport } from '../geo/validate';
+import { validateMesh, assessExport } from 'maker-kit/3d/validate';
 import type { AppState } from '../state/schema';
 import { sanitizeState, toBuildParams, effectiveSpout, lidRelief } from '../state/schema';
 import type { MarkRaster } from '../geo/mark';
 import { sanitizeMarkRaster } from '../geo/mark';
 import type { Message } from '../geo/message';
-import type { CsgJob, JobPart, WorkerIn, WorkerOut } from './protocol';
+import type { JobProgress } from 'maker-kit/core/progress';
+import { serveJobs } from 'maker-kit/worker/serve';
+import type { CsgJob, JobPart } from './protocol';
+import { isCsgJob } from './protocol';
 
 /**
  * WASM грузится сразу при создании воркера, а не по первой задаче: клиент
@@ -38,21 +43,15 @@ void ready.then(() => {
   loaded = true;
 });
 
-addEventListener('message', (event) => {
-  if (isJobMessage(event.data)) void handle(event.data);
-});
-
-async function handle(message: WorkerIn): Promise<void> {
-  const { jobId, job } = message;
-  try {
-    if (!loaded) send({ type: 'progress', jobId, step: 0, total: 1, label: { code: 'progress.loading' } });
-    const parts = run(await ready, jobId, job);
+serveJobs<CsgJob, JobPart[]>({
+  isJob: isCsgJob,
+  async handle(job, progress) {
+    if (!loaded) progress({ step: 0, total: 1, label: { code: 'progress.loading' } });
+    const parts = run(await ready, progress, job);
     // Буферы переносим, а не копируем: на 384 сегментах это десятки мегабайт.
-    send({ type: 'done', jobId, parts }, transferable(parts));
-  } catch (error) {
-    send({ type: 'error', jobId, message: error instanceof Error ? error.message : String(error) });
-  }
-}
+    return { result: parts, transfer: transferable(parts) };
+  },
+});
 
 /**
  * Растр строки клейма текущей задачи. Задачи идут строго по одной, поэтому
@@ -60,15 +59,15 @@ async function handle(message: WorkerIn): Promise<void> {
  */
 let markStrip: MarkRaster | null = null;
 
-function run(csg: CsgApi, jobId: number, job: CsgJob): JobPart[] {
+function run(csg: CsgApi, report: Report, job: CsgJob): JobPart[] {
   // Граница воркера — такая же внешняя граница, как ссылка или UI.
   const state = sanitizeState(job.state);
   markStrip = sanitizeMarkRaster(job.markStrip);
   if (job.kind === 'vessel-preview') {
-    return [vesselPart(csg, jobId, state, job.segments)];
+    return [vesselPart(csg, report, state, job.segments)];
   }
   if (job.kind === 'export') {
-    return vesselParts(csg, jobId, state, state.resolution);
+    return vesselParts(csg, report, state, state.resolution);
   }
   throw new Error('the worker does not know this job');
 }
@@ -104,8 +103,8 @@ function printableVessel(csg: CsgApi, state: AppState, segments: number): Surfac
  * предупреждениями, а меш к тому времени уже там. Крышки здесь нет вовсе:
  * она тело вращения, и главный поток строит её сам, не дожидаясь воркера.
  */
-function vesselPart(csg: CsgApi, jobId: number, state: AppState, segments: number): JobPart {
-  const progress = new Progress(jobId, 1);
+function vesselPart(csg: CsgApi, report: Report, state: AppState, segments: number): JobPart {
+  const progress = new Progress(report, 1);
   progress.next({ code: 'progress.vessel' });
   return part(state.family, '', printableVessel(csg, state, segments), []);
 }
@@ -115,9 +114,9 @@ function vesselPart(csg: CsgApi, jobId: number, state: AppState, segments: numbe
  * положении, юбкой вниз на столе, отдельным файлом или «рядом» одним.
  * Меши проверяем: от вердикта зависит, выпускать ли файл.
  */
-function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: number): JobPart[] {
+function vesselParts(csg: CsgApi, report: Report, state: AppState, segments: number): JobPart[] {
   const fit = fitOf(state);
-  const progress = new Progress(jobId, fit ? 3 : 2);
+  const progress = new Progress(report, fit ? 3 : 2);
   progress.next({ code: 'progress.vessel' });
 
   const meshes: { id: string; mesh: SurfaceMesh }[] = [{ id: state.family, mesh: printableVessel(csg, state, segments) }];
@@ -137,17 +136,17 @@ function vesselParts(csg: CsgApi, jobId: number, state: AppState, segments: numb
   }
 
   progress.next({ code: 'progress.checkMeshes' });
-  return meshes.map((item) => part(item.id, sizeNote(item.mesh), item.mesh, assessExport(validateMesh(item.mesh), true).blocking));
+  return meshes.map((item) => part(item.id, sizeNote(item.mesh), item.mesh, assessExport(validateMesh(item.mesh), true).blockers));
 }
 
-function part(id: string, note: string, mesh: SurfaceMesh, blocking: Message[]): JobPart {
+function part(id: string, note: string, mesh: SurfaceMesh, blockers: Message[]): JobPart {
   return {
     id,
     note,
     positions: mesh.positions,
     indices: mesh.indices,
     normals: mesh.normals,
-    blocking,
+    blockers,
   };
 }
 
@@ -169,6 +168,9 @@ function sizeNote(mesh: SurfaceMesh): string {
   return max.map((value, axis) => Math.round(value - min[axis])).join('×');
 }
 
+/** Куда задача сообщает ход работ (`serveJobs` шлёт это главному потоку). */
+type Report = (progress: JobProgress) => void;
+
 /**
  * Этапы задачи: шкала считает их, подпись говорит, какой идёт сейчас.
  * Этапы идут строго по порядку, поэтому номер считает сам счётчик.
@@ -177,17 +179,13 @@ class Progress {
   private step = 0;
 
   constructor(
-    private readonly jobId: number,
+    private readonly report: Report,
     private readonly total: number,
   ) {}
 
   next(label: Message): void {
-    send({ type: 'progress', jobId: this.jobId, step: this.step++, total: this.total, label });
+    this.report({ step: this.step++, total: this.total, label });
   }
-}
-
-function send(message: WorkerOut, transfer: Transferable[] = []): void {
-  postMessage(message, { transfer });
 }
 
 /** Буферы всех мешей ответа — их переносим в главный поток без копирования. */
@@ -200,17 +198,4 @@ function transferable(parts: JobPart[]): Transferable[] {
     }
   }
   return list;
-}
-
-/**
- * Проверяем только форму сообщения, а не список видов задач: перечислять их
- * здесь второй раз — значит однажды забыть дописать. Незнакомый вид разберёт
- * `run` и ответит ошибкой; молчать в ответ нельзя ни на что — клиент ждёт
- * ровно одного ответа на задачу и без него встанет навсегда.
- */
-function isJobMessage(data: unknown): data is WorkerIn {
-  if (typeof data !== 'object' || data === null) return false;
-  if (!('jobId' in data) || typeof data.jobId !== 'number') return false;
-  if (!('job' in data) || typeof data.job !== 'object' || data.job === null) return false;
-  return 'kind' in data.job && typeof data.job.kind === 'string';
 }

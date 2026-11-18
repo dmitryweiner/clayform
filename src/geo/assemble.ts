@@ -10,10 +10,10 @@
 // стенки. Без CSG пришлось бы либо оставлять бугор, либо подгонять торец
 // ручки под форму стенки вручную.
 
-import type { SurfaceMesh } from './surface';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
 import { assembleMesh } from './surface';
-import type { CsgApi } from './csg';
-import { CsgScope, toManifold, fromManifold } from './csg';
+import type { CsgApi } from 'maker-kit/csg/manifold';
+import { CsgScope, toManifold, fromManifold } from 'maker-kit/csg/manifold';
 import type { BuildParams } from './build';
 import { vesselSurface } from './build';
 import type { HandleState } from './handle';

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
 import { FAMILY_IDS, defaultFamilyParams, familyById } from '../src/geo/profiles';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 
 const GOLDEN_PATH = join(dirname(fileURLToPath(import.meta.url)), 'golden', 'vessels.json');
 const SAMPLE_COUNT = 96;

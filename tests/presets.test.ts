@@ -7,7 +7,7 @@ import { defaultState, sanitizeState, toBuildParams } from '../src/state/schema'
 import { buildHollowVessel } from '../src/geo/hollow';
 import { lidFit, lidSeat, buildLidMesh } from '../src/geo/lid';
 import { buildProfile } from '../src/geo/profiles';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 import { nextPresetName } from 'maker-kit/core/presets';
 import { autoPresetPrefixes, DICTS, hasKey } from '../src/i18n';
 

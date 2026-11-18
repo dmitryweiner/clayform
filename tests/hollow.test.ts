@@ -7,7 +7,7 @@
 import { buildHollowVessel, defaultHollow, sanitizeHollow } from '../src/geo/hollow';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
 import { sanitizeSpout, makeSpout } from '../src/geo/spout';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 import { FAMILY_IDS, defaultFamilyParams, familyById, buildProfile, profileRadius } from '../src/geo/profiles';
 import { sanitizeRelief } from '../src/geo/relief';
 

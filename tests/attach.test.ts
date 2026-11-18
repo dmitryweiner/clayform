@@ -6,16 +6,16 @@
 // род остался бы нулевым, а объём — прежним. Никакая проверка «меш замкнут»
 // этого не поймает.
 
-import { initCSG } from '../src/geo/csg';
-import type { CsgApi } from '../src/geo/csg';
-import { CsgScope, toManifold } from '../src/geo/csg';
+import { initCSG } from 'maker-kit/csg/manifold';
+import type { CsgApi } from 'maker-kit/csg/manifold';
+import { CsgScope, toManifold } from 'maker-kit/csg/manifold';
 import { buildPrintableVessel, unionAll } from '../src/geo/assemble';
 import { buildHandles, defaultHandle, sanitizeHandle } from '../src/geo/handle';
 import { defaultSpout, sanitizeSpout, makeSpout, buildAppliedSpout, appliedSpoutChannel, SPOUT_LIMITS } from '../src/geo/spout';
 import { buildVessel, defaultBuildParams, vesselGrid, gridRadiusAt } from '../src/geo/build';
 import { sanitizeHollow, buildHollowVessel } from '../src/geo/hollow';
 import { assembleMesh } from '../src/geo/surface';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 import { buildProfile, profileRadius, defaultFamilyParams, familyById } from '../src/geo/profiles';
 
 let csg: CsgApi;

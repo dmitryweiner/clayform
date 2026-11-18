@@ -2,10 +2,12 @@
 // крышки → нормали. Чистая функция параметров: тот же код крутится в главном
 // потоке для превью и в воркере для экспортной детализации.
 
-import type { Grid, SurfaceMesh } from './surface';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
+import type { Grid } from './surface';
 import type { CapSpec } from './bottom';
 import { sampleGrid, assembleMesh } from './surface';
-import { meshNormals, gridNormals } from './normals';
+import { meshNormals } from 'maker-kit/3d/mesh';
+import { gridNormals } from './normals';
 import type { Params, ProfileDef } from './profiles';
 import { buildProfile, profileRadius, familyById, clampFamilyParams, MIN_RADIUS_MM } from './profiles';
 import type { ReliefState } from './relief';

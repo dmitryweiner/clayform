@@ -9,7 +9,7 @@ import { defaultLid, sanitizeLid, lidFit, lidSeat, lidHeightMm, buildLidMesh, bu
 import type { LidState } from '../src/geo/lid';
 import { buildHollowVessel, sanitizeHollow } from '../src/geo/hollow';
 import { defaultBuildParams } from '../src/geo/build';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 import { FAMILY_IDS, defaultFamilyParams, familyById, buildProfile } from '../src/geo/profiles';
 import { sanitizeState, defaultState, lidRelief } from '../src/state/schema';
 import { defaultBand } from '../src/geo/roulette';

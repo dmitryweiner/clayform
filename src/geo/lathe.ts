@@ -20,7 +20,7 @@
 // каким контур возвращается от вершины наружной поверхности к вершине
 // внутренней.
 
-import type { SurfaceMesh } from './surface';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
 
 export interface LathePoint {
   /** радиус, мм; отрицательный подтягивается к нулю */

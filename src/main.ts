@@ -33,9 +33,10 @@ import { bindHistory } from 'maker-kit/ui/historyKeys';
 import { download } from 'maker-kit/ui/files';
 import { applyStaticText } from './ui/staticText';
 import type { Key } from './i18n';
-import { initLang, lang, setLang, onLangChange, t, tm, tDynamic, autoPresetPrefixes, LANGS } from './i18n';
+import { initLang, lang, setLang, onLangChange, t, tm, tDynamic, hasKey, autoPresetPrefixes, LANGS } from './i18n';
+import type { JobProgress } from 'maker-kit/core/progress';
 import type { Message } from 'maker-kit/core/message';
-import type { SurfaceMesh } from './geo/surface';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
 import { placeInRow, LID_BESIDE_GAP_MM } from './geo/layout';
 import { buildVessel, vesselSurface } from './geo/build';
 import { buildHandles } from './geo/handle';
@@ -48,8 +49,9 @@ import { lidFit, lidSeat, buildLidMesh, lidHeightMm, lidDomeContext } from './ge
 import { buildProfile, profileRadius } from './geo/profiles';
 import { bandLayout, isContinuous } from './geo/roulette';
 import type { RouletteBand, RouletteContext } from './geo/roulette';
-import { encodeSTL } from './geo/stl';
-import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
+import { encodeSTL } from 'maker-kit/3d/stl';
+import { validateMesh, assessExport, signedVolume } from 'maker-kit/3d/validate';
+import { overhangFraction } from './geo/overhang';
 import type { AppState } from './state/schema';
 import { defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, lidRelief } from './state/schema';
 import { PRESETS, presetById, presetSignature } from './state/presets';
@@ -62,7 +64,7 @@ import { browserStorage, loadRecord, saveRecord } from 'maker-kit/core/storage';
 import type { PresetRef } from 'maker-kit/core/presets';
 import { nextPresetName, presetStatus, removeUserPreset, renameUserPreset } from 'maker-kit/core/presets';
 import type { JobPart } from './worker/protocol';
-import { CsgClient } from './worker/client';
+import { createCsgClient } from './worker/client';
 
 /** Детализация превью изделия: ~10 мс на пересборку, незаметно при перетаскивании. */
 const PREVIEW_SEGMENTS = 192;
@@ -121,7 +123,7 @@ const redoBtn = el('redoBtn', HTMLButtonElement);
 const progress = createProgress(el('progressWrap', HTMLDivElement), { t });
 
 const scene = createScene(view);
-const csg = new CsgClient();
+const csg = createCsgClient();
 const history = new History<AppState>(startingState(), HISTORY_LIMIT);
 let state: AppState = history.state;
 const historyKeys = bindHistory({
@@ -175,7 +177,7 @@ function renderPanel(): void {
       spout: (spout, final) => applyState({ ...state, spout }, final),
       lid: (lid, final) => applyState({ ...state, lid }, final),
       mark: (mark, final) => applyState({ ...state, mark }, final),
-      viewBottom: () => scene.viewBottom(),
+      viewBottom: () => scene?.viewBottom(),
     },
   );
 
@@ -335,7 +337,7 @@ function refresh(): void {
   // крышку ставим по габариту тела вместе с ручкой и носиком: точная
   // сборка потом подменит только тело, а крышка останется где стояла
   const lids = beside ? placeInRow([body, lidMeshes], BESIDE_GAP_MM)[1] : lidMeshes;
-  scene.setMeshes([...body, ...lids]);
+  scene?.setMeshes([...body, ...lids]);
   const lidNote = fit ? t('size.round', { d: (fit.fieldMm * 2).toFixed(0), h: lidHeightMm(fit, state.lid).toFixed(0) }) : '';
   exportPanel.setParts(
     beside
@@ -367,10 +369,10 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
     // построенная здесь она уже стоит в сцене — надетой и точной.
     // Без хода работ: у превью один этап, и шкала «0 из 1» выглядела бы
     // зависшей — полоса кита бежит, пока задача идёт.
-    const parts = await progress.track(csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS, markStrip: markRaster }));
-    if (!parts || stamp !== generation) return;
-    const mesh = toMesh(parts[0]);
-    scene.setMeshes([mesh, ...lidMeshes]);
+    const done = await progress.track(csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS, markStrip: markRaster }));
+    if (!done || stamp !== generation) return;
+    const mesh = toMesh(done.result[0]);
+    scene?.setMeshes([mesh, ...lidMeshes]);
     audit([mesh, ...lidMeshes]);
   } catch (error) {
     // Сборка не удалась — значит и экспорт не удастся: это тот же код.
@@ -381,6 +383,14 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
     showMessages();
     exportBtn.disabled = true;
   }
+}
+
+/** Этап задачи воркера для полосы: его код — строка, полоса берёт те, что есть в словаре. */
+function stage(progress: JobProgress): JobProgress<Key> {
+  const label = progress.label;
+  return label && hasKey(label.code)
+    ? { ...progress, label: { code: label.code, params: label.params } }
+    : { step: progress.step, total: progress.total };
 }
 
 /** Меш детали из ответа воркера — буферы пришли переносом, копий нет. */
@@ -398,7 +408,7 @@ function audit(meshes: SurfaceMesh[]): void {
   const reports = meshes.map((mesh) => validateMesh(mesh));
   const assessments = reports.map((report) => assessExport(report, true));
   const triangles = reports.reduce((sum, report) => sum + report.triangleCount, 0);
-  const blocking = assessments.flatMap((assessment) => assessment.blocking);
+  const blocking = assessments.flatMap((assessment) => assessment.blockers);
   const overhang = overhangFraction(meshes[0], 60);
 
   auditEl.textContent = reports.every((report) => report.watertight)
@@ -464,13 +474,17 @@ async function runExport(): Promise<void> {
     // Экспортная детализация — до 384 сегментов; в главном потоке это
     // подвешивало вкладку на секунды, поэтому считает воркер, а полоса
     // показывает, что он не умер.
-    const files = await progress.track((onProgress) => csg.run({ kind: 'export', state, markStrip: markRaster }, onProgress), {
-      label: 'progress.export',
-      delayMs: 0,
-    });
-    if (!files) return;
+    const done = await progress.track(
+      (onProgress) => csg.run({ kind: 'export', state, markStrip: markRaster }, (p) => onProgress(stage(p))),
+      {
+        label: 'progress.export',
+        delayMs: 0,
+      },
+    );
+    if (!done) return;
+    const files = done.result;
 
-    const blocking = files.flatMap((file) => file.blocking);
+    const blocking = files.flatMap((file) => file.blockers);
     if (blocking.length > 0) {
       failures = blocking.map((message) => line('bad', message));
       showMessages();
@@ -480,7 +494,7 @@ async function runExport(): Promise<void> {
     showMessages();
     for (const file of files) {
       const name = `clayform-${state.family}-${file.id}.stl`;
-      download(name, encodeSTL(toMesh(file), { name: file.id }), 'model/stl');
+      download(name, encodeSTL(toMesh(file), { brand: 'ClayForm', name: file.id }), 'model/stl');
       // браузер глотает пачку одновременных загрузок — разносим по времени
       // oxlint-disable-next-line no-await-in-loop -- по одной нарочно
       await new Promise((resolve) => setTimeout(resolve, 250));
@@ -721,6 +735,7 @@ setupSheet({
   view: el('viewWrap', HTMLElement),
   narrow: matchMedia('(max-width: 1023px)'),
   open: true,
+  onInset: (px) => scene?.setInset(px),
 });
 
 // --- язык ---
