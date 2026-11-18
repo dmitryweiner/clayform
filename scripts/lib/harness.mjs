@@ -1,111 +1,23 @@
-// Общая обвязка браузерных скриптов: разбор флагов, поднятие vite-сервера,
-// сбор ошибок консоли. Правило репозитория — не плодить одноразовые скрипты,
-// а расширять эти (см. CLAUDE.md).
+// Обвязка браузерных скриптов — китовая (`maker-kit/harness`): разбор
+// флагов, свой vite на своих портах со --strictPort (перед `--preview` сам
+// пересобирает, занятый порт превью — ошибка), страницы со сбором ошибок
+// консоли, шаги и прогон. Здесь — только порты clayform. Правило
+// репозитория — не плодить одноразовые скрипты, а расширять эти (см.
+// CLAUDE.md).
+//
+// Браузер — Playwright по умолчанию либо из `PLAYWRIGHT_BROWSER` (путь к
+// исполняемому chromium): в облачном контейнере Playwright ищет не ту
+// сборку, что предустановлена.
 
-import { spawn } from 'node:child_process';
-import { chromium } from 'playwright';
+import { launch as kitLaunch } from 'maker-kit/harness';
 
-/** Разбирает `--flag value` / `--flag`; VALUE_FLAGS перечисляет флаги со значением. */
-export function parseArgs(argv, valueFlags = [], repeatableFlags = []) {
-  const values = new Set(valueFlags);
-  const repeatable = new Set(repeatableFlags);
-  const flags = new Map();
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (!arg.startsWith('--')) continue;
-    const name = arg.slice(2);
-    const value = values.has(name) || repeatable.has(name) ? argv[++i] : 'true';
-    if (repeatable.has(name)) {
-      const list = flags.get(name) ?? [];
-      list.push(value);
-      flags.set(name, list);
-    } else {
-      flags.set(name, value);
-    }
-  }
-  return flags;
-}
-
-export function baseUrl(preview) {
-  return `http://localhost:${preview ? 4173 : 5173}`;
-}
-
-async function serverUp(base) {
-  try {
-    return (await fetch(base)).ok;
-  } catch {
-    return false;
-  }
-}
-
-function run(cmd, args) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, args, { stdio: 'inherit' });
-    proc.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} → ${code}`))));
-  });
-}
-
-/** Поднимает dev/preview-сервер, если он ещё не слушает порт. */
-export async function ensureServer(preview) {
-  const base = baseUrl(preview);
-  if (await serverUp(base)) return { base, proc: null };
-  // vite preview раздаёт последнюю сборку; без пересборки смоук проверял бы
-  // код позапрошлой недели и падал на непонятном месте
-  if (preview) await run('npx', ['vite', 'build']);
-  const port = preview ? 4173 : 5173;
-  const cmd = preview ? ['vite', 'preview', '--port', String(port), '--strictPort'] : ['vite', '--port', String(port), '--strictPort'];
-  const proc = spawn('npx', cmd, { stdio: 'ignore' });
-  for (let i = 0; i < 40 && !(await serverUp(base)); i++) {
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  if (!(await serverUp(base))) {
-    console.error(`server did not start on :${port}`);
-    process.exit(1);
-  }
-  return { base, proc };
-}
+export { binaryStl, check, download, horizontalOverflow, offline, parseArgs, settled, throttle, VIEWPORTS } from 'maker-kit/harness';
 
 /**
- * Открывает страницу и начинает копить ошибки. `label(text)` помечает,
- * на каком шаге сценария они случились.
- *
- * `locale` — язык браузера: по нему приложение выбирает язык интерфейса.
- * По умолчанию русский — проверки смоука читают русский текст.
+ * Порты clayform — свои, со --strictPort: сервер другого проекта на
+ * 5173/4173 по ошибке не проверится (список занятых — в docs/harness.md кита).
  */
-export async function openApp({ preview = false, width = 1280, height = 860, locale = 'ru-RU' } = {}) {
-  const { base, proc } = await ensureServer(preview);
-  // В облачном контейнере Playwright ищет свою сборку chromium, а
-  // предустановлена другая — путь к ней даёт CLAYFORM_BROWSER. Пустая
-  // переменная — браузер Playwright по умолчанию.
-  const browser = await chromium.launch({ executablePath: process.env.CLAYFORM_BROWSER || undefined });
-  const page = await browser.newPage({ viewport: { width, height }, acceptDownloads: true, locale });
-  const errors = [];
-  let context = 'app';
-  let cdp = null;
-  page.on('pageerror', (e) => errors.push(`[${context}] ${String(e)}`));
-  page.on('console', (m) => {
-    if (m.type() === 'error') errors.push(`[${context}] ${m.text()}`);
-  });
-  await page.goto(base, { waitUntil: 'load' });
-  return {
-    page,
-    browser,
-    base,
-    errors,
-    label: (text) => {
-      context = text;
-    },
-    /**
-     * Замедляет CPU страницы в `rate` раз (1 — снять). На M1 многое
-     * успевает раньше, чем его можно увидеть, — например полоса прогресса.
-     */
-    async throttle(rate) {
-      cdp ??= await page.context().newCDPSession(page);
-      await cdp.send('Emulation.setCPUThrottlingRate', { rate });
-    },
-    async close() {
-      await browser.close();
-      proc?.kill();
-    },
-  };
-}
+export const PORTS = { dev: 5281, preview: 4281 };
+
+/** `launch` кита на портах clayform. */
+export const launch = ({ preview = false } = {}) => kitLaunch({ preview, ports: PORTS });
