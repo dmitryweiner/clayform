@@ -16,6 +16,7 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
+    "maker-kit": "github:dmitryweiner/maker-kit#v0.5.1",
     "manifold-3d": "^3.5.5",
     "three": "^0.178.0"
   },

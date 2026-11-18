@@ -1,7 +1,10 @@
-// Сообщения ядра и воркера пользователю — кодом и параметрами, а не фразой.
-// Ядро не знает языка (и воркер тоже: язык может смениться посреди задачи),
-// текст из кода делает интерфейс (`tm` в src/i18n). Каждый код обязан быть
-// ключом словаря — это проверяет tsc в самом `tm`.
+// Сообщения ядра и воркера пользователю — кодом и параметрами, а не фразой
+// (`Message` кита, `maker-kit/core/message`). Ядро не знает языка (и воркер
+// тоже: язык может смениться посреди задачи), текст из кода делает интерфейс
+// (`tm` в src/i18n). Каждый код обязан быть ключом словаря — это проверяет
+// tsc в самом `tm`.
+
+import type { Message as KitMessage } from 'maker-kit/core/message';
 
 export type MessageCode =
   // клеймо на дне (mark)
@@ -21,7 +24,4 @@ export type MessageCode =
   | 'progress.lid'
   | 'progress.checkMeshes';
 
-export interface Message {
-  code: MessageCode;
-  params?: Readonly<Record<string, string | number>>;
-}
+export type Message = KitMessage<MessageCode>;

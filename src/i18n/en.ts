@@ -5,9 +5,11 @@
 // Templates: `{name}` is a parameter, `{n|form|form}` picks a word by the
 // number n in Intl.PluralRules order one/other.
 
+import { kitEn } from 'maker-kit/i18n/index';
 import type { ru } from './ru';
 
 export const en: Record<keyof typeof ru, string> = {
+  ...kitEn,
   // --- page and top bar ---
   'app.title': 'ClayForm — pottery and slip-casting molds for 3D printing',
   'lang.switch': 'RU',
@@ -306,9 +308,6 @@ export const en: Record<keyof typeof ru, string> = {
   'warn.overhang': 'Overhangs steeper than 60° over {pct} % of the surface — printing in clay will need supports.',
   'error.vessel': 'Could not build the piece: {error}',
   'error.export': 'Build failed: {error}',
-  'error.notPreset': '“{name}” is not a ClayForm preset.',
-  'error.presetSave': 'Could not save the preset: the browser denied access to storage.',
-  'error.presetDelete': 'Could not delete the preset: the browser denied access to storage.',
 
   // --- core messages (geo/message.ts) ---
   'mark.tooLong': 'The mark text is longer than the circle — letters shrunk to {pct} %.',
@@ -338,7 +337,7 @@ export const en: Record<keyof typeof ru, string> = {
   'presets.delete.aria': 'Delete {name}',
   'presets.delete.confirm': 'Delete?',
   'presets.prompt': 'Preset name',
-  'presets.auto': 'Piece {n}',
+  'presets.auto': 'Piece',
 
   'preset.pot': 'Pot',
   'preset.pot.note': 'Russian oven pot',

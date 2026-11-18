@@ -44,9 +44,11 @@ import { defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSp
 import { PRESETS, presetById } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
 import { encodePresetFile, decodePresetFile, presetFileName } from './state/presetFile';
-import type { UserPreset } from './state/userPresets';
-import { loadUserPresets, saveUserPresets, nextPresetNumber } from './state/userPresets';
-import { History } from './state/history';
+import type { ClayPreset } from './state/userPresets';
+import { savePresetAs, userPresetsRecord } from './state/userPresets';
+import { History } from 'maker-kit/core/history';
+import { browserStorage, loadRecord, saveRecord } from 'maker-kit/core/storage';
+import { nextPresetName, removeUserPreset } from 'maker-kit/core/presets';
 import type { JobPart } from './worker/protocol';
 import { CsgClient } from './worker/client';
 
@@ -73,6 +75,8 @@ const BESIDE_GAP_MM = LID_BESIDE_GAP_MM;
  * от края до края — это одно действие пользователя, а не двести.
  */
 const HISTORY_DELAY_MS = 500;
+/** Сколько шагов помнит отмена. */
+const HISTORY_LIMIT = 80;
 /**
  * Ниже этой доли высоты кончик носика уже мешает: изделие наполняется только
  * до него, и пятая часть высоты пропадает впустую. Чуть ниже венчика кончик
@@ -118,8 +122,8 @@ const progress = createProgress({
 
 const scene = createScene(view);
 const csg = new CsgClient();
-const history = new History<AppState>(startingState());
-let state: AppState = history.value;
+const history = new History<AppState>(startingState(), HISTORY_LIMIT);
+let state: AppState = history.state;
 
 /** Ссылка со состоянием важнее дефолта: по ней и открывают чужую работу. */
 function startingState(): AppState {
@@ -189,8 +193,8 @@ function applyState(next: AppState, record = true): void {
   // требует пересоздать строки, а не просто обновить значения
   const familyChanged = next.family !== state.family;
   state = sanitizeState(next);
+  // без записи — только состояние, которое история уже держит (отмена, старт)
   if (record) rememberLater(state);
-  else history.replace(state);
   if (familyChanged) {
     picker.setActive(state.family);
     paramRows = renderShapeParams();
@@ -212,10 +216,13 @@ function syncPanel(): void {
 
 let historyTimer: ReturnType<typeof setTimeout> | null = null;
 
+/** Кадр жеста — сразу в историю, шагом он становится после паузы. */
 function rememberLater(next: AppState): void {
+  history.live(next);
   if (historyTimer) clearTimeout(historyTimer);
   historyTimer = setTimeout(() => {
-    history.push(next);
+    historyTimer = null;
+    history.commit(next);
     updateHistoryButtons();
   }, HISTORY_DELAY_MS);
 }
@@ -499,11 +506,12 @@ function download(data: BlobPart, filename: string, type = 'model/stl'): void {
 
 // --- пресеты ---
 
-let userPresets: UserPreset[] = loadUserPresets();
+const storage = browserStorage();
+let userPresets: ClayPreset[] = loadRecord(storage, userPresetsRecord) ?? [];
 /** Имя последнего открытого пресета — подсказка имени при сохранении в файл. */
 let presetName = '';
 
-/** Какой пресет открыт: 'b:<id>', 'u:<имя>' или пусто — его подсвечивает список. */
+/** Какой пресет открыт: 'b:<id>', 'u:<id>' или пусто — его подсвечивает список. */
 let presetRef = '';
 
 /** Имя встроенного пресета — на текущем языке. */
@@ -513,7 +521,7 @@ function builtinName(id: string): string {
 
 function presetRows(): PresetRow[] {
   return [
-    ...userPresets.map((preset) => ({ ref: `u:${preset.name}`, name: preset.name, mine: true })),
+    ...userPresets.map((preset) => ({ ref: `u:${preset.id}`, name: preset.name, mine: true })),
     ...PRESETS.map((preset) => ({
       ref: `b:${preset.id}`,
       name: builtinName(preset.id),
@@ -533,7 +541,7 @@ function setPresetRef(ref: string, name: string): void {
 
 /** Автоимя «Изделие N» / «Piece N»: номер общий для всех языков. */
 function autoPresetName(): string {
-  return t('presets.auto', { n: nextPresetNumber(userPresets, autoPresetPrefixes()) });
+  return nextPresetName(userPresets, autoPresetPrefixes(), t('presets.auto'));
 }
 
 function renderPresets(): void {
@@ -551,25 +559,24 @@ function closePresets(): void {
 
 function openPreset(ref: string): void {
   closePresets();
-  const name = ref.slice(2);
+  const id = ref.slice(2);
   if (ref.startsWith('b:')) {
-    const preset = presetById(name);
+    const preset = presetById(id);
     if (!preset) return;
     applyState(preset.build());
-    setPresetRef(ref, builtinName(name));
+    setPresetRef(ref, builtinName(id));
   } else {
-    const preset = userPresets.find((item) => item.name === name);
+    const preset = userPresets.find((item) => item.id === id);
     if (!preset) return;
     applyState(preset.state);
-    setPresetRef(ref, name);
+    setPresetRef(ref, preset.name);
   }
 }
 
 function deletePreset(ref: string): void {
-  const name = ref.slice(2);
-  const next = userPresets.filter((item) => item.name !== name);
-  if (!saveUserPresets(next)) {
-    blockersEl.textContent = t('error.presetDelete');
+  const next = removeUserPreset(userPresets, ref.slice(2));
+  if (saveRecord(storage, userPresetsRecord, next) !== 'ok') {
+    blockersEl.textContent = t('kit.storage.preset.delete');
     return;
   }
   userPresets = next;
@@ -628,8 +635,8 @@ document.addEventListener('drop', (event) => {
  */
 async function openPresetFile(file: File): Promise<void> {
   const decoded = decodePresetFile(await file.text().catch(() => ''));
-  if (!decoded) {
-    blockersEl.textContent = t('error.notPreset', { name: file.name });
+  if (!decoded.ok) {
+    blockersEl.textContent = t(`kit.file.${decoded.reason}` as const);
     return;
   }
   applyState(decoded.state);
@@ -642,12 +649,15 @@ saveBtn.addEventListener('click', () => {
   const suggested = autoPresetName();
   const name = prompt(t('presets.prompt'), suggested)?.trim();
   if (!name) return;
-  userPresets = [...userPresets.filter((item) => item.name !== name), { name, state }];
-  if (saveUserPresets(userPresets)) {
-    setPresetRef(`u:${name}`, name);
+  // Список меняется и при неудачной записи: до перезагрузки пресет есть.
+  const saved = savePresetAs(userPresets, name, state);
+  userPresets = saved.list;
+  const write = saveRecord(storage, userPresetsRecord, userPresets);
+  if (write === 'ok') {
+    setPresetRef(`u:${saved.id}`, name);
     flash(saveBtn, '✓');
   } else {
-    blockersEl.textContent = t('error.presetSave');
+    blockersEl.textContent = t(write === 'full' ? 'kit.storage.preset.saveFull' : 'kit.storage.preset.save');
   }
 });
 
@@ -676,11 +686,12 @@ undoBtn.addEventListener('click', () => stepHistory('undo'));
 redoBtn.addEventListener('click', () => stepHistory('redo'));
 
 function stepHistory(direction: 'undo' | 'redo'): void {
-  // ждущая запись сначала фиксируется, иначе отмена вернула бы туда же
+  // Ждущий жест сначала становится шагом: отмена снимает его целиком, а
+  // повтор возвращает (история кита отменила бы его без повтора).
   if (historyTimer) {
     clearTimeout(historyTimer);
     historyTimer = null;
-    history.push(state);
+    history.commit(state);
   }
   const restored = direction === 'undo' ? history.undo() : history.redo();
   if (restored) applyState(restored, false);
