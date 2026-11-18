@@ -217,6 +217,15 @@ export const PRESETS: Preset[] = [
   ),
 ];
 
+/**
+ * Чем изделие отличается от пресета: всё, кроме того, как его выгружают, —
+ * детализации и «крышки рядом». Изменённое только этим, оно всё ещё пресет
+ * (`presetStatus` кита).
+ */
+export function presetSignature(state: AppState): string {
+  return JSON.stringify({ ...state, resolution: 0, lidBeside: false });
+}
+
 export function presetById(id: string): Preset | null {
   return PRESETS.find((preset) => preset.id === id) ?? null;
 }

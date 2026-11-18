@@ -1,112 +1,170 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
-    <meta name="theme-color" content="#17130f" />
+    <!-- the panel's colour: our --panel over the kit's tokens -->
+    <meta name="theme-color" content="#211b16" />
     <title>ClayForm — pottery and slip-casting molds for 3D printing</title>
   </head>
-  <body>
-    <div id="app">
-      <header id="topbar">
-        <span id="brand">ClayForm</span>
+  <body class="kit-app">
+    <header id="topbar" class="topbar">
+      <span id="brand" class="brand">ClayForm</span>
+      <button
+        id="presetBtn"
+        type="button"
+        class="preset-button"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        data-i18n="kit.topbar.presets"
+        data-i18n-title="topbar.presets.title"
+        title="Built-in and saved presets"
+      >
+        Presets
+      </button>
+      <span class="spacer"></span>
+      <!-- a phone breaks the bar here: the brand and the language above, the preset and the tools below -->
+      <span class="topbar-break"></span>
+      <div class="topbar-tools">
         <button
-          id="presetBtn"
-          class="tb-btn preset-btn"
-          data-i18n="topbar.presets"
-          data-i18n-title="topbar.presets.title"
-          title="Built-in and saved presets"
+          id="saveBtn"
+          type="button"
+          class="tool-button"
+          title="Save as a preset"
+          aria-label="Save as a preset"
+          data-i18n-title="kit.topbar.savePreset"
+          data-i18n-aria="kit.topbar.savePreset"
         >
-          Presets…
+          💾
         </button>
-        <button id="saveBtn" class="tb-btn" data-i18n-title="topbar.save.title" title="Save as a preset">💾</button>
         <button
           id="fileOpenBtn"
-          class="tb-btn"
-          data-i18n-title="topbar.fileOpen.title"
+          type="button"
+          class="tool-button"
           title="Open a preset file (or drop the file onto the window)"
+          aria-label="Open a project file"
+          data-i18n-title="topbar.fileOpen.title"
+          data-i18n-aria="kit.topbar.open"
         >
           📂
         </button>
-        <button id="fileSaveBtn" class="tb-btn" data-i18n-title="topbar.fileSave.title" title="Save the preset to a file">⬇️</button>
-        <input type="file" id="fileInput" accept=".json,application/json" hidden />
-        <button id="shareBtn" class="tb-btn" data-i18n-title="topbar.share.title" title="Copy link">🔗</button>
-        <button id="undoBtn" class="tb-btn" data-i18n-title="topbar.undo.title" title="Undo (Ctrl/Cmd+Z)" disabled>↩️</button>
-        <button id="redoBtn" class="tb-btn" data-i18n-title="topbar.redo.title" title="Redo (Ctrl/Cmd+Shift+Z)" disabled>↪️</button>
-        <span class="tb-spacer"></span>
-        <button id="panelBtn" class="tb-btn" data-i18n="topbar.panel" data-i18n-title="topbar.panel.title" title="Settings" hidden>
-          ⚙ Settings
+        <button
+          id="fileSaveBtn"
+          type="button"
+          class="tool-button"
+          title="Save the project to a file"
+          aria-label="Save the project to a file"
+          data-i18n-title="kit.topbar.save"
+          data-i18n-aria="kit.topbar.save"
+        >
+          ⬇️
         </button>
-        <button id="langBtn" class="tb-btn lang-btn" data-i18n="lang.switch" data-i18n-title="lang.switch.title">RU</button>
-      </header>
-      <div id="content">
-        <div id="panelBackdrop"></div>
-        <aside id="panel" class="open">
-          <section class="card">
-            <h2 data-i18n="panel.shape">Shape</h2>
-            <div id="familyGrid" class="family-grid"></div>
-            <div id="shapeParams"></div>
-            <canvas id="profileGraph"></canvas>
-          </section>
+        <button
+          id="shareBtn"
+          type="button"
+          class="tool-button"
+          title="Copy link"
+          aria-label="Copy link"
+          data-i18n-title="topbar.share.title"
+          data-i18n-aria="topbar.share.title"
+        >
+          🔗
+        </button>
+        <button
+          id="undoBtn"
+          type="button"
+          class="tool-button"
+          title="Undo (Ctrl+Z)"
+          aria-label="Undo (Ctrl+Z)"
+          data-i18n-title="kit.topbar.undo"
+          data-i18n-aria="kit.topbar.undo"
+          disabled
+        >
+          ↶
+        </button>
+        <button
+          id="redoBtn"
+          type="button"
+          class="tool-button"
+          title="Redo (Ctrl+Shift+Z)"
+          aria-label="Redo (Ctrl+Shift+Z)"
+          data-i18n-title="kit.topbar.redo"
+          data-i18n-aria="kit.topbar.redo"
+          disabled
+        >
+          ↷
+        </button>
+      </div>
+      <input type="file" id="fileInput" accept=".json,application/json" hidden />
+      <!-- the language picker (maker-kit's ui/languagePicker) is appended here -->
+    </header>
+    <!-- what browser storage failed to keep (maker-kit's ui/banner) -->
+    <div id="storageNote" class="banner" hidden></div>
+    <!-- the view fills it; the panel is a sheet over it on a phone, beside it from 1024 px on the start side -->
+    <div id="content" class="workspace">
+      <main id="viewWrap" class="view">
+        <canvas id="view"></canvas>
+        <!-- the bar over the view (maker-kit's ui/progress) -->
+        <div id="progressWrap" class="view-progress" hidden></div>
+        <!-- a phone: the panel is a sheet over the view, this opens it (maker-kit's ui/sheet) -->
+        <button id="sheetOpen" type="button" class="sheet-open" aria-controls="panel" data-i18n="kit.sheet.open">Settings</button>
+      </main>
+      <aside id="panel" class="panel">
+        <button
+          id="sheetClose"
+          type="button"
+          class="sheet-handle"
+          title="Close the settings"
+          aria-label="Close the settings"
+          data-i18n-title="kit.sheet.close"
+          data-i18n-aria="kit.sheet.close"
+        ></button>
+        <section class="card">
+          <h2 data-i18n="panel.shape">Shape</h2>
+          <div id="familyGrid" class="family-grid"></div>
+          <div id="shapeParams"></div>
+          <canvas id="profileGraph"></canvas>
+        </section>
 
-          <h3 class="group-title" data-i18n="panel.relief">Relief</h3>
-          <div id="reliefCards"></div>
+        <h3 class="group-title" data-i18n="panel.relief">Relief</h3>
+        <div id="reliefCards"></div>
 
-          <h3 class="group-title" data-i18n="panel.attach">Handle, spout, lid</h3>
-          <div id="attachCards"></div>
+        <h3 class="group-title" data-i18n="panel.attach">Handle, spout, lid</h3>
+        <div id="attachCards"></div>
 
-          <h3 class="group-title" data-i18n="panel.export">STL export</h3>
-          <section class="card">
-            <div id="exportParams"></div>
-            <ul id="partList" class="part-list"></ul>
-            <button id="exportBtn" class="tb-btn primary" style="width: 100%" data-i18n="export.button.vessel">Export STL</button>
-            <p class="cast-note">
-              <span data-i18n="export.cast">Molds, pour boxes and slump molds are built in</span>
-              <a id="castLink" href="https://dmitryweiner.github.io/cast-builder/" target="_blank" rel="noopener">Cast Builder</a
-              ><span data-i18n="export.cast.tail">: export the piece and open the file there, the lid as a separate file.</span>
-            </p>
-          </section>
-
-          <label class="row">
-            <span data-i18n="panel.resolution">Resolution</span>
-            <select id="resolution">
-              <option value="128">128 × 128</option>
-              <option value="192" selected>192 × 192</option>
-              <option value="256">256 × 256</option>
-              <option value="384">384 × 384</option>
-            </select>
-          </label>
-
+        <section class="card" id="exportCard">
+          <h2 data-i18n="panel.export">STL export</h2>
+          <div id="exportParams"></div>
+          <ul id="partList" class="part-list"></ul>
+          <button id="exportBtn" type="button" class="btn primary wide" data-i18n="export.button.vessel">Export STL</button>
+          <p class="cast-note">
+            <span data-i18n="export.cast">Molds, pour boxes and slump molds are built in</span>
+            <a id="castLink" href="https://dmitryweiner.github.io/cast-builder/" target="_blank" rel="noopener">Cast Builder</a
+            ><span data-i18n="export.cast.tail">: export the piece and open the file there, the lid as a separate file.</span>
+          </p>
           <p id="status"></p>
           <p id="audit"></p>
-          <p id="warnings"></p>
-          <p id="blockers" class="blockers"></p>
-        </aside>
-        <main id="viewWrap">
-          <canvas id="view"></canvas>
-          <div id="presets" hidden>
-            <div id="presetsBox" role="dialog" aria-labelledby="presetsTitle">
-              <button
-                id="presetsClose"
-                class="panel-close"
-                type="button"
-                data-i18n-title="presets.close.title"
-                data-i18n-aria="presets.close"
-                title="Close (Esc)"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-              <h2 id="presetsTitle" data-i18n="presets.title">Presets</h2>
-              <div id="presetList"></div>
-            </div>
-          </div>
-          <div id="progressWrap" hidden>
-            <div id="progressBar"><div id="progressFill"></div></div>
-            <span id="progressLabel"></span>
-          </div>
-        </main>
+          <!-- blockers first, then warnings (maker-kit's ui/messageList) -->
+          <ul id="messages" class="messages" hidden></ul>
+        </section>
+      </aside>
+    </div>
+    <div id="presets" class="modal" hidden>
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="presetsTitle">
+        <h2 id="presetsTitle" data-i18n="presets.title">Presets</h2>
+        <button
+          id="presetsClose"
+          class="icon-button modal-close"
+          type="button"
+          data-i18n-title="kit.modal.close"
+          data-i18n-aria="kit.modal.close"
+          title="Close"
+          aria-label="Close"
+        >
+          ✕
+        </button>
+        <div class="modal-body"><div id="presetList"></div></div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

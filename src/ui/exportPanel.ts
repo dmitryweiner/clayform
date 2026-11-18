@@ -5,6 +5,7 @@
 import type { HollowState } from '../geo/hollow';
 import { WALL_MIN_MM, WALL_MAX_MM, BASE_MIN_MM, BASE_MAX_MM, RIM_MAX_MM } from '../geo/hollow';
 import type { AppState } from '../state/schema';
+import { RESOLUTIONS } from '../state/schema';
 import { make } from 'maker-kit/ui/dom';
 import type { Change, Control } from './controls';
 import { renderControls } from './controls';
@@ -46,6 +47,14 @@ const HOLLOW_CONTROLS: Control<HollowState>[] = [
 
 /** Над всем состоянием: «Крышка рядом» зависит от того, включена ли крышка. */
 const PIECE_CONTROLS: Control<AppState>[] = [
+  {
+    kind: 'select',
+    key: 'resolution',
+    label: 'panel.resolution',
+    options: RESOLUTIONS.map((value) => ({ value: String(value), text: `${value} × ${value}` })),
+    get: (s) => String(s.resolution),
+    set: (s, v) => ({ ...s, resolution: Number(v) }),
+  },
   {
     kind: 'check',
     key: 'lidBeside',
