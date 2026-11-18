@@ -60,7 +60,7 @@ for (let i = 0; i < families.length; i++) {
   const verdict = await auditVerdict(page);
   if (!verdict.includes('замкнуто ✓')) errors.push(`[family:${name}] audit="${verdict}"`);
 
-  const blockers = await page.locator('#blockers').textContent();
+  const blockers = await messages('bad');
   if (blockers.trim()) errors.push(`[family:${name}] blockers="${blockers}"`);
 
   const sliders = await page.locator('#shapeParams input[type=range]').count();
@@ -177,7 +177,7 @@ label('roulette-image');
 await page.selectOption('#roul0_pattern', 'image');
 await page.setInputFiles('#roul0_image', 'tests/fixtures/ornament.png');
 await page
-  .waitForFunction(() => (document.querySelector('#card_roulette .band-box .fcard-desc')?.textContent ?? '').includes('по ⌀'), {
+  .waitForFunction(() => (document.querySelector('#card_roulette .band-note')?.textContent ?? '').includes('по ⌀'), {
     timeout: 5000,
   })
   .catch(() => errors.push('[image] картинка не легла на полосу'));
@@ -208,11 +208,11 @@ label('roulette-bands');
 await page.fill('#roul0_gap', '8');
 if (!(await auditVerdict(page)).includes('замкнуто ✓')) errors.push('[gap] меш разошёлся');
 
-const addBand = page.locator('#card_roulette .fcard-body button', { hasText: 'Полоса' });
+const addBand = page.locator('#card_roulette .add-button');
 for (let i = 1; i < 4; i++) {
   await addBand.click();
   await page.waitForTimeout(120);
-  const boxes = await page.locator('#card_roulette .band-box').count();
+  const boxes = await page.locator('#card_roulette .item-row').count();
   if (boxes !== i + 1) errors.push(`[bands] полос ${boxes}, ожидалось ${i + 1}`);
   await page.selectOption(`#roul${i}_pattern`, i === 1 ? 'meander' : 'band');
   const verdict = await auditVerdict(page);
@@ -224,17 +224,17 @@ if (shotsDir) await page.screenshot({ path: `${shotsDir}/roulette-bands.png` });
 
 // удаление возвращает список к одной полосе
 for (let i = 3; i >= 1; i--) {
-  await page.locator('#card_roulette .band-del').last().click();
+  await page.locator('#card_roulette .item-row [id$="_remove"]').last().click();
   await page.waitForTimeout(100);
 }
-const left = await page.locator('#card_roulette .band-box').count();
+const left = await page.locator('#card_roulette .item-row').count();
 if (left !== 1) errors.push(`[bands] после удаления осталось ${left}, ожидалась 1`);
 await page.fill('#roul0_gap', '0');
 
 // каждый встроенный пресет открывается и строится
 label('presets');
 await page.click('#presetBtn');
-const presetValues = await page.$$eval('#presetList [data-preset^="b:"]', (nodes) => nodes.map((n) => n.dataset.preset));
+const presetValues = await page.$$eval('#presetList [data-ref^="b:"]', (nodes) => nodes.map((n) => n.dataset.ref));
 await page.click('#presetsClose');
 if (presetValues.length < 10) errors.push(`[presets] пресетов ${presetValues.length}, ожидалось ≥10`);
 for (const value of presetValues) {
@@ -243,12 +243,12 @@ for (const value of presetValues) {
   await page.waitForTimeout(120);
   const verdict = await auditVerdict(page);
   if (!verdict.includes('замкнуто ✓')) errors.push(`[${value}] audit="${verdict}"`);
-  const blockers = (await page.locator('#blockers').textContent()).trim();
+  const blockers = await messages('bad');
   if (blockers) errors.push(`[${value}] blockers="${blockers}"`);
   // Предупреждения о свесах законны: тарелку с почти горизонтальной стенкой
   // глиной без опор и правда не напечатать, а отливается она прекрасно.
   // А вот поднутрения — брак пресета: форма его не отпустит.
-  const warnings = (await page.locator('#warnings').textContent()).trim();
+  const warnings = await messages('warn');
   if (warnings.includes('Поднутрения')) errors.push(`[${value}] warnings="${warnings}"`);
 }
 
@@ -299,18 +299,22 @@ const savedName = (await page.locator('#presetBtn').textContent()).trim();
 if (!/^Изделие \d+$/.test(savedName)) errors.push(`[preset-delete] автоимя "${savedName}"`);
 await page.click('#presetBtn');
 // свой пресет узнаётся по id (`u:u3`), а не по имени: ищем строку с его именем
-const savedRow = page.locator('#presetList [data-preset^="u:"]').filter({ hasText: new RegExp(`^${savedName}$`) });
-const savedRef = (await savedRow.count()) ? await savedRow.first().getAttribute('data-preset') : `u:?`;
-if (!(await page.locator(`#presetList [data-preset="${savedRef}"]`).count())) {
+// своя строка — поле с именем (переименование на месте): ищем по значению поля
+const savedRef = await page.$$eval(
+  '#presetList [data-ref^="u:"]',
+  (rows, name) => rows.find((row) => row.querySelector('input')?.value === name)?.dataset.ref ?? 'u:?',
+  savedName,
+);
+if (!(await page.locator(`#presetList [data-ref="${savedRef}"]`).count())) {
   errors.push('[preset-delete] сохранённого пресета нет в списке');
 }
 const statusBeforeDelete = await page.locator('#status').textContent();
-await page.click(`#presetList [data-del="${savedRef}"]`);
-if ((await page.locator(`#presetList [data-preset="${savedRef}"]`).count()) !== 1) {
+await page.click(`#presetList [data-ref="${savedRef}"] .preset-delete`);
+if ((await page.locator(`#presetList [data-ref="${savedRef}"]`).count()) !== 1) {
   errors.push('[preset-delete] пресет удалился с первого касания');
 }
-await page.click(`#presetList [data-del="${savedRef}"]`);
-if (await page.locator(`#presetList [data-preset="${savedRef}"]`).count()) {
+await page.click(`#presetList [data-ref="${savedRef}"] .preset-delete`);
+if (await page.locator(`#presetList [data-ref="${savedRef}"]`).count()) {
   errors.push('[preset-delete] пресет не удалился со второго касания');
 }
 await page.keyboard.press('Escape');
@@ -468,7 +472,7 @@ for (const value of ['0.8', '0.4']) {
   const verdict = await auditVerdict(page);
   if (!verdict.includes('замкнуто ✓')) errors.push(`[lid:knobFlat=${value}] audit="${verdict}"`);
 }
-await page.locator('#card_lid button', { hasText: 'Полоса' }).click();
+await page.locator('#card_lid .add-button').click();
 await page.waitForTimeout(150);
 for (const pattern of ['meander', 'dots', 'rope']) {
   await page.selectOption('#lidroul0_pattern', pattern);
@@ -483,7 +487,7 @@ if (!lidWaveVerdict.includes('замкнуто ✓')) errors.push(`[lid-wave] au
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-relief.png` });
 await page.uncheck('#wave_onLid');
 await setOn('wave', false);
-await page.locator('#card_lid .band-del').click();
+await page.click('#lidroul_0_remove');
 
 // толщина диска нужна только букве Т — у шара её ползунок ни на что не влияет
 if (await page.locator('#lid_capH').isVisible()) {
@@ -629,7 +633,9 @@ await expectDownloads(1, 'mark');
 await page.fill('#mark_size', '15');
 await page.fill('#mark_text', 'Очень длинная строка клейма, которая по кругу никак не влезет');
 try {
-  await page.waitForFunction(() => (document.querySelector('#warnings')?.textContent ?? '').includes('ужат'), { timeout: 10000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('#messages .message.warn')].some((n) => n.textContent.includes('ужат')), {
+    timeout: 10000,
+  });
 } catch {
   errors.push('[mark] нет предупреждения о длинной строке');
 }
@@ -643,19 +649,19 @@ await page.waitForTimeout(150);
 /** Видимый текст приложения, где кириллица — непереведённое. Имена своих пресетов не в счёт. */
 async function cyrillicLeft(target) {
   return target.evaluate(() => {
-    const own = new Set([...document.querySelectorAll('#presetList [data-preset^="u:"]')].map((n) => n.textContent));
+    const own = new Set([...document.querySelectorAll('#presetList [data-ref^="u:"] input')].map((n) => n.value));
     const texts = [document.title];
-    const walk = document.createTreeWalker(document.querySelector('#app'), NodeFilter.SHOW_TEXT);
+    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     while (walk.nextNode()) {
       const node = walk.currentNode;
       const text = node.textContent.trim();
       // скрытые строки тоже должны быть переведены — пользователь их откроет
       if (text && !own.has(text) && node.parentElement?.id !== 'presetBtn') texts.push(text);
     }
-    for (const node of document.querySelectorAll('#app [title], #app [aria-label]')) {
+    for (const node of document.querySelectorAll('body [title], body [aria-label]')) {
       texts.push(node.getAttribute('title') ?? '', node.getAttribute('aria-label') ?? '');
     }
-    for (const node of document.querySelectorAll('#app option')) texts.push(node.textContent);
+    for (const node of document.querySelectorAll('body option')) texts.push(node.textContent);
     return texts.filter((text) => /[А-Яа-яЁё]/.test(text) && text !== 'Русский');
   });
 }
@@ -666,8 +672,8 @@ async function checkLanguage() {
   // спрятаться.
   await page.locator('#familyGrid .family-btn').nth(0).click();
   for (const id of ['wave', 'wave2', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, true);
-  await page.locator('#card_roulette .fcard-body button', { hasText: 'Полоса' }).click();
-  await page.locator('#card_lid .fcard-body button', { hasText: 'Полоса' }).click();
+  await page.locator('#card_roulette .add-button').click();
+  await page.locator('#card_lid .add-button').click();
   await page.waitForTimeout(900);
   // выключенная, но раскрытая: карточка кита под рукой не сворачивается
   await setOn('wave2', false);
@@ -678,10 +684,10 @@ async function checkLanguage() {
   const wave2Open = !(await page.locator('#card_wave2').getAttribute('class')).includes('collapsed');
   if (!wave2Open) errors.push('[lang] не удалось раскрыть выключенную карточку');
 
-  await page.click('#langBtn');
+  await page.selectOption('.lang-field select', 'en');
   await page.waitForTimeout(300);
   if ((await page.evaluate(() => document.documentElement.lang)) !== 'en') errors.push('[lang] <html lang> не en');
-  if ((await page.locator('#langBtn').textContent()).trim() !== 'RU') errors.push('[lang] на кнопке не «RU»');
+  if ((await page.locator('.lang-field select').inputValue()) !== 'en') errors.push('[lang] в 🌐 выбран не English');
   if (!(await auditVerdict(page)).includes('watertight ✓')) errors.push('[lang] вердикт меша не по-английски');
   if (digits(await page.locator('#status').textContent()) !== statusBefore) {
     errors.push('[lang] смена языка поменяла изделие');
@@ -702,7 +708,7 @@ async function checkLanguage() {
   if ((await page.evaluate(() => document.documentElement.lang)) !== 'en') {
     errors.push('[lang] после перезагрузки язык не сохранился');
   }
-  await page.click('#langBtn');
+  await page.selectOption('.lang-field select', 'ru');
   await page.waitForTimeout(300);
   if ((await page.evaluate(() => document.documentElement.lang)) !== 'ru') errors.push('[lang] обратно на ru не вышло');
   if (!(await auditVerdict(page)).includes('замкнуто ✓')) errors.push('[lang] вердикт меша не по-русски');
@@ -730,10 +736,17 @@ async function setOn(id, on) {
   await page.setChecked(`#${id}_on`, on);
 }
 
+/** Строки списка сообщений кита одной важности (`bad` — блокировки, `warn`) одним текстом. */
+async function messages(severity) {
+  return (await page.locator(`#messages .message.${severity}`).allTextContents()).join('\n').trim();
+}
+
 /** Открывает список пресетов и выбирает строку по её ref ('b:teapot', 'u:…'). */
 async function pickPreset(ref) {
   await page.click('#presetBtn');
-  await page.click(`#presetList [data-preset="${ref}"]`);
+  // встроенный открывается строкой, свой — ↗ (его имя — поле переименования)
+  const row = `#presetList [data-ref="${ref}"]`;
+  await page.click(ref.startsWith('u:') ? `${row} .preset-open` : `${row} .preset-pick`);
 }
 
 /**
@@ -771,7 +784,7 @@ async function expectDownloads(count, tag, watchProgress = false) {
   // Пресеты сбрасывают детализацию к своей, поэтому ставим её перед каждым
   // экспортом, а не один раз на весь прогон.
   if (resolution) {
-    await page.selectOption('#resolution', resolution);
+    await page.selectOption('#print_resolution', resolution);
     await page.waitForTimeout(200);
   }
   const seen = [];
@@ -827,13 +840,14 @@ await page.waitForTimeout(400);
 /** Виден ли лист: после закрытия он уезжает за нижний край окна. */
 const sheetUp = async () => ((await page.locator('#panel').boundingBox())?.y ?? 800) < 790;
 if (!(await sheetUp())) errors.push('[mobile] панель при загрузке не показана');
-if (await page.locator('#panelBtn').isVisible()) errors.push('[mobile] кнопка «Настройки» видна при открытой панели');
-await page.locator('#panelBackdrop').click({ position: { x: 195, y: 60 } });
+if (await page.locator('#sheetOpen').isVisible()) errors.push('[mobile] кнопка «Настройки» видна при открытой панели');
+// тап по открытой части вида закрывает лист кита
+await page.locator('#viewWrap').click({ position: { x: 195, y: 60 } });
 await page.waitForTimeout(400);
 if (await sheetUp()) errors.push('[mobile] тап по канвасу не спрятал панель');
-if (!(await page.locator('#panelBtn').isVisible())) errors.push('[mobile] кнопка «Настройки» не появилась');
+if (!(await page.locator('#sheetOpen').isVisible())) errors.push('[mobile] кнопка «Настройки» не появилась');
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/mobile-closed.png` });
-await page.click('#panelBtn');
+await page.click('#sheetOpen');
 await page.waitForTimeout(400);
 if (!(await sheetUp())) errors.push('[mobile] «Настройки» не вернули панель');
 

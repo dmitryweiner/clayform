@@ -86,7 +86,7 @@ const preset = flags.get('preset');
 if (preset) {
   label(`preset:${preset}`);
   await page.click('#presetBtn');
-  await page.click(`#presetList [data-preset="b:${preset}"]`);
+  await page.click(`#presetList [data-ref="b:${preset}"] .preset-pick`);
   await page.waitForTimeout(300);
 }
 
@@ -162,8 +162,10 @@ if (clip) {
 
 const status = await page.locator('#status').textContent();
 const audit = (await page.locator('#audit').textContent()).trim();
-const warnings = (await page.locator('#warnings').textContent()).trim();
-const blockers = (await page.locator('#blockers').textContent()).trim();
+// список сообщений кита: строка на сообщение, блокировки — `.bad`
+const lines = (severity) => page.locator(`#messages .message.${severity}`).allTextContents();
+const warnings = (await lines('warn')).join('\n');
+const blockers = (await lines('bad')).join('\n');
 await app.close();
 
 console.log(`snap → ${out}`);
