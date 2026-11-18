@@ -32,6 +32,7 @@ import { createLanguagePicker } from 'maker-kit/ui/languagePicker';
 import { bindHistory } from 'maker-kit/ui/historyKeys';
 import { download } from 'maker-kit/ui/files';
 import { applyStaticText } from './ui/staticText';
+import { registerServiceWorker } from './pwa';
 import type { Key } from './i18n';
 import { initLang, lang, setLang, onLangChange, t, tm, tDynamic, hasKey, autoPresetPrefixes, LANGS } from './i18n';
 import type { JobProgress } from 'maker-kit/core/progress';
@@ -794,3 +795,6 @@ onLangChange(() => {
 });
 
 showState(state);
+
+// Офлайн и новые версии — только в сборке: у dev-сервера сервис-воркера нет.
+if (import.meta.env.PROD) registerServiceWorker(navigator, window, document);

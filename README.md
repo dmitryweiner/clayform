@@ -161,6 +161,10 @@ piece and the undo history. The choice is remembered.
 sits beside it): tapping the model hides it, the “⚙ Settings” button at the
 bottom brings it back. Long builds show a progress bar right on the model.
 
+**It works offline** after the first visit and installs as an app (a PWA);
+new versions arrive by themselves ([docs/offline.md](docs/offline.md), in
+Russian).
+
 The panel, presets, undo, the sheet, the 3D view, the worker queue, STL and
 the export checks are the shared pieces of the 3D-printing tools,
 [maker-kit](https://github.com/dmitryweiner/maker-kit).

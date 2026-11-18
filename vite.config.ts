@@ -1,7 +1,22 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
+import { serviceWorkerPlugin } from './src/sw-plugin.ts';
+
+/**
+ * Имя пакета — id приложения: приставка кэша сервис-воркера. Все приложения
+ * на `<user>.github.io` делят одно хранилище кэшей, и каждое чистит только свои.
+ */
+function appId(): string {
+  const pkg: unknown = JSON.parse(readFileSync(resolve(import.meta.dirname, 'package.json'), 'utf8'));
+  if (typeof pkg === 'object' && pkg !== null && 'name' in pkg && typeof pkg.name === 'string') return pkg.name;
+  throw new Error('package.json has no name');
+}
 
 export default defineConfig({
   base: './',
+  // офлайн после первого визита: sw.js кладёт в кэш сборку и public/ (_conventions/pwa.md)
+  plugins: [serviceWorkerPlugin({ appId: appId(), publicDir: resolve(import.meta.dirname, 'public') })],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
