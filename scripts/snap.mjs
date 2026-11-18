@@ -3,8 +3,8 @@
 // плодить одноразовые скрипты (см. CLAUDE.md).
 //
 //   node scripts/snap.mjs --out shots/x.png
-//   node scripts/snap.mjs --out shots/x.png --family vase --set heightMm=300
-//   node scripts/snap.mjs --out shots/x.png --check on_roulette \
+//   node scripts/snap.mjs --out shots/x.png --family vase --set p_heightMm=300
+//   node scripts/snap.mjs --out shots/x.png --check roulette_on \
 //        --set roul_pattern=dots --set roul_depth=2 --set roul_bandWidth=18
 //
 // Флаги:
@@ -100,6 +100,8 @@ for (let i = 0; i < argv.length; i++) {
   const arg = argv[++i];
   label(`${name}:${arg}`);
   const eq = arg.indexOf('=');
+  // контрол в свёрнутой карточке скрыт: раскрываем её, как раскрыл бы человек
+  if (name !== 'click') await reveal(`#${eq < 0 ? arg : arg.slice(0, eq)}`);
   if (name === 'check') {
     await page.check(`#${arg}`);
     await page.waitForTimeout(80);
@@ -120,6 +122,14 @@ for (let i = 0; i < argv.length; i++) {
     await page.click(arg);
     await page.waitForTimeout(120);
   }
+}
+
+/** Раскрывает свёрнутую карточку, в которой лежит элемент. */
+async function reveal(selector) {
+  await page.locator(selector).evaluate((node) => {
+    const head = node.closest('.fcard.collapsed')?.querySelector(':scope > .fcard-head');
+    if (head instanceof HTMLElement) head.click();
+  });
 }
 
 // Вращение — обычным перетаскиванием по канвасу, как это делает человек.
