@@ -143,19 +143,26 @@ union. Once you stop, the picture is replaced by the real assembly: with the
 handle ends trimmed on the inside and a through spout. What is on screen is
 what goes into the STL.
 
-**Presets** — built-in, your own (in the browser, “Piece N” by default; each
-has a 🗑 in the list) and as files: 📂 opens a JSON (you can also drop it onto
-the window), ⬇️ saves the current state to `clayform-<name>.json`. The 🔗
-link carries the whole state.
+**Presets** — the project's name in the top bar opens them: built-in, your own
+(in the browser, “Piece N” by default; renamed in place, ↗ to open, 🗑 twice
+to delete; a ● before the name when the piece has left its preset) and as
+files: 📂 opens a JSON (you can also drop it onto the window), ⬇️ saves the
+current state to `clayform-<name>.json`. The 🔗 link carries the whole
+state. Undo and redo — ↶ ↷, Ctrl/Cmd+Z on any keyboard layout: a dragged
+slider is one step.
 
 **The interface is in English and Russian.** The language comes from the
 browser settings (Russian if it is listed before English, English for
-everyone else), and the “RU” / “EN” button in the top bar switches it in
-place, keeping the piece and the undo history. The choice is remembered.
+everyone else), and 🌐 in the top bar switches it in place, keeping the
+piece and the undo history. The choice is remembered.
 
-**On a phone** the panel is a bottom sheet over the model: tapping the model
-hides it, the “⚙ Settings” button at the bottom brings it back. Long builds
-show a progress bar right on the model.
+**On a phone** the panel is a bottom sheet over the model (from 1024 px it
+sits beside it): tapping the model hides it, the “⚙ Settings” button at the
+bottom brings it back. Long builds show a progress bar right on the model.
+
+The panel, presets, undo, the sheet, the 3D view, the worker queue, STL and
+the export checks are the shared pieces of the 3D-printing tools,
+[maker-kit](https://github.com/dmitryweiner/maker-kit).
 
 The full casting workflow is described (in Russian) in Cast Builder's
 [docs](https://github.com/dmitryweiner/cast-builder/blob/main/docs/slip-casting-workflow.ru.md).
