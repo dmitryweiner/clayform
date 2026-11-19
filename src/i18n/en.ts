@@ -315,6 +315,7 @@ export const en: Record<keyof typeof ru, string> = {
   'presets.prompt': 'Preset name',
   'presets.auto': 'Piece',
 
+  'preset.blank': 'New piece',
   'preset.pot': 'Pot',
   'preset.pot.note': 'Russian oven pot',
   'preset.krynka': 'Krynka',
