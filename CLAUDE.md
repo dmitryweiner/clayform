@@ -68,6 +68,19 @@ GitHub Pages публикует `.github/workflows/deploy.yml` на каждый
 выкладка `dist/`. На PR — всё то же без выкладки. Сборка в репозиторий больше не
 коммитится (`dist/` в `.gitignore`); Node — из `.node-version`.
 
+## Офлайн (PWA)
+
+Приложение — PWA (`_conventions/pwa.md`, куски шаблона): `src/sw-plugin.ts`
+пишет `dist/sw.js`, который кладёт в кэш сборку и `public/` (CSG-воркер,
+его `.wasm`, шрифты клейма), кэш зовётся `clayform-<hash>`; `skipWaiting` и
+`clients.claim`. `src/pwa.ts` регистрирует его только в сборке, просит
+обновление при каждом возвращении на страницу и перезагружает её на
+`controllerchange` — изделие хранится при каждой правке, теряется только
+история отмены. `public/manifest.webmanifest`; `public/icon.svg` —
+единственный источник иконок (`npm run icons` рисует PNG). Смоук с
+`--preview` проверяет офлайн (страница, воркер и WASM из кэша, выгрузка
+STL без сети) и то, что новый `sw.js` перезагружает открытую страницу.
+
 ## Команды
 
 ```bash
@@ -118,6 +131,9 @@ Golden-тесты пиннят геометрию семейств; пересо
 
   Точную сборку изделия видно не сразу: она подъезжает примерно через
   секунду после последней правки, поэтому для неё нужен `--wait 3000`.
+- `scripts/icons.mjs` — `npm run icons`: PNG-иконки PWA (192, 512,
+  маскируемая 512, apple-touch 180) из `public/icon.svg` в Chromium
+  (шаблонный).
 - `scripts/lib/harness.mjs` — обвязка кита (`maker-kit/harness`, её
   `docs/harness.md`) на портах clayform: 5281 для dev, 4281 для превью, со
   `--strictPort`. Перед `--preview` она сама пересобирает, а занятый порт

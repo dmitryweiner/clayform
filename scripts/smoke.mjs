@@ -17,11 +17,11 @@
 // Любая ошибка консоли/страницы → ненулевой код выхода (годится для CI):
 // прогон — `app.run` китовой обвязки, он же закрывает браузер и сервер.
 
-import { mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { horizontalOverflow, launch, parseArgs, throttle } from './lib/harness.mjs';
+import { binaryStl, download, horizontalOverflow, launch, offline, parseArgs, throttle } from './lib/harness.mjs';
 
 const flags = parseArgs(process.argv.slice(2), ['shots', 'res']);
 const shotsDir = flags.get('shots');
@@ -58,14 +58,14 @@ await app.run(async () => {
 
 async function scenario() {
   // иконка должна реально отдаваться, а не 404 — вкладку по ней и находят
-  label('favicon');
+  label('icon');
   const faviconStatus = await page.evaluate(() =>
-    fetch('./favicon.svg').then(
+    fetch('./icon.svg').then(
       (r) => r.status,
       () => 0,
     ),
   );
-  if (faviconStatus !== 200) errors.push(`[favicon] favicon.svg отдаёт ${faviconStatus}`);
+  if (faviconStatus !== 200) errors.push(`[icon] icon.svg отдаёт ${faviconStatus}`);
 
   label('boot');
   await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0, { timeout: 20000 });
@@ -902,6 +902,40 @@ async function scenario() {
   await page.click('#sheetOpen');
   await page.waitForTimeout(400);
   if (!(await sheetUp())) errors.push('[mobile] «Настройки» не вернули панель');
+
+  // только сборка: у dev-сервера нет сервис-воркера (_conventions/pwa.md)
+  if (flags.has('preview')) {
+    // офлайн после первого визита: страница, воркер и его WASM — из кэша; выгрузка без сети — настоящий STL
+    label('offline');
+    const watertight = (p) =>
+      p.waitForFunction(() => (document.querySelector('#audit')?.textContent ?? '').includes('замкнуто ✓'), undefined, { timeout: 30000 });
+    const off = await offline(app, { locale: 'ru-RU', ready: watertight });
+    const file = await download(off.page, '#exportBtn');
+    const stl = binaryStl(file.bytes);
+    if (!stl || stl.triangles === 0) errors.push(`[offline] выгрузка без сети: ${file.name}, ${file.bytes.length} байт`);
+    await off.context.close();
+
+    // новая выкладка доходит до открытой страницы: так браузер видит деплой — изменившийся sw.js
+    label('update');
+    const open = await app.open({ locale: 'ru-RU' });
+    await open.page.evaluate(() => navigator.serviceWorker.ready);
+    await open.page.evaluate(() => {
+      window.oldPage = true;
+    });
+    const worker = 'dist/sw.js';
+    const original = readFileSync(worker, 'utf8');
+    appendFileSync(worker, `\n// deploy ${Date.now()}\n`);
+    try {
+      const reloaded = open.page.waitForEvent('load', { timeout: 10_000 }).catch(() => null);
+      // что делает телефон, когда к усыплённой странице возвращаются
+      await open.page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+      if ((await reloaded) === null) errors.push('[update] открытая страница так и не перешла на новую версию');
+      else if ((await open.page.evaluate(() => window.oldPage)) !== undefined) errors.push('[update] страница не перезагрузилась');
+    } finally {
+      writeFileSync(worker, original);
+    }
+    await open.context.close();
+  }
 
   console.log(`семейств: ${families.length}`);
 }
