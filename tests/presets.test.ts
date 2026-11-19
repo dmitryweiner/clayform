@@ -8,7 +8,7 @@ import { buildHollowVessel } from '../src/geo/hollow';
 import { lidFit, lidSeat, buildLidMesh } from '../src/geo/lid';
 import { buildProfile } from '../src/geo/profiles';
 import { validateMesh } from '../src/geo/validate';
-import { nextPresetNumber } from '../src/state/userPresets';
+import { nextPresetName } from 'maker-kit/core/presets';
 import { autoPresetPrefixes, DICTS, hasKey } from '../src/i18n';
 
 describe('встроенные пресеты', () => {
@@ -124,39 +124,14 @@ describe('ссылки на состояние', () => {
 
 describe('автоимя своего пресета', () => {
   it('«Изделие N» и «Piece N» нумеруются вместе, старые «Моё N» тоже в счёт', () => {
-    const state = defaultState();
     const prefixes = autoPresetPrefixes();
     expect(prefixes).toEqual(['Изделие', 'Piece', 'Моё']);
-    expect(nextPresetNumber([], prefixes)).toBe(1);
-    expect(
-      nextPresetNumber(
-        [
-          { name: 'Изделие 2', state },
-          { name: 'Моё 5', state },
-          { name: 'Ваза', state },
-        ],
-        prefixes,
-      ),
-    ).toBe(6);
-    expect(
-      nextPresetNumber(
-        [
-          { name: 'Изделие 2', state },
-          { name: 'Piece 7', state },
-        ],
-        prefixes,
-      ),
-    ).toBe(8);
+    const named = (...names: string[]): { name: string }[] => names.map((name) => ({ name }));
+    expect(nextPresetName([], prefixes, 'Изделие')).toBe('Изделие 1');
+    expect(nextPresetName(named('Изделие 2', 'Моё 5', 'Ваза'), prefixes, 'Изделие')).toBe('Изделие 6');
+    expect(nextPresetName(named('Изделие 2', 'Piece 7'), prefixes, 'Piece')).toBe('Piece 8');
     // приставка без номера или номер без пробела — не автоимя
-    expect(
-      nextPresetNumber(
-        [
-          { name: 'Piece', state },
-          { name: 'Piece7', state },
-        ],
-        prefixes,
-      ),
-    ).toBe(1);
-    expect(DICTS.ru['presets.auto']).toBe('Изделие {n}');
+    expect(nextPresetName(named('Piece', 'Piece7'), prefixes, 'Piece')).toBe('Piece 1');
+    expect(DICTS.ru['presets.auto']).toBe('Изделие');
   });
 });

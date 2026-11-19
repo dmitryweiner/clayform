@@ -30,9 +30,11 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
   },
   // manifold-3d — WASM-модуль; исключаем из pre-bundling, иначе vite ломает
-  // относительный путь к .wasm внутри пакета.
+  // относительный путь к .wasm внутри пакета. maker-kit — исходники на
+  // TypeScript, а pre-bundling читает их как JavaScript, и dev-сервер падает:
+  // vite раздаёт их как наши собственные.
   optimizeDeps: {
-    exclude: ['manifold-3d'],
+    exclude: ['manifold-3d', 'maker-kit'],
   },
   // CSG живёт в module worker'е. Формат по умолчанию (iife) для него не
   // годится: обвязка manifold ищет свой .wasm через import.meta.url, а в
@@ -45,5 +47,8 @@ export default defineConfig({
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     testTimeout: 30000,
+    // Node не снимает типы с файлов в node_modules: исходники кита
+    // преобразуются как наши.
+    server: { deps: { inline: ['maker-kit'] } },
   },
 });

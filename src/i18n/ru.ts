@@ -3,12 +3,18 @@
 // файл в src/, где кириллице место в строках (стережёт tests/i18n.test.ts).
 //
 // Шаблоны: `{name}` — параметр, `{n|форма|форма|форма}` — слово по числу
-// n в порядке one/few/many.
+// n в порядке one/few/many (`format` кита, `maker-kit/core/format`).
+//
+// Строки самого кита (`kit.*`: −/+, отказы файла, сбои хранилища, сито меша,
+// диалог пресетов) вливаются первыми: его компоненты переводят ими же.
 
 /** Автоимя пресетов старых версий — «Моё N»: его тоже учитывает нумерация. */
 export const LEGACY_PRESET_PREFIX = 'Моё';
 
+import { kitRu } from 'maker-kit/i18n/index';
+
 export const ru = {
+  ...kitRu,
   // --- страница и шапка ---
   'app.title': 'ClayForm — посуда и литейные формы для 3D-печати',
   'lang.switch': 'EN',
@@ -308,9 +314,6 @@ export const ru = {
   'warn.overhang': 'Свесы круче 60° на {pct} % поверхности — печать глиной потребует опор.',
   'error.vessel': 'Изделие собрать не удалось: {error}',
   'error.export': 'Сборка не удалась: {error}',
-  'error.notPreset': 'Файл «{name}» — не пресет ClayForm.',
-  'error.presetSave': 'Не удалось сохранить пресет: браузер запретил доступ к хранилищу.',
-  'error.presetDelete': 'Не удалось удалить пресет: браузер запретил доступ к хранилищу.',
 
   // --- сообщения ядра (geo/message.ts) ---
   'mark.tooLong': 'Строка клейма длиннее окружности — кегль ужат до {pct} %.',
@@ -340,7 +343,7 @@ export const ru = {
   'presets.delete.aria': 'Удалить {name}',
   'presets.delete.confirm': 'Удалить?',
   'presets.prompt': 'Имя пресета',
-  'presets.auto': 'Изделие {n}',
+  'presets.auto': 'Изделие',
 
   'preset.pot': 'Горшок',
   'preset.pot.note': 'русский печной горшок',

@@ -131,6 +131,8 @@ describe('format', () => {
       name: 'X',
       part: 'half A',
       count: 5,
+      // строки кита: −/+ называют свою строку
+      label: 'Width',
     };
     for (const lang of LANGS) {
       for (const key of KEYS) {

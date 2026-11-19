@@ -298,7 +298,9 @@ await page.waitForTimeout(150);
 const savedName = (await page.locator('#presetBtn').textContent()).trim();
 if (!/^Изделие \d+$/.test(savedName)) errors.push(`[preset-delete] автоимя "${savedName}"`);
 await page.click('#presetBtn');
-const savedRef = `u:${savedName}`;
+// свой пресет узнаётся по id (`u:u3`), а не по имени: ищем строку с его именем
+const savedRow = page.locator('#presetList [data-preset^="u:"]').filter({ hasText: new RegExp(`^${savedName}$`) });
+const savedRef = (await savedRow.count()) ? await savedRow.first().getAttribute('data-preset') : `u:?`;
 if (!(await page.locator(`#presetList [data-preset="${savedRef}"]`).count())) {
   errors.push('[preset-delete] сохранённого пресета нет в списке');
 }

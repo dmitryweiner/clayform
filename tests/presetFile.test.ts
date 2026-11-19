@@ -10,8 +10,7 @@ describe('файл пресета', () => {
       const state = preset.build();
       const name = `Пресет «${preset.id}»`;
       const decoded = decodePresetFile(encodePresetFile(name, state));
-      expect(decoded?.name).toBe(name);
-      expect(decoded?.state).toEqual(state);
+      expect(decoded).toEqual({ ok: true, name, state });
     }
   });
 
@@ -25,23 +24,26 @@ describe('файл пресета', () => {
   it('голое состояние тоже открывается', () => {
     const state = { ...defaultState(), heightMm: 222 };
     const decoded = decodePresetFile(JSON.stringify(state));
-    expect(decoded?.state.heightMm).toBe(222);
-    expect(decoded?.name).toBe('');
+    expect(decoded.ok && decoded.state.heightMm).toBe(222);
+    expect(decoded.ok && decoded.name).toBe('');
   });
 
-  it('мусор и чужой JSON — null, а не сброс к умолчанию', () => {
-    for (const text of [
-      '',
-      'не json',
-      '[]',
-      'null',
-      '42',
-      '{"a":1}',
-      '{"app":"other","state":{}}',
-      '{"app":"clayform"}',
-      '{"family":"teapot-ish"}',
-    ]) {
-      expect(decodePresetFile(text), text).toBeNull();
+  it('мусор и чужой JSON — отказ с причиной, а не сброс к умолчанию', () => {
+    const cases: [string, string][] = [
+      ['', 'broken'],
+      ['не json', 'broken'],
+      ['[]', 'foreign'],
+      ['null', 'foreign'],
+      ['42', 'foreign'],
+      ['{"a":1}', 'foreign'],
+      ['{"app":"other","state":{}}', 'foreign'],
+      ['{"family":"teapot-ish"}', 'foreign'],
+      ['{"app":"clayform"}', 'broken'],
+      ['{"app":"clayform","version":1,"state":7}', 'broken'],
+      ['{"app":"clayform","version":99,"state":{}}', 'newer'],
+    ];
+    for (const [text, reason] of cases) {
+      expect(decodePresetFile(text), text).toEqual({ ok: false, reason });
     }
   });
 
@@ -54,14 +56,14 @@ describe('файл пресета', () => {
         state: { family: 'vase', heightMm: 99999, roulette: { bands: [{ repeats: 12, pattern: 'dots' }] } },
       }),
     );
-    expect(decoded).not.toBeNull();
-    expect(decoded?.name).toBe('');
-    expect(decoded?.state).toEqual(sanitizeState(decoded?.state));
-    expect(decoded?.state.heightMm).toBeLessThan(1000);
+    if (!decoded.ok) throw new Error(`refused: ${decoded.reason}`);
+    expect(decoded.name).toBe('');
+    expect(decoded.state).toEqual(sanitizeState(decoded.state));
+    expect(decoded.state.heightMm).toBeLessThan(1000);
   });
 
-  it('имя файла без запрещённых символов', () => {
-    expect(presetFileName('Кратер с меандром')).toBe('clayform-Кратер-с-меандром.json');
+  it('имя файла без запрещённых символов, строчными (слаг кита)', () => {
+    expect(presetFileName('Кратер с меандром')).toBe('clayform-кратер-с-меандром.json');
     expect(presetFileName('a/b:c?')).toBe('clayform-a-b-c.json');
     expect(presetFileName('   ')).toBe('clayform-preset.json');
   });

@@ -1,7 +1,6 @@
 // Язык интерфейса. Своя крошечная обвязка вместо библиотеки: словарей два,
 // ключи проверяет tsc (`Key` выведен из русского словаря-эталона, английский
-// обязан иметь те же), а подстановки и множественное число укладываются
-// в одну регулярку.
+// обязан иметь те же), а шаблоны разбирает `format` кита.
 //
 // Шаблон: `{name}` — подстановка параметра; `{n|оттиск|оттиска|оттисков}` —
 // слово по числу n: формы идут в порядке категорий Intl.PluralRules языка
@@ -10,25 +9,22 @@
 // Язык держится здесь, а не в AppState: в ссылку и в файл пресета он не
 // попадает — открывший чужую ссылку видит её на своём языке.
 
+import { format } from 'maker-kit/core/format';
+import type { Message, Params } from 'maker-kit/core/message';
 import { ru, LEGACY_PRESET_PREFIX } from './ru';
 import { en } from './en';
-import type { Message } from '../geo/message';
+
+export { format, placeholders } from 'maker-kit/core/format';
+export type { Params };
 
 export type Lang = 'ru' | 'en';
 export const LANGS: readonly Lang[] = ['ru', 'en'];
 export type Key = keyof typeof ru;
-export type Params = Readonly<Record<string, string | number>>;
 
 export const DICTS: Readonly<Record<Lang, Readonly<Record<Key, string>>>> = { ru, en };
 
 /** Ключ localStorage: ручной выбор языка, важнее настроек браузера. */
 export const LANG_KEY = 'clayform_lang';
-
-/** Порядок форм в `{n|…}` — категории Intl.PluralRules этого языка. */
-const PLURAL_ORDER: Record<Lang, readonly Intl.LDMLPluralRule[]> = {
-  ru: ['one', 'few', 'many'],
-  en: ['one', 'other'],
-};
 
 let current: Lang = 'en';
 const listeners = new Set<(lang: Lang) => void>();
@@ -99,7 +95,7 @@ export function tDynamic(key: string, params?: Params): string {
 }
 
 /** Сообщение ядра: код плюс параметры. */
-export function tm(message: Message): string {
+export function tm(message: Message<Key>): string {
   return t(message.code, message.params);
 }
 
@@ -108,24 +104,5 @@ export function tm(message: Message): string {
  * автоимён общая, какой бы язык ни был включён, когда их сохраняли.
  */
 export function autoPresetPrefixes(): string[] {
-  return [...LANGS.map((language) => DICTS[language]['presets.auto'].replace(/\s*\{n\}\s*/, '')), LEGACY_PRESET_PREFIX];
-}
-
-const PLACEHOLDER = /\{(\w+)(?:\|([^}]*))?\}/g;
-
-export function format(template: string, params: Params | undefined, language: Lang): string {
-  return template.replace(PLACEHOLDER, (whole, name: string, forms: string | undefined) => {
-    const value = params?.[name];
-    if (value === undefined) return whole;
-    if (forms === undefined) return String(value);
-    const variants = forms.split('|');
-    const category = new Intl.PluralRules(language).select(Number(value));
-    const index = PLURAL_ORDER[language].indexOf(category);
-    return variants[index >= 0 ? index : variants.length - 1] ?? whole;
-  });
-}
-
-/** Имена параметров шаблона — для теста, что у обоих языков они одни и те же. */
-export function placeholders(template: string): string[] {
-  return [...template.matchAll(PLACEHOLDER)].map((match) => match[1]).sort();
+  return [...LANGS.map((language) => DICTS[language]['presets.auto']), LEGACY_PRESET_PREFIX];
 }
