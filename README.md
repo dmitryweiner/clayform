@@ -10,7 +10,7 @@ relief and roulette patterns — and get a file to print in clay — the same fi
 [Cast Builder](https://dmitryweiner.github.io/cast-builder/) builds
 slip-casting molds from.
 
-A geometric relative of [MathSculpt](../mathsculpt/), but about pottery
+A geometric relative of [MathSculpt](https://github.com/dmitryweiner/mathsculpt), but about pottery
 rather than mathematical surfaces: the parameters are called “neck”, “belly”
 and “base”, the sizes are real, and what comes out can be cast.
 
@@ -190,7 +190,7 @@ A screenshot in a given state:
 
 ```bash
 node scripts/snap.mjs --out shots/x.png --view --family vase --lang en \
-     --check on_roulette --set roul0_pattern=lattice --set roul0_depth=1.5
+     --check roulette_on --set roul0_pattern=lattice --set roul0_depth=1.5
 ```
 
 Golden tests pin the geometry of the families; regenerate them deliberately:
@@ -212,15 +212,15 @@ src/geo/       pure geometry core, no Three.js, in millimetres
   attach       shared by applied parts: sinking an end into the wall
   lid          lid and its seat: a closed contour revolved (lathe), no CSG
   layout       the lid beside the piece in one file
-  stl          binary STL; validate — the mesh check before export
-  csg          bridge to manifold-3d (WASM) for boolean operations
-  assemble     body ∪ handles ∪ spout, and the same minus cavity and channel
+  overhang     the share of overhangs, a warning for clay printing
+  assemble     body ∪ handles ∪ spout, and the same minus cavity and channel,
+               on maker-kit's bridge to manifold-3d (WASM)
   message      messages to the user as codes — the core knows no language
-src/state/     state, sanitising, presets, links, history
+src/state/     state, sanitising, presets, links, the piece kept in the browser
 src/worker/    protocol, the CSG worker and its client
 src/i18n/      ru (reference) and en dictionaries, language, templates
 src/ui/        cards, controls, silhouette graph
-src/render/    a thin Three.js layer
+src/render/    the view: maker-kit's viewer, terracotta and camera looks
 ```
 
 The invariants everything rests on:
@@ -230,7 +230,8 @@ The invariants everything rests on:
   may assume valid parameters; a person may have edited the link. The worker
   boundary is “outside” too: it sanitises the incoming state again.
 - **`src/main.ts` knows nothing of WASM.** Not a single import path from the
-  main thread leads to `geo/csg.ts`.
+  main thread leads to `maker-kit/csg/*` or `manifold-3d`; CI checks that
+  the main chunk has no `manifold` in it.
 - **Visible text goes only through the dictionaries.** The core and the worker
   speak in message codes; a test fails on any Cyrillic string literal outside
   `src/i18n/ru.ts`.
@@ -241,4 +242,4 @@ the mold Cast Builder makes, and a two-part mold would not come off otherwise.
 
 ## License
 
-MIT
+GPL-3.0, see [LICENSE](LICENSE).

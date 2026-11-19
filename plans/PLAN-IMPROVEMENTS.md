@@ -330,7 +330,7 @@ vitest; `b64urlDecode` из `state/share.ts` вынести в `geo/`? нет �
 - `csg.worker.ts`: `mouthOf` передаёт `gallery` при `fit.recessMm > 0`.
 - `geo/mold/analyze.ts`: `AnalyzeOptions.hasPlug` — добавляет `PLUG` в
   `parts` отчёта, чтобы подпись в панели не расходилась с воркером (та самая
-  расхождение № 9 из `LID_PLAN.md`; для носика попутно не чинить).
+  расхождение № 9 из `PLAN-LID.md`; для носика попутно не чинить).
 - Для `recessMm = 0` ничего не меняется — регрессионный тест на список
   деталей и объём полости.
 
