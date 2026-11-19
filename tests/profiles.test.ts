@@ -17,7 +17,7 @@ import {
   MIN_RADIUS_MM,
 } from '../src/geo/profiles';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 
 /** Радиусы профиля в n точках по высоте. */
 function samples(id: string, params: Record<string, number>, heightMm = 140, n = 201): number[] {

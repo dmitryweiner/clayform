@@ -15,7 +15,7 @@
 // ручки. У оттянутого края смещение идёт только наружу: так стенка полого
 // изделия в месте слива может стать толще, но никогда — тоньше.
 
-import type { SurfaceMesh } from './surface';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
 import type { Vec3 } from './sweep';
 import { bezier, bezierTangent, sweepTube } from './sweep';
 import type { ProfileDef } from './profiles';

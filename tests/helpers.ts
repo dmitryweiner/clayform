@@ -1,8 +1,9 @@
 // Общие сборщики мешей для тестов: тело вращения из r(t) и декодер STL.
 
 import { sampleGrid, assembleMesh } from '../src/geo/surface';
-import type { CapMode, SurfaceMesh } from '../src/geo/surface';
-import { meshNormals } from '../src/geo/normals';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
+import type { CapMode } from '../src/geo/surface';
+import { meshNormals } from 'maker-kit/3d/mesh';
 
 /** Тело вращения r(v), v ∈ [0,1] — низ→верх, высота 1 (или heightScale). */
 export function revolveMesh(

@@ -2,7 +2,7 @@
 // печатопригодность (плоское дно), ни замкнутость меша, ни шов.
 
 import { buildVessel, vesselGrid, defaultBuildParams, gridRadiusAt } from '../src/geo/build';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 import { defaultRelief, sanitizeRelief } from '../src/geo/relief';
 import { defaultRoulette, defaultBand, sanitizeRoulette } from '../src/geo/roulette';
 import { ROULETTE_PATTERNS } from '../src/geo/roulette';

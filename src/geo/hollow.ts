@@ -10,10 +10,11 @@
 //     гончара, и при шликерном литье. Заодно офсет вогнутых канавок рельефа
 //     сам себя не заворачивает.
 
-import type { Grid, SurfaceMesh } from './surface';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
+import type { Grid } from './surface';
 import { assembleHollowMesh, assembleMesh } from './surface';
-import { meshNormals } from './normals';
-import { signedVolume } from './validate';
+import { meshNormals } from 'maker-kit/3d/mesh';
+import { signedVolume } from 'maker-kit/3d/validate';
 import type { BuildParams } from './build';
 import { vesselBottom, vesselGrid, vesselSurface } from './build';
 import { profileRadius } from './profiles';

@@ -1,6 +1,6 @@
-// Протокол разговора с CSG-воркером. Только типы: исполняемого кода здесь
-// нет намеренно — тестировать в этом файле нечего, а обе стороны границы
-// (main и воркер) должны видеть одно и то же описание сообщений.
+// Задачи CSG-воркера и их проверка. Конверт сообщений, очередь и ответы —
+// китовые (`maker-kit/worker/*`); здесь — что именно считать и что
+// возвращается.
 //
 // Всё, что уходит в воркер, — это состояние приложения целиком: воркер сам
 // прогоняет его через sanitizeState и сам решает, что из него строить.
@@ -36,29 +36,19 @@ export interface JobPart {
   indices: Uint32Array;
   normals: Float32Array;
   /** что мешает выгрузить деталь в STL; у превью всегда пусто */
-  blocking: Message[];
+  blockers: Message[];
 }
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
- * Прогресс — покрупному, по этапам. Manifold внутри одной булевой операции
- * ничего о себе не сообщает, и притворяться, что сообщает, мы не будем:
- * шкала считает этапы, а подпись говорит, какой идёт сейчас.
+ * Проверка задачи на границе воркера (`serveJobs` отвечает на чужую
+ * ошибкой). Состояние только объект: его по полям чистит sanitizeState;
+ * растр клейма — объект или пусто: его размеры проверит sanitizeMarkRaster.
  */
-export interface JobProgress {
-  /** сколько этапов уже позади */
-  step: number;
-  /** сколько их всего */
-  total: number;
-  /** что делается прямо сейчас */
-  label: Message;
+export function isCsgJob(job: unknown): job is CsgJob {
+  if (!isRecord(job) || !isRecord(job.state)) return false;
+  if (job.markStrip !== undefined && job.markStrip !== null && !isRecord(job.markStrip)) return false;
+  if (job.kind === 'export') return true;
+  return job.kind === 'vessel-preview' && typeof job.segments === 'number' && Number.isFinite(job.segments);
 }
-
-export interface WorkerIn {
-  jobId: number;
-  job: CsgJob;
-}
-
-export type WorkerOut =
-  | ({ type: 'progress'; jobId: number } & JobProgress)
-  | { type: 'done'; jobId: number; parts: JobPart[] }
-  | { type: 'error'; jobId: number; message: string };

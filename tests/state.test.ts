@@ -12,7 +12,7 @@ import {
 } from '../src/state/schema';
 import { defaultFamilyParams, familyById } from '../src/geo/profiles';
 import { buildVessel } from '../src/geo/build';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 
 describe('defaultState', () => {
   it('горшок со своими дефолтами', () => {

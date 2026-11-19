@@ -1,6 +1,7 @@
 // ЯДРО: сетка (u,v) → позиции/индексы. Чистые типизированные массивы,
 // без Three.js. Ось модели — z (печатная конвенция), рендер сам повернёт.
 
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
 import type { Cap, CapSpec } from './bottom';
 import { buildCap } from './bottom';
 //
@@ -24,13 +25,6 @@ export interface Grid {
 /** Число вершинных рядов сетки. */
 export function gridRows(grid: Grid): number {
   return grid.wrapV ? grid.nv : grid.nv + 1;
-}
-
-/** Готовый меш: позиции + нормали вершин + индексы треугольников. */
-export interface SurfaceMesh {
-  positions: Float32Array;
-  normals: Float32Array;
-  indices: Uint32Array;
 }
 
 export type GridFn = (u: number, v: number, out: Float64Array) => void;

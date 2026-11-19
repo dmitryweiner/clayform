@@ -5,23 +5,17 @@
 // tsc в самом `tm`.
 
 import type { Message as KitMessage } from 'maker-kit/core/message';
+import type { KitKey } from 'maker-kit/i18n/index';
 
 export type MessageCode =
   // клеймо на дне (mark)
   | 'mark.tooLong'
   | 'mark.noRoom'
-  // проверка меша перед выгрузкой (validate)
-  | 'mesh.nonFinite'
-  | 'mesh.badIndices'
-  | 'mesh.empty'
-  | 'mesh.flat'
-  | 'mesh.open'
-  | 'mesh.inverted'
-  | 'mesh.degenerate'
   // этапы задач воркера
   | 'progress.loading'
   | 'progress.vessel'
   | 'progress.lid'
   | 'progress.checkMeshes';
 
-export type Message = KitMessage<MessageCode>;
+/** Свои коды и китовые: сито экспорта говорит `kit.mesh.*`. */
+export type Message = KitMessage<MessageCode | KitKey>;

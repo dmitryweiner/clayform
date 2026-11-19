@@ -2,7 +2,7 @@
 
 import { bezier, bezierTangent, sweepTube, mirrorX } from '../src/geo/sweep';
 import type { Vec3 } from '../src/geo/sweep';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 
 const P0: Vec3 = { x: 0, y: 0, z: 0 };
 const C0: Vec3 = { x: -20, y: 0, z: 10 };

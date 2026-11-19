@@ -2,8 +2,8 @@
 // тело, что и с веером, а рельеф и отверстие стоят там, где заказаны.
 
 import { sampleGrid, assembleMesh, assembleHollowMesh } from '../src/geo/surface';
-import { validateMesh as validate } from '../src/geo/validate';
-import { meshNormals } from '../src/geo/normals';
+import { validateMesh as validate } from 'maker-kit/3d/validate';
+import { meshNormals } from 'maker-kit/3d/mesh';
 
 const validateMesh = (mesh: { positions: Float32Array; indices: Uint32Array }) =>
   validate({ ...mesh, normals: meshNormals(mesh.positions, mesh.indices) });

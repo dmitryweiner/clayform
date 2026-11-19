@@ -2,7 +2,7 @@
 // в одном STL. Чистая функция без Three.js — нужна и главному потоку, и
 // воркеру, который склеивает изделие с крышкой в один STL.
 
-import type { SurfaceMesh } from './surface';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
 
 /**
  * Зазор между изделием и крышкой, которые печатают за один заход. Хватает,

@@ -7,7 +7,7 @@ import { encodeBase64 } from '../src/geo/bytes';
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
 import { buildHollowVessel, defaultHollow } from '../src/geo/hollow';
 import { defaultFamilyParams, familyById } from '../src/geo/profiles';
-import { validateMesh } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
 
 const strip = (w: number, h: number, ink: (col: number, row: number) => boolean, mmPerPx = 0.1): MarkRaster => {
   const pixels = new Uint8Array(w * h);

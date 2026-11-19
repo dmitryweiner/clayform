@@ -2,7 +2,7 @@
 
 import { mergeMeshes } from '../src/geo/surface';
 import { placeInRow } from '../src/geo/layout';
-import { validateMesh, signedVolume } from '../src/geo/validate';
+import { validateMesh, signedVolume } from 'maker-kit/3d/validate';
 import { revolveMesh } from './helpers';
 
 const pot = revolveMesh(() => 40, { height: 80 });

@@ -4,8 +4,8 @@
 // репер строится тривиально: ось y всегда перпендикулярна касательной, и
 // параллельный перенос с его накоплением ошибки не нужен.
 
-import type { SurfaceMesh } from './surface';
-import { meshNormals } from './normals';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
+import { meshNormals } from 'maker-kit/3d/mesh';
 
 export interface Vec3 {
   x: number;

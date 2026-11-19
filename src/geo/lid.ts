@@ -21,8 +21,8 @@
 // крышка утоплена и опирается на полочку внутри горловины. Это одна и та же
 // геометрия с разным значением одного параметра, а не два режима.
 
-import type { SurfaceMesh } from './surface';
-import { meshNormals } from './normals';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
+import { meshNormals } from 'maker-kit/3d/mesh';
 import type { LathePoint, LatheDepth } from './lathe';
 import { lathe } from './lathe';
 import type { ProfileDef } from './profiles';

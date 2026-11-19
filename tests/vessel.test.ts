@@ -2,7 +2,8 @@
 // Проверяем габариты (то, что человек мерит линейкой) и пригодность к печати.
 
 import { buildVessel, vesselGrid, defaultBuildParams, gridRadiusAt } from '../src/geo/build';
-import { validateMesh, overhangFraction } from '../src/geo/validate';
+import { validateMesh } from 'maker-kit/3d/validate';
+import { overhangFraction } from '../src/geo/overhang';
 import { defaultFamilyParams, FAMILY_IDS } from '../src/geo/profiles';
 
 describe('buildVessel', () => {

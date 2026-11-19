@@ -8,7 +8,7 @@
 // Это и самый прочный стык, и самый чистый разъём — плоскость формы проходит
 // ровно вдоль дуги.
 
-import type { SurfaceMesh } from './surface';
+import type { SurfaceMesh } from 'maker-kit/3d/mesh';
 import type { Vec3 } from './sweep';
 import { bezier, bezierTangent, sweepTube, mirrorX } from './sweep';
 import type { ProfileDef } from './profiles';
