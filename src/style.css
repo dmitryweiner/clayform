@@ -1,8 +1,16 @@
+/*
+ * Своё поверх кита (maker-kit/styles/kit.css, он импортируется первым и
+ * лежит в @layer kit — любое правило здесь его побеждает). Рамка — шапка,
+ * панель и лист, диалог, баннер, полоса прогресса, строки и карточки — его;
+ * здесь только палитра и то, чего у кита нет: выбор семейства силуэтами,
+ * график профиля, картинка орнамента, список деталей экспорта. От телефона
+ * вверх, логическими свойствами.
+ */
+
 :root {
   /*
-   * Своя тёплая палитра поверх токенов кита (maker-kit/styles/tokens.css):
-   * бурые нейтральные и терракотовый акцент. Остальное — плотность,
-   * отступы, шрифт — китовое. Свои правила вне слоя kit побеждают его.
+   * Своя тёплая палитра поверх токенов кита: бурые нейтральные и
+   * терракотовый акцент. Остальное — плотность, отступы, шрифт — китовое.
    */
   --bg: #17130f;
   --panel: #211b16;
@@ -17,200 +25,10 @@
   --overlay: rgb(23 19 15 / 75%);
 }
 
-#app {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-#topbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-}
-
-#brand {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  margin-right: 6px;
-}
-
-.tb-spacer {
-  flex: 1;
-}
-
-.tb-btn {
-  padding: 5px 12px;
-  background: var(--card);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.tb-btn:hover {
-  border-color: var(--accent);
-}
-
-.tb-btn.primary {
-  background: var(--accent);
-  color: #1a0f08;
-  font-weight: 600;
-  border: none;
-}
-
-/* Открытый пресет; кнопка открывает список (#presets). */
-.preset-btn {
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: left;
-}
-
-/* Список пресетов — модальная панель поверх всего, как в synesthesia. */
-#presets {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  background: rgba(0, 0, 0, 0.6);
-  z-index: 40;
-}
-
-#presetsBox {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  width: min(420px, 100%);
-  max-height: min(80vh, 80dvh);
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
-}
-
-#presetsTitle {
-  margin: 0 0 8px;
-  font-size: 16px;
-}
-
-#presetList {
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.panel-close {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 16px;
-  cursor: pointer;
-}
-
-.panel-close:hover {
-  color: var(--text);
-}
-
-.preset-group {
-  margin: 10px 0 4px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  color: var(--muted);
-}
-
-.preset-group:first-child {
-  margin-top: 0;
-}
-
-.preset-empty {
-  margin: 0 0 4px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.preset-row {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.preset-pick,
-.preset-del {
-  min-height: 38px;
-  font: inherit;
-  color: var(--text);
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.preset-pick {
-  flex: 1;
-  min-width: 0;
-  padding: 0 10px;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preset-del {
-  flex: none;
-  min-width: 44px;
-  padding: 0 8px;
-  color: var(--muted);
-}
-
-.preset-pick:hover,
-.preset-del:hover {
-  border-color: var(--accent);
-}
-
-.preset-pick.current {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* второе касание удаляет — кнопка об этом предупреждает цветом */
-.preset-del.armed {
-  color: #1a0f08;
-  background: var(--warn);
-  border-color: var(--warn);
-}
-
-#content {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-#panel {
-  width: var(--panel-w);
-  flex: none;
-  padding: 12px;
-  background: var(--panel);
-  overflow-y: auto;
-}
-
+/* заголовок группы карточек: «Рельеф», «Ручка, носик, крышка, клеймо» */
 .group-title {
-  margin: 14px 2px 6px;
-  font-size: 12px;
+  margin: var(--space-3) 2px 6px;
+  font-size: var(--font-tiny);
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: var(--muted);
@@ -218,126 +36,10 @@
 
 /* подзаголовок внутри карточки — например «Накатка на куполе» у крышки */
 .sub-title {
-  margin: 12px 0 4px;
-  font-size: 12px;
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--font-tiny);
   font-weight: 600;
   color: var(--muted);
-}
-
-/* орнамент картинкой: миниатюра того, что ляжет на стенку */
-.ornament-thumb {
-  width: 48px;
-  height: 48px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: #000;
-}
-
-.ornament-note {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-/* кнопка, миниатюра и размер картинки — одна ячейка строки */
-.image-pick {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/* поля шапки и старой строки детализации — до разметки кита (m4-ui) */
-#topbar select,
-label.row select {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 4px 6px;
-}
-
-#topbar select {
-  flex: none;
-  max-width: 190px;
-}
-
-#status {
-  color: var(--muted);
-  font-size: 12px;
-  white-space: pre-line;
-  margin: 10px 2px 0;
-}
-
-#audit {
-  color: var(--muted);
-  font-size: 12px;
-  margin: 3px 2px 0;
-}
-
-#warnings {
-  color: var(--warn);
-  font-size: 12px;
-  white-space: pre-line;
-  margin: 4px 2px 0;
-}
-
-#viewWrap {
-  flex: 1;
-  min-width: 0;
-  position: relative;
-  overflow: hidden;
-}
-
-#profileGraph {
-  width: 100%;
-  height: 110px;
-  margin-top: 6px;
-}
-
-#progressWrap {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-#progressBar {
-  flex: 1;
-  height: 6px;
-  background: rgba(164, 148, 138, 0.25);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-#progressFill {
-  height: 100%;
-  width: 0%;
-  background: var(--accent);
-  transition: width 0.12s linear;
-}
-
-/* Задача без этапов: бегущая полоска вместо шкалы. */
-#progressWrap.indeterminate #progressFill {
-  width: 30%;
-  transition: none;
-  animation: progress-run 1.1s ease-in-out infinite;
-}
-
-@keyframes progress-run {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(340%);
-  }
-}
-
-#progressLabel {
-  color: var(--muted);
-  font-size: 11px;
-  min-width: 80px;
 }
 
 /* --- Выбор семейства формы: сетка кнопок-силуэтов --- */
@@ -346,7 +48,7 @@ label.row select {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
-  margin-bottom: 8px;
+  margin-block-end: var(--space-2);
 }
 
 .family-btn {
@@ -354,18 +56,18 @@ label.row select {
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  padding: 6px 2px 4px;
+  padding: 6px 2px var(--space-1);
   background: var(--panel);
   color: var(--muted);
   border: 1px solid var(--line);
   border-radius: 7px;
   cursor: pointer;
-  font-size: 10.5px;
+  font-size: var(--font-tiny);
 }
 
 .family-btn svg {
-  width: 30px;
-  height: 34px;
+  inline-size: 30px;
+  block-size: 34px;
   fill: currentColor;
 }
 
@@ -377,51 +79,42 @@ label.row select {
 .family-btn[aria-pressed='true'] {
   color: var(--accent);
   border-color: var(--accent);
-  background: rgba(217, 139, 95, 0.12);
+  background: var(--accent-soft);
 }
 
-/* --- Полосы накатки: каждая в своей рамке --- */
-
-.band-box {
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: 6px 8px;
-  margin: 6px 0;
+#profileGraph {
+  inline-size: 100%;
+  block-size: 110px;
+  margin-block-start: 6px;
 }
 
-.band-head {
+/* --- Орнамент картинкой: миниатюра того, что ляжет на стенку --- */
+
+/* кнопка, миниатюра и размер картинки — одна ячейка строки */
+.image-pick {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
+  gap: var(--space-2);
+}
+
+.ornament-thumb {
+  inline-size: 48px;
+  block-size: 48px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #000;
+}
+
+.ornament-note {
   color: var(--muted);
-  margin-bottom: 2px;
+  font-size: var(--font-tiny);
 }
 
-.band-del {
-  margin-left: auto;
-}
-
-.band-del:hover {
-  color: var(--bad);
-  border-color: var(--bad);
-}
-
-/* --- Список деталей экспорта и ссылка на cast-builder --- */
-
-.cast-note {
-  font-size: 11.5px;
-  color: var(--muted);
-  margin: 8px 0 0;
-}
-
-.cast-note a {
-  color: var(--accent);
-}
+/* --- Экспорт: список деталей, ссылка на cast-builder, вердикт --- */
 
 .part-list {
   list-style: none;
-  margin: 6px 0 0;
+  margin: 6px 0;
   padding: 0;
 }
 
@@ -429,143 +122,33 @@ label.row select {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 0;
-  font-size: 12px;
+  padding-block: 3px;
+  font-size: var(--font-small);
 }
 
 .part-list .part-name {
   flex: 1;
-  min-width: 0;
+  min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.blockers {
-  color: var(--bad);
-  font-size: 12px;
-  white-space: pre-line;
-  margin: 4px 2px 0;
+.cast-note {
+  font-size: var(--font-tiny);
+  color: var(--muted);
+  margin: var(--space-2) 0 0;
 }
 
-#panelBtn,
-#panelBackdrop {
-  display: none;
+#status,
+#audit {
+  color: var(--muted);
+  font-size: var(--font-tiny);
+  margin: var(--space-1) 2px 0;
+  /* «⌀170 × 150 мм» не переворачивается в строке справа налево */
+  unicode-bidi: plaintext;
 }
 
-/*
- * Узкий экран: панель — нижний лист поверх канваса, а не сосед, который его
- * сжимает. Тап по открытой части канваса прячет лист, «⚙ Настройки» внизу
- * возвращает. На десктопе ни одно из этих правил не действует, и класс .open
- * у #panel ни на что не влияет.
- */
-@media (max-width: 760px) {
-  #topbar {
-    flex-wrap: wrap;
-    row-gap: 6px;
-    gap: 6px;
-  }
-
-  #topbar .tb-btn {
-    padding: 4px 7px;
-  }
-
-  #presetBtn {
-    flex: 1;
-    max-width: none;
-  }
-
-  /*
-   * Шапка в две строки: бренд, пресеты и язык, затем кнопки и высота.
-   * Перенос делает ::after на всю ширину — по order он встаёт сразу за
-   * кнопкой языка; отрицательный отступ гасит лишний row-gap его пустой строки.
-   */
-  #topbar .tb-spacer {
-    display: none;
-  }
-
-  #brand,
-  #presetBtn {
-    order: -2;
-  }
-
-  #langBtn {
-    order: -1;
-  }
-
-  #topbar::after {
-    content: '';
-    order: -1;
-    flex-basis: 100%;
-    margin-top: -6px;
-  }
-
-  #content {
-    /* опора для абсолютного листа и подложки */
-    position: relative;
-  }
-
-  #viewWrap {
-    min-height: 0;
-  }
-
-  /*
-   * Настоящий элемент поверх открытой части канваса, пока лист поднят: тап
-   * закрывает лист и до канваса не доходит — иначе тот же тап крутил бы
-   * камеру (OrbitControls ловит pointerdown). Сам лист выше по z-index, так
-   * что тапы внутри него достаются ему.
-   */
-  #panelBackdrop {
-    display: block;
-    position: absolute;
-    inset: 0;
-    z-index: 15;
-  }
-
-  #panel {
-    position: absolute;
-    inset: auto 0 0 0;
-    width: 100%;
-    max-height: 70vh;
-    border-top: 1px solid var(--line);
-    border-radius: 14px 14px 0 0;
-    box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.55);
-    z-index: 20;
-    transform: translateY(100%);
-    transition: transform 0.25s ease;
-  }
-
-  #panel.open {
-    transform: translateY(0);
-  }
-
-  /* position: fixed — от окна, а не от шапки, где кнопка стоит в разметке */
-  #panelBtn {
-    display: inline-flex;
-    position: fixed;
-    left: 50%;
-    bottom: 16px;
-    transform: translateX(-50%);
-    z-index: 25;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
-  }
-
-  /* полоса прогресса не должна прятаться под кнопкой настроек */
-  #progressWrap {
-    bottom: 64px;
-  }
-}
-
-#view {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* После правил узкого экрана: те же селекторы, поэтому важен порядок. */
-@media (max-width: 400px) {
-  /* самые узкие телефоны: кнопки и высота обязаны уместиться во второй строке */
-  #topbar .tb-btn {
-    padding: 4px 5px;
-  }
+#status {
+  margin-block-start: var(--space-3);
 }

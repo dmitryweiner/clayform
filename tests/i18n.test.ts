@@ -4,7 +4,6 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Key } from '../src/i18n';
 import { DICTS, LANGS, detectLang, format, hasKey, placeholders } from '../src/i18n';
 import { FAMILIES } from '../src/geo/profiles';
 import { paramKey } from '../src/ui/params';
@@ -12,9 +11,6 @@ import { PRESETS } from '../src/state/presets';
 
 const CYRILLIC = /[А-Яа-яЁё]/;
 const KEYS = Object.keys(DICTS.ru).filter(hasKey);
-/** Самоназвание языка на кнопке переключения — кириллица в английском законна. */
-const ENDONYMS: readonly Key[] = ['lang.switch.title'];
-const ENDONYM_TEXTS: ReadonlySet<string> = new Set(ENDONYMS.map((key) => DICTS.en[key]));
 
 describe('словари', () => {
   it('у английского те же ключи, что у русского', () => {
@@ -29,7 +25,6 @@ describe('словари', () => {
 
   it('в английском нет кириллицы', () => {
     for (const key of KEYS) {
-      if (ENDONYMS.includes(key)) continue;
       expect(DICTS.en[key], key).not.toMatch(CYRILLIC);
     }
   });
@@ -211,7 +206,7 @@ describe('страж непереведённого', () => {
     const offenders: string[] = [];
     for (const file of files) {
       for (const text of literals(readFileSync(join(root, file), 'utf8'))) {
-        if (CYRILLIC.test(text) && !ENDONYM_TEXTS.has(text)) offenders.push(`${file}: ${text.slice(0, 60)}`);
+        if (CYRILLIC.test(text)) offenders.push(`${file}: ${text.slice(0, 60)}`);
       }
     }
     expect(offenders).toEqual([]);

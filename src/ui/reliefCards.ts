@@ -15,7 +15,8 @@ import {
 } from '../geo/roulette';
 import { createCard } from 'maker-kit/ui/card';
 import { make } from 'maker-kit/ui/dom';
-import type { Change, Control, SelectOption } from './controls';
+import { renderItemList } from 'maker-kit/ui/listCard';
+import type { Change, Control, ControlsHandle, SelectOption } from './controls';
 import { renderControls } from './controls';
 import { t } from '../i18n';
 
@@ -411,10 +412,12 @@ export interface ReliefCardsHandle {
 }
 
 /**
- * Список полос накатки. Полос бывает несколько: на настоящей посуде поясков
- * обычно два-три, разного рисунка и на разной высоте. Добавление и удаление
- * меняют длину массива, поэтому список пересобирается целиком; правка
- * значений внутри полосы обходится синхронизацией.
+ * Список полос накатки — список кита (`ui/listCard`): у каждой полосы своя
+ * строка с ✕ и всегда открытыми ползунками. Полос бывает несколько: на
+ * настоящей посуде поясков обычно два-три, разного рисунка и на разной
+ * высоте. Тело полосы (ползунки и подпись) живёт, пока жива её строка, и
+ * строится заново, когда меняется число полос: индекс захвачен в её
+ * ползунках.
  */
 export function renderBandList(
   host: HTMLElement,
@@ -422,17 +425,17 @@ export function renderBandList(
   onChange: Change<RouletteState>,
   idPrefix = 'roul',
 ): { sync(state: RouletteState, describe: (band: RouletteBand) => string): void } {
-  let rows: ReturnType<typeof renderControls<RouletteState>>[] = [];
-  let notes: HTMLElement[] = [];
-  let built = -1;
+  let bodies: { body: HTMLElement; rows: ControlsHandle<RouletteState>; note: HTMLElement }[] = [];
 
-  const addBtn = make('button', 'tb-btn', t('band.add'));
+  const list = make('ul', 'item-list');
+  const addBtn = make('button', 'btn add-button', t('band.add'));
   addBtn.type = 'button';
   addBtn.addEventListener('click', () => {
     const bands = read().bands;
     if (bands.length >= MAX_BANDS) return;
     onChange({ bands: [...bands, { ...defaultBand(), on: true, bandCenter: nextCentre(bands) }] }, true);
   });
+  host.replaceChildren(list, addBtn);
 
   /** Новую полосу ставим туда, где ещё нет соседей. */
   function nextCentre(bands: RouletteBand[]): number {
@@ -443,43 +446,32 @@ export function renderBandList(
   }
 
   function build(count: number): void {
-    host.textContent = '';
-    rows = [];
-    notes = [];
+    bodies = [];
     for (let index = 0; index < count; index++) {
-      const box = make('div', 'band-box');
-      const head = make('div', 'band-head');
-      head.append(make('span', undefined, t('band.title', { n: index + 1 })));
-      const remove = make('button', 'adj-btn band-del', '✕');
-      remove.type = 'button';
-      remove.title = t('band.remove');
-      remove.addEventListener('click', () => {
-        onChange({ bands: read().bands.filter((_, i) => i !== index) }, true);
-      });
-      head.append(remove);
-      box.append(head);
-
+      const body = make('div', 'band-body');
       const controls = make('div');
-      box.append(controls);
-      rows.push(renderControls(controls, bandControls(index), read, onChange, `${idPrefix}${index}`));
-
-      const note = make('p', 'fcard-desc');
-      box.append(note);
-      notes.push(note);
-      host.append(box);
+      const note = make('p', 'row-note band-note');
+      body.append(controls, note);
+      // ползунки полосы — `#roul0_pattern`, `#lidroul1_depth`: индекс в приставке
+      bodies.push({ body, rows: renderControls(controls, bandControls(index), read, onChange, `${idPrefix}${index}`), note });
     }
-    host.append(addBtn);
-    built = count;
   }
 
   return {
     sync(state, describe): void {
-      if (state.bands.length !== built) build(state.bands.length);
+      if (state.bands.length !== bodies.length) build(state.bands.length);
+      renderItemList(list, {
+        items: state.bands.map((_, index) => ({ id: String(index), title: t('band.title', { n: index + 1 }) })),
+        body: (id) => bodies[Number(id)]?.body ?? null,
+        t,
+        idPrefix,
+        remove: (id) => onChange({ bands: read().bands.filter((_, index) => index !== Number(id)) }, true),
+      });
       addBtn.hidden = state.bands.length >= MAX_BANDS;
-      for (let index = 0; index < state.bands.length; index++) {
-        rows[index].sync(state);
-        notes[index].textContent = describe(state.bands[index]);
-      }
+      state.bands.forEach((band, index) => {
+        bodies[index].rows.sync(state);
+        bodies[index].note.textContent = describe(band);
+      });
     },
   };
 }

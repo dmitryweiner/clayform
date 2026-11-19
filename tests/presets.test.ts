@@ -1,7 +1,7 @@
 // Пресеты и ссылки. Пресет — это обещание: нажал и получил рабочее изделие,
 // а не просто «оно не упало».
 
-import { PRESETS, presetById } from '../src/state/presets';
+import { PRESETS, presetById, presetSignature } from '../src/state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from '../src/state/share';
 import { defaultState, sanitizeState, toBuildParams } from '../src/state/schema';
 import { buildHollowVessel } from '../src/geo/hollow';
@@ -133,5 +133,15 @@ describe('автоимя своего пресета', () => {
     // приставка без номера или номер без пробела — не автоимя
     expect(nextPresetName(named('Piece', 'Piece7'), prefixes, 'Piece')).toBe('Piece 1');
     expect(DICTS.ru['presets.auto']).toBe('Изделие');
+  });
+});
+
+describe('подпись пресета', () => {
+  it('детализация и «крышка рядом» не делают изделие другим, форма — делает', () => {
+    const teapot = presetById('teapot')?.build() ?? defaultState();
+    const signature = presetSignature(teapot);
+    expect(presetSignature({ ...teapot, resolution: 384 })).toBe(signature);
+    expect(presetSignature({ ...teapot, lidBeside: !teapot.lidBeside })).toBe(signature);
+    expect(presetSignature({ ...teapot, heightMm: teapot.heightMm + 1 })).not.toBe(signature);
   });
 });

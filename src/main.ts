@@ -20,12 +20,21 @@ import { renderReliefCards } from './ui/reliefCards';
 import { renderAttachCards } from './ui/attachCards';
 import { renderExportPanel } from './ui/exportPanel';
 import { drawProfileGraph } from './ui/graph';
-import { createProgress } from './ui/progress';
-import { renderPresetList } from './ui/presetList';
-import type { PresetRow } from './ui/presetList';
+import { createProgress } from 'maker-kit/ui/progress';
+import { renderPresetList } from 'maker-kit/ui/presetList';
+import { createModal } from 'maker-kit/ui/modal';
+import type { StorageStatus } from 'maker-kit/ui/banner';
+import { renderBanner } from 'maker-kit/ui/banner';
+import type { MessageLine } from 'maker-kit/ui/messageList';
+import { renderMessages } from 'maker-kit/ui/messageList';
+import { setupSheet } from 'maker-kit/ui/sheet';
+import { createLanguagePicker } from 'maker-kit/ui/languagePicker';
+import { bindHistory } from 'maker-kit/ui/historyKeys';
+import { download } from 'maker-kit/ui/files';
 import { applyStaticText } from './ui/staticText';
-import type { Lang } from './i18n';
-import { initLang, lang, setLang, onLangChange, t, tm, tDynamic, autoPresetPrefixes } from './i18n';
+import type { Key } from './i18n';
+import { initLang, lang, setLang, onLangChange, t, tm, tDynamic, autoPresetPrefixes, LANGS } from './i18n';
+import type { Message } from 'maker-kit/core/message';
 import type { SurfaceMesh } from './geo/surface';
 import { placeInRow, LID_BESIDE_GAP_MM } from './geo/layout';
 import { buildVessel, vesselSurface } from './geo/build';
@@ -42,15 +51,16 @@ import type { RouletteBand, RouletteContext } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
 import { validateMesh, assessExport, overhangFraction, signedVolume } from './geo/validate';
 import type { AppState } from './state/schema';
-import { defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, lidRelief, RESOLUTIONS } from './state/schema';
-import { PRESETS, presetById } from './state/presets';
+import { defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, lidRelief } from './state/schema';
+import { PRESETS, presetById, presetSignature } from './state/presets';
 import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
 import { encodePresetFile, decodePresetFile, presetFileName } from './state/presetFile';
 import type { ClayPreset } from './state/userPresets';
 import { savePresetAs, userPresetsRecord } from './state/userPresets';
 import { History } from 'maker-kit/core/history';
 import { browserStorage, loadRecord, saveRecord } from 'maker-kit/core/storage';
-import { nextPresetName, removeUserPreset } from 'maker-kit/core/presets';
+import type { PresetRef } from 'maker-kit/core/presets';
+import { nextPresetName, presetStatus, removeUserPreset, renameUserPreset } from 'maker-kit/core/presets';
 import type { JobPart } from './worker/protocol';
 import { CsgClient } from './worker/client';
 
@@ -93,16 +103,14 @@ const reliefCards = el('reliefCards', HTMLDivElement);
 const attachCards = el('attachCards', HTMLDivElement);
 const exportParams = el('exportParams', HTMLDivElement);
 const profileGraph = el('profileGraph', HTMLCanvasElement);
-const resolutionSel = el('resolution', HTMLSelectElement);
 const exportBtn = el('exportBtn', HTMLButtonElement);
 const statusEl = el('status', HTMLParagraphElement);
 const auditEl = el('audit', HTMLParagraphElement);
-const warningsEl = el('warnings', HTMLParagraphElement);
-const blockersEl = el('blockers', HTMLParagraphElement);
+const messagesEl = el('messages', HTMLUListElement);
+const storageNote = el('storageNote', HTMLDivElement);
 const presetBtn = el('presetBtn', HTMLButtonElement);
-const presetsPanel = el('presets', HTMLDivElement);
-const presetsClose = el('presetsClose', HTMLButtonElement);
 const presetList = el('presetList', HTMLDivElement);
+const presetsDialog = createModal(el('presets', HTMLDivElement), { close: el('presetsClose', HTMLButtonElement) });
 const saveBtn = el('saveBtn', HTMLButtonElement);
 const fileOpenBtn = el('fileOpenBtn', HTMLButtonElement);
 const fileSaveBtn = el('fileSaveBtn', HTMLButtonElement);
@@ -110,16 +118,20 @@ const fileInput = el('fileInput', HTMLInputElement);
 const shareBtn = el('shareBtn', HTMLButtonElement);
 const undoBtn = el('undoBtn', HTMLButtonElement);
 const redoBtn = el('redoBtn', HTMLButtonElement);
-const progress = createProgress({
-  wrap: el('progressWrap', HTMLDivElement),
-  fill: el('progressFill', HTMLDivElement),
-  label: el('progressLabel', HTMLSpanElement),
-});
+const progress = createProgress(el('progressWrap', HTMLDivElement), { t });
 
 const scene = createScene(view);
 const csg = new CsgClient();
 const history = new History<AppState>(startingState(), HISTORY_LIMIT);
 let state: AppState = history.state;
+const historyKeys = bindHistory({
+  undo: undoBtn,
+  redo: redoBtn,
+  onUndo: () => stepHistory('undo'),
+  onRedo: () => stepHistory('redo'),
+  canUndo: () => history.canUndo,
+  canRedo: () => history.canRedo,
+});
 
 /** Ссылка со состоянием важнее дефолта: по ней и открывают чужую работу. */
 function startingState(): AppState {
@@ -207,22 +219,33 @@ function syncPanel(): void {
   reliefRows.sync(state.relief, state.roulette);
   attachRows.sync(state.handle, state.spout, state.lid, state.mark);
   exportPanel.sync(state);
-  resolutionSel.value = String(state.resolution);
-  updateHistoryButtons();
+  historyKeys.refresh();
+  showPresetButton();
   refresh();
-}
-
-function updateHistoryButtons(): void {
-  undoBtn.disabled = !history.canUndo;
-  redoBtn.disabled = !history.canRedo;
 }
 
 /**
  * Предупреждения о самой форме — их считает refresh. Проверка меша дописывает
  * к ним свои и может пройти дважды (по быстрому превью и по точной сборке),
- * поэтому список хранится отдельно, а не вычитывается обратно из разметки.
+ * поэтому списки хранятся отдельно, а не вычитываются обратно из разметки.
  */
-let baseWarnings: string[] = [];
+let baseWarnings: MessageLine[] = [];
+/** Вердикт проверки меша: что мешает выгрузке и о чём стоит знать. */
+let meshLines: MessageLine[] = [];
+/** Последняя неудача — сборка, экспорт, чужой файл; держится до следующей проверки меша. */
+let failures: MessageLine[] = [];
+
+/** Строка списка сообщений из кода словаря; код уходит в `data-code` (смоук). */
+function line(severity: 'bad' | 'warn', message: Message<Key>): MessageLine {
+  return { severity, text: tm(message), code: message.code };
+}
+
+/** Блокировки первыми, затем предупреждения. */
+function showMessages(): void {
+  const bad = meshLines.filter((item) => item.severity === 'bad');
+  const warn = meshLines.filter((item) => item.severity !== 'bad');
+  renderMessages(messagesEl, [...failures, ...bad, ...baseWarnings, ...warn]);
+}
 
 let auditTimer: ReturnType<typeof setTimeout> | null = null;
 let exactTimer: ReturnType<typeof setTimeout> | null = null;
@@ -274,16 +297,18 @@ function refresh(): void {
 
   baseWarnings = [];
   if (hasAppliedSpout() && state.spout.tipAt < SPOUT_BELOW_RIM) {
-    baseWarnings.push(t('warn.spoutLow'));
+    baseWarnings.push(line('warn', { code: 'warn.spoutLow' }));
   }
   if (hollow.pinchedFraction > 0) {
-    baseWarnings.push(t('warn.pinched', { pct: (hollow.pinchedFraction * 100).toFixed(1) }));
+    baseWarnings.push(line('warn', { code: 'warn.pinched', params: { pct: (hollow.pinchedFraction * 100).toFixed(1) } }));
   }
-  baseWarnings.push(...markWarnings(buildParams.mark, profileRadius(profile, 0)).map(tm));
+  baseWarnings.push(...markWarnings(buildParams.mark, profileRadius(profile, 0)).map((message) => line('warn', message)));
   if (fit?.tooNarrow) {
-    baseWarnings.push(t('warn.lidNarrow', { d: (fit.seatMm * 2).toFixed(0) }));
+    baseWarnings.push(line('warn', { code: 'warn.lidNarrow', params: { d: (fit.seatMm * 2).toFixed(0) } }));
   }
-  warningsEl.textContent = baseWarnings.join('\n');
+  // предупреждения меша — от прошлой сборки: их заново скажет проверка, блокировки держатся до неё
+  meshLines = meshLines.filter((item) => item.severity === 'bad');
+  showMessages();
 
   const widthMm = outerWidth(outer.positions);
   // Глина считается по всему, что придётся напечатать: крышка — такая же
@@ -340,10 +365,9 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
   try {
     // Крышку воркер не считает вовсе: булевых операций ей не нужно, а
     // построенная здесь она уже стоит в сцене — надетой и точной.
-    const parts = await progress.track(
-      (onProgress) => csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS, markStrip: markRaster }, onProgress),
-      { label: 'progress.exact', indeterminate: true },
-    );
+    // Без хода работ: у превью один этап, и шкала «0 из 1» выглядела бы
+    // зависшей — полоса кита бежит, пока задача идёт.
+    const parts = await progress.track(csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS, markStrip: markRaster }));
     if (!parts || stamp !== generation) return;
     const mesh = toMesh(parts[0]);
     scene.setMeshes([mesh, ...lidMeshes]);
@@ -353,7 +377,8 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
     // Молчать об этом нельзя, на экране осталось бы приблизительное превью.
     if (stamp !== generation) return;
     auditEl.textContent = '';
-    blockersEl.textContent = t('error.vessel', { error: message(error) });
+    failures = [line('bad', { code: 'error.vessel', params: { error: message(error) } })];
+    showMessages();
     exportBtn.disabled = true;
   }
 }
@@ -380,12 +405,13 @@ function audit(meshes: SurfaceMesh[]): void {
     ? t('audit.watertight', { k: Math.round(triangles / 1000) })
     : t('audit.open');
 
-  const extra = assessments.flatMap((assessment) => assessment.warnings).map(tm);
-  if (overhang > 0.15) {
-    extra.push(t('warn.overhang', { pct: (overhang * 100).toFixed(0) }));
-  }
-  warningsEl.textContent = [...baseWarnings, ...extra].join('\n');
-  blockersEl.textContent = blocking.map(tm).join('\n');
+  meshLines = [
+    ...blocking.map((message) => line('bad', message)),
+    ...assessments.flatMap((assessment) => assessment.warnings).map((message) => line('warn', message)),
+    ...(overhang > 0.15 ? [line('warn', { code: 'warn.overhang', params: { pct: (overhang * 100).toFixed(0) } })] : []),
+  ];
+  failures = [];
+  showMessages();
   exportBtn.disabled = blocking.length > 0;
 }
 
@@ -426,17 +452,6 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-resolutionSel.textContent = '';
-for (const value of RESOLUTIONS) {
-  const option = document.createElement('option');
-  option.value = String(value);
-  option.textContent = `${value} × ${value}`;
-  resolutionSel.append(option);
-}
-resolutionSel.addEventListener('change', () => {
-  applyState({ ...state, resolution: Number(resolutionSel.value) }, true);
-});
-
 exportBtn.addEventListener('click', () => {
   void runExport();
 });
@@ -457,67 +472,67 @@ async function runExport(): Promise<void> {
 
     const blocking = files.flatMap((file) => file.blocking);
     if (blocking.length > 0) {
-      blockersEl.textContent = blocking.map(tm).join('\n');
+      failures = blocking.map((message) => line('bad', message));
+      showMessages();
       return;
     }
-    blockersEl.textContent = '';
+    failures = [];
+    showMessages();
     for (const file of files) {
       const name = `clayform-${state.family}-${file.id}.stl`;
-      download(encodeSTL(toMesh(file), { name: file.id }), name);
+      download(name, encodeSTL(toMesh(file), { name: file.id }), 'model/stl');
       // браузер глотает пачку одновременных загрузок — разносим по времени
       // oxlint-disable-next-line no-await-in-loop -- по одной нарочно
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
   } catch (error) {
-    blockersEl.textContent = t('error.export', { error: message(error) });
+    failures = [line('bad', { code: 'error.export', params: { error: message(error) } })];
+    showMessages();
   } finally {
     exportBtn.textContent = label;
     exportBtn.disabled = false;
   }
 }
 
-function download(data: BlobPart, filename: string, type = 'model/stl'): void {
-  const url = URL.createObjectURL(new Blob([data], { type }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 // --- пресеты ---
 
 const storage = browserStorage();
 let userPresets: ClayPreset[] = loadRecord(storage, userPresetsRecord) ?? [];
-/** Имя последнего открытого пресета — подсказка имени при сохранении в файл. */
-let presetName = '';
-
 /** Какой пресет открыт: 'b:<id>', 'u:<id>' или пусто — его подсвечивает список. */
-let presetRef = '';
+let presetRef: PresetRef = '';
+/**
+ * Имя, данное руками: файлу при сохранении или пришедшее с открытым файлом.
+ * Важнее имени пресета, пока не открыт другой пресет.
+ */
+let givenName = '';
+/** Неудачная запись пресета — в баннере, пока её не скроют. */
+let presetFailure: StorageStatus['preset'] = null;
 
 /** Имя встроенного пресета — на текущем языке. */
 function builtinName(id: string): string {
   return tDynamic(`preset.${id}`);
 }
 
-function presetRows(): PresetRow[] {
-  return [
-    ...userPresets.map((preset) => ({ ref: `u:${preset.id}`, name: preset.name, mine: true })),
-    ...PRESETS.map((preset) => ({
-      ref: `b:${preset.id}`,
-      name: builtinName(preset.id),
-      note: tDynamic(`preset.${preset.id}.note`),
-      mine: false,
-    })),
-  ];
+/** Имя проекта на кнопке в шапке и подсказка имени файла. */
+function projectName(): string {
+  const id = presetRef.slice(2);
+  if (givenName) return givenName;
+  if (presetRef.startsWith('b:')) return builtinName(id);
+  return userPresets.find((preset) => preset.id === id)?.name ?? '';
 }
 
-/** Кнопка в шапке показывает открытый пресет, список — где выбрать и удалить. */
-function setPresetRef(ref: string, name: string): void {
-  presetRef = ref;
-  presetName = name;
-  presetBtn.textContent = name || t('topbar.presets');
-  if (!presetsPanel.hidden) renderPresets();
+/** Состояние пресета по ссылке — для «изделие ушло от пресета». */
+function presetState(ref: PresetRef): AppState | undefined {
+  const id = ref.slice(2);
+  if (ref.startsWith('b:')) return presetById(id)?.build();
+  return userPresets.find((preset) => preset.id === id)?.state;
+}
+
+/** Кнопка в шапке: имя проекта, ● — изделие ушло от открытого пресета. */
+function showPresetButton(): void {
+  presetBtn.textContent = projectName() || t('kit.topbar.presets');
+  presetBtn.classList.toggle('changed', presetStatus(presetRef, state, presetState, presetSignature) === 'changed');
+  if (presetsDialog.isOpen()) renderPresets();
 }
 
 /** Автоимя «Изделие N» / «Piece N»: номер общий для всех языков. */
@@ -526,67 +541,88 @@ function autoPresetName(): string {
 }
 
 function renderPresets(): void {
-  renderPresetList(presetList, presetRows(), presetRef, { onPick: openPreset, onDelete: deletePreset });
+  renderPresetList(presetList, {
+    builtIn: PRESETS.map((preset) => ({
+      id: preset.id,
+      label: builtinName(preset.id),
+      note: tDynamic(`preset.${preset.id}.note`),
+    })),
+    user: userPresets.map(({ id, name }) => ({ id, name })),
+    current: presetRef,
+    status: presetStatus(presetRef, state, presetState, presetSignature),
+    t,
+    open: openPreset,
+    rename: renamePreset,
+    remove: deletePreset,
+  });
 }
 
-function openPresets(): void {
-  renderPresets();
-  presetsPanel.hidden = false;
+/** Запись своих пресетов; неудача — в баннер, и её можно скрыть. */
+function writePresets(next: ClayPreset[], action: 'save' | 'delete'): boolean {
+  const result = saveRecord(storage, userPresetsRecord, next);
+  presetFailure = result === 'ok' ? null : { action, result };
+  showBanner();
+  return result === 'ok';
 }
 
-function closePresets(): void {
-  presetsPanel.hidden = true;
+function showBanner(): void {
+  renderBanner(
+    storageNote,
+    { project: 'ok', preset: presetFailure },
+    {
+      t,
+      advice: { blocked: 'kit.storage.advice.file', full: 'kit.storage.advice.fileFull' },
+      onDismiss: () => {
+        presetFailure = null;
+        showBanner();
+      },
+    },
+  );
 }
 
-function openPreset(ref: string): void {
-  closePresets();
-  const id = ref.slice(2);
-  if (ref.startsWith('b:')) {
-    const preset = presetById(id);
-    if (!preset) return;
-    applyState(preset.build(), true);
-    setPresetRef(ref, builtinName(id));
-  } else {
-    const preset = userPresets.find((item) => item.id === id);
-    if (!preset) return;
-    applyState(preset.state, true);
-    setPresetRef(ref, preset.name);
-  }
+function openPreset(ref: PresetRef): void {
+  presetsDialog.close();
+  const next = presetState(ref);
+  if (!next) return;
+  presetRef = ref;
+  givenName = '';
+  applyState(next, true);
 }
 
-function deletePreset(ref: string): void {
-  const next = removeUserPreset(userPresets, ref.slice(2));
-  if (saveRecord(storage, userPresetsRecord, next) !== 'ok') {
-    blockersEl.textContent = t('kit.storage.preset.delete');
-    return;
-  }
+function renamePreset(id: string, name: string): void {
+  const next = renameUserPreset(userPresets, id, name);
+  if (writePresets(next, 'save')) userPresets = next;
+  showPresetButton();
+}
+
+function deletePreset(id: string): void {
+  const next = removeUserPreset(userPresets, id);
+  if (!writePresets(next, 'delete')) return;
   userPresets = next;
   // изделие на экране остаётся — пропадает только запись в списке
-  if (presetRef === ref) setPresetRef('', '');
+  if (presetRef === `u:${id}`) presetRef = '';
+  showPresetButton();
   renderPresets();
 }
 
 presetBtn.addEventListener('click', () => {
-  if (presetsPanel.hidden) openPresets();
-  else closePresets();
-});
-presetsClose.addEventListener('click', closePresets);
-// клик мимо коробки — по затемнению — закрывает
-presetsPanel.addEventListener('click', (event) => {
-  if (event.target === presetsPanel) closePresets();
-});
-window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !presetsPanel.hidden) closePresets();
+  if (presetsDialog.isOpen()) {
+    presetsDialog.close();
+    return;
+  }
+  renderPresets();
+  presetsDialog.open(presetBtn);
 });
 
 // --- пресет файлом ---
 
 fileSaveBtn.addEventListener('click', () => {
-  const suggested = presetName || autoPresetName();
+  const suggested = projectName() || autoPresetName();
   const name = prompt(t('presets.prompt'), suggested)?.trim();
   if (!name) return;
-  download(encodePresetFile(name, state), presetFileName(name), 'application/json');
-  setPresetRef(presetRef, name);
+  download(presetFileName(name), encodePresetFile(name, state), 'application/json');
+  givenName = name;
+  showPresetButton();
   flash(fileSaveBtn, '✓');
 });
 
@@ -617,12 +653,14 @@ document.addEventListener('drop', (event) => {
 async function openPresetFile(file: File): Promise<void> {
   const decoded = decodePresetFile(await file.text().catch(() => ''));
   if (!decoded.ok) {
-    blockersEl.textContent = t(`kit.file.${decoded.reason}` as const);
+    failures = [line('bad', { code: `kit.file.${decoded.reason}` })];
+    showMessages();
     return;
   }
-  applyState(decoded.state, true);
   // в «Мои» открытый файл не попадает — только имя на кнопке
-  setPresetRef('', decoded.name);
+  presetRef = '';
+  givenName = decoded.name;
+  applyState(decoded.state, true);
   flash(fileOpenBtn, '✓');
 }
 
@@ -633,12 +671,11 @@ saveBtn.addEventListener('click', () => {
   // Список меняется и при неудачной записи: до перезагрузки пресет есть.
   const saved = savePresetAs(userPresets, name, state);
   userPresets = saved.list;
-  const write = saveRecord(storage, userPresetsRecord, userPresets);
-  if (write === 'ok') {
-    setPresetRef(`u:${saved.id}`, name);
+  if (writePresets(userPresets, 'save')) {
+    presetRef = `u:${saved.id}`;
+    givenName = '';
+    showPresetButton();
     flash(saveBtn, '✓');
-  } else {
-    blockersEl.textContent = t(write === 'full' ? 'kit.storage.preset.saveFull' : 'kit.storage.preset.save');
   }
 });
 
@@ -662,63 +699,47 @@ function flash(button: HTMLButtonElement, mark: string): void {
 }
 
 // --- отмена и повтор ---
-
-undoBtn.addEventListener('click', () => stepHistory('undo'));
-redoBtn.addEventListener('click', () => stepHistory('redo'));
+//
+// ↶ ↷ и Ctrl/⌘+Z, Shift+Ctrl/⌘+Z, Ctrl/⌘+Y — китовые (`historyKeys`): на любой
+// раскладке и сразу после ползунка; набранный текст отменяется сам.
 
 function stepHistory(direction: 'undo' | 'redo'): void {
   const restored = direction === 'undo' ? history.undo() : history.redo();
   if (restored) showState(restored);
 }
 
-window.addEventListener('keydown', (event) => {
-  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'z') return;
-  event.preventDefault();
-  stepHistory(event.shiftKey ? 'redo' : 'undo');
-});
-
 // --- мобильная панель ---
 //
-// На узком экране панель — нижний лист поверх канваса (style.css, правила
-// под max-width: 760px). При загрузке он поднят: без панели первый экран
-// пуст и непонятен. На десктопе #panelBtn и подложка скрыты стилями, и всё
-// это ни на что не влияет.
+// До 1024 px панель — нижний лист кита поверх вида; тап по виду его
+// закрывает, «⚙ Настройки» поднимает. При загрузке он поднят: без панели
+// первый экран пуст и непонятен.
 
-const panelBtn = el('panelBtn', HTMLButtonElement);
-const panelBackdrop = el('panelBackdrop', HTMLDivElement);
-
-function setPanelOpen(open: boolean): void {
-  panel.classList.toggle('open', open);
-  panelBackdrop.hidden = !open;
-  // пока лист поднят, закрывает его подложка — кнопка не нужна
-  panelBtn.hidden = open;
-}
-
-panelBtn.addEventListener('click', () => setPanelOpen(true));
-panelBackdrop.addEventListener('click', () => setPanelOpen(false));
-setPanelOpen(true);
+setupSheet({
+  panel,
+  button: el('sheetOpen', HTMLButtonElement),
+  close: el('sheetClose', HTMLButtonElement),
+  view: el('viewWrap', HTMLElement),
+  narrow: matchMedia('(max-width: 1023px)'),
+  open: true,
+});
 
 // --- язык ---
 //
-// Кнопка подписана языком, на который переключит. Смена перерисовывает
+// 🌐 кита со списком языков их собственными именами. Смена перерисовывает
 // панель на месте: состояние, история отмены, камера, свёрнутость карточек
 // и прокрутка панели остаются как были.
 
-const langBtn = el('langBtn', HTMLButtonElement);
-
-langBtn.addEventListener('click', () => {
-  const next: Lang = lang() === 'ru' ? 'en' : 'ru';
-  setLang(next);
-});
+const langPicker = createLanguagePicker(el('topbar', HTMLElement), { locales: LANGS, current: lang(), t, onChange: setLang });
 
 onLangChange(() => {
   applyStaticText(document);
+  langPicker.set(lang());
   const collapsed = snapshotCards(panel);
   const scroll = panel.scrollTop;
   renderPanel();
   restoreCards(panel, collapsed);
   panel.scrollTop = scroll;
-  setPresetRef(presetRef, presetRef.startsWith('b:') ? builtinName(presetRef.slice(2)) : presetName);
+  showBanner();
   progress.refresh();
   syncPanel();
 });
