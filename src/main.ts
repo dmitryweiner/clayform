@@ -59,7 +59,10 @@ import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share
 import { encodePresetFile, decodePresetFile, presetFileName } from './state/presetFile';
 import type { ClayPreset } from './state/userPresets';
 import { savePresetAs, userPresetsRecord } from './state/userPresets';
+import type { StoredProject } from './state/project';
+import { projectRecord } from './state/project';
 import { History } from 'maker-kit/core/history';
+import type { StorageWrite } from 'maker-kit/core/storage';
 import { browserStorage, loadRecord, saveRecord } from 'maker-kit/core/storage';
 import type { PresetRef } from 'maker-kit/core/presets';
 import { nextPresetName, presetStatus, removeUserPreset, renameUserPreset } from 'maker-kit/core/presets';
@@ -124,7 +127,9 @@ const progress = createProgress(el('progressWrap', HTMLDivElement), { t });
 
 const scene = createScene(view);
 const csg = createCsgClient();
-const history = new History<AppState>(startingState(), HISTORY_LIMIT);
+const storage = browserStorage();
+const opening = openingProject();
+const history = new History<AppState>(opening.state, HISTORY_LIMIT);
 let state: AppState = history.state;
 const historyKeys = bindHistory({
   undo: undoBtn,
@@ -135,10 +140,16 @@ const historyKeys = bindHistory({
   canRedo: () => history.canRedo,
 });
 
-/** Ссылка со состоянием важнее дефолта: по ней и открывают чужую работу. */
-function startingState(): AppState {
+/**
+ * С чем открываемся. Ссылка со состоянием важнее всего: по ней открывают
+ * чужую работу. Без неё — изделие, сохранённое в браузере (оно же
+ * переживает перезагрузку на новую версию), без него — изделие по умолчанию.
+ */
+function openingProject(): StoredProject {
   const token = tokenFromHash(location.hash);
-  return (token && decodeStateToken(token)) || defaultState();
+  const linked = token ? decodeStateToken(token) : null;
+  if (linked) return { state: linked, ref: '', name: '' };
+  return loadRecord(storage, projectRecord) ?? { state: defaultState(), ref: '', name: '' };
 }
 
 // Панель целиком: строится при старте и заново на каждой смене языка —
@@ -200,6 +211,7 @@ function applyState(next: AppState, final: boolean): void {
   if (final) history.commit(clean);
   else history.live(clean);
   showState(clean);
+  if (final) keepProject();
 }
 
 /** Показывает состояние, которое история уже держит: правку, отмену, старт. */
@@ -510,15 +522,16 @@ async function runExport(): Promise<void> {
 
 // --- пресеты ---
 
-const storage = browserStorage();
 let userPresets: ClayPreset[] = loadRecord(storage, userPresetsRecord) ?? [];
 /** Какой пресет открыт: 'b:<id>', 'u:<id>' или пусто — его подсвечивает список. */
-let presetRef: PresetRef = '';
+let presetRef: PresetRef = opening.ref;
 /**
  * Имя, данное руками: файлу при сохранении или пришедшее с открытым файлом.
  * Важнее имени пресета, пока не открыт другой пресет.
  */
-let givenName = '';
+let givenName = opening.name;
+/** Последняя запись изделия в браузер: её сбой держится в баннере, пока длится. */
+let projectWrite: StorageWrite = 'ok';
 /** Неудачная запись пресета — в баннере, пока её не скроют. */
 let presetFailure: StorageStatus['preset'] = null;
 
@@ -571,6 +584,18 @@ function renderPresets(): void {
   });
 }
 
+/**
+ * Изделие — в браузер: после каждой законченной правки, отмены, смены
+ * пресета или имени. Ссылка `#s=` в адресе описывала изделие на момент,
+ * когда ею поделились: после правки перезагрузка должна открыть правленое,
+ * поэтому ссылка из адреса уходит.
+ */
+function keepProject(): void {
+  projectWrite = saveRecord(storage, projectRecord, { state, ref: presetRef, name: givenName });
+  if (tokenFromHash(location.hash)) window.history.replaceState(null, '', location.pathname + location.search);
+  showBanner();
+}
+
 /** Запись своих пресетов; неудача — в баннер, и её можно скрыть. */
 function writePresets(next: ClayPreset[], action: 'save' | 'delete'): boolean {
   const result = saveRecord(storage, userPresetsRecord, next);
@@ -582,7 +607,7 @@ function writePresets(next: ClayPreset[], action: 'save' | 'delete'): boolean {
 function showBanner(): void {
   renderBanner(
     storageNote,
-    { project: 'ok', preset: presetFailure },
+    { project: projectWrite, preset: presetFailure },
     {
       t,
       advice: { blocked: 'kit.storage.advice.file', full: 'kit.storage.advice.fileFull' },
@@ -616,6 +641,7 @@ function deletePreset(id: string): void {
   // изделие на экране остаётся — пропадает только запись в списке
   if (presetRef === `u:${id}`) presetRef = '';
   showPresetButton();
+  keepProject();
   renderPresets();
 }
 
@@ -641,6 +667,7 @@ fileSaveBtn.addEventListener('click', () => {
   download(presetFileName(name), encodePresetFile(name, state), 'application/json');
   givenName = name;
   showPresetButton();
+  keepProject();
   flash(fileSaveBtn, '✓');
 });
 
@@ -693,6 +720,7 @@ saveBtn.addEventListener('click', () => {
     presetRef = `u:${saved.id}`;
     givenName = '';
     showPresetButton();
+    keepProject();
     flash(saveBtn, '✓');
   }
 });
@@ -723,7 +751,9 @@ function flash(button: HTMLButtonElement, mark: string): void {
 
 function stepHistory(direction: 'undo' | 'redo'): void {
   const restored = direction === 'undo' ? history.undo() : history.redo();
-  if (restored) showState(restored);
+  if (!restored) return;
+  showState(restored);
+  keepProject();
 }
 
 // --- мобильная панель ---
