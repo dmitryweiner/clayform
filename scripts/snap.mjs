@@ -25,12 +25,12 @@
 //   --orbit dx,dy         повернуть камеру мышью: заглянуть внутрь изделия
 //   --wait <ms>           доп. пауза перед съёмкой
 //   --width / --height    размер окна
-//   --preview             прод-сборка вместо dev-сервера
+//   --preview             прод-сборка вместо dev-сервера (порты — scripts/lib/harness.mjs)
 //   --url <path>          снять произвольный путь сервера (иконку, ассет)
 
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { parseArgs, openApp } from './lib/harness.mjs';
+import { launch, parseArgs } from './lib/harness.mjs';
 
 const flags = parseArgs(
   process.argv.slice(2),
@@ -46,135 +46,127 @@ if (!out) {
 mkdirSync(dirname(out), { recursive: true });
 
 const FAMILY_ORDER = ['pot', 'bowl', 'cup', 'vase'];
+const family = flags.get('family');
+if (family && !FAMILY_ORDER.includes(family)) {
+  console.error(`неизвестное семейство: ${family} (есть ${FAMILY_ORDER.join(', ')})`);
+  process.exit(2);
+}
 
-const app = await openApp({
-  preview: flags.has('preview'),
-  width: Number(flags.get('width') ?? 1280),
-  height: Number(flags.get('height') ?? 860),
+const app = await launch({ preview: flags.has('preview') });
+const { label } = app;
+const { page } = await app.open({
+  viewport: { width: Number(flags.get('width') ?? 1280), height: Number(flags.get('height') ?? 860) },
   locale: flags.get('lang') === 'en' ? 'en-US' : 'ru-RU',
 });
-const { page, errors, label } = app;
 
-const rawUrl = flags.get('url');
-if (rawUrl) {
-  // Статический ассет: приложение не поднимаем, просто открываем путь.
-  label(`url:${rawUrl}`);
-  await page.goto(new URL(rawUrl, page.url()).href);
-  await page.waitForTimeout(Number(flags.get('wait') ?? 300));
-  await page.screenshot({ path: out });
-  await app.close();
-  console.log(`snap → ${out}`);
-  process.exit(errors.length ? 1 : 0);
-}
-
-label('boot');
-await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0, { timeout: 20000 });
-
-const family = flags.get('family');
-if (family) {
-  const index = FAMILY_ORDER.indexOf(family);
-  if (index < 0) {
-    console.error(`неизвестное семейство: ${family} (есть ${FAMILY_ORDER.join(', ')})`);
-    process.exit(2);
+// прогон кита: закрывает браузер и сервер при любом исходе, ошибки консоли — провал
+await app.run(async () => {
+  const rawUrl = flags.get('url');
+  if (rawUrl) {
+    // Статический ассет: приложение не поднимаем, просто открываем путь.
+    label(`url:${rawUrl}`);
+    await page.goto(new URL(rawUrl, page.url()).href);
+    await page.waitForTimeout(Number(flags.get('wait') ?? 300));
+    await page.screenshot({ path: out });
+    return;
   }
-  label(`family:${family}`);
-  await page.locator('#familyGrid .family-btn').nth(index).click();
-  await page.waitForTimeout(200);
-}
 
-const preset = flags.get('preset');
-if (preset) {
-  label(`preset:${preset}`);
-  await page.click('#presetBtn');
-  await page.click(`#presetList [data-ref="b:${preset}"] .preset-pick`);
-  await page.waitForTimeout(300);
-}
+  label('boot');
+  await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0, { timeout: 20000 });
 
-// Действия идут в порядке командной строки: «--click '+ Полоса'» и следом
-// «--set lidroul0_pattern=…» должны работать — ползунок появляется кликом.
-const ACTIONS = new Set(['check', 'uncheck', 'set', 'upload', 'click']);
-const argv = process.argv.slice(2);
-for (let i = 0; i < argv.length; i++) {
-  const name = argv[i].startsWith('--') ? argv[i].slice(2) : '';
-  if (!ACTIONS.has(name)) continue;
-  const arg = argv[++i];
-  label(`${name}:${arg}`);
-  const eq = arg.indexOf('=');
-  // контрол в свёрнутой карточке скрыт: раскрываем её, как раскрыл бы человек
-  if (name !== 'click') await reveal(`#${eq < 0 ? arg : arg.slice(0, eq)}`);
-  if (name === 'check') {
-    await page.check(`#${arg}`);
-    await page.waitForTimeout(80);
-  } else if (name === 'uncheck') {
-    await page.uncheck(`#${arg}`);
-    await page.waitForTimeout(80);
-  } else if (name === 'set') {
-    const id = arg.slice(0, eq);
-    const value = arg.slice(eq + 1);
-    const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
-    if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
-    else await page.fill(`#${id}`, value);
-    await page.waitForTimeout(80);
-  } else if (name === 'upload') {
-    await page.setInputFiles(`#${arg.slice(0, eq)}`, arg.slice(eq + 1));
+  if (family) {
+    const index = FAMILY_ORDER.indexOf(family);
+    label(`family:${family}`);
+    await page.locator('#familyGrid .family-btn').nth(index).click();
+    await page.waitForTimeout(200);
+  }
+
+  const preset = flags.get('preset');
+  if (preset) {
+    label(`preset:${preset}`);
+    await page.click('#presetBtn');
+    await page.click(`#presetList [data-ref="b:${preset}"] .preset-pick`);
     await page.waitForTimeout(300);
-  } else {
-    await page.click(arg);
-    await page.waitForTimeout(120);
   }
-}
 
-/** Раскрывает свёрнутую карточку, в которой лежит элемент. */
-async function reveal(selector) {
-  await page.locator(selector).evaluate((node) => {
-    const head = node.closest('.fcard.collapsed')?.querySelector(':scope > .fcard-head');
-    if (head instanceof HTMLElement) head.click();
-  });
-}
+  // Действия идут в порядке командной строки: «--click '+ Полоса'» и следом
+  // «--set lidroul0_pattern=…» должны работать — ползунок появляется кликом.
+  const ACTIONS = new Set(['check', 'uncheck', 'set', 'upload', 'click']);
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const name = argv[i].startsWith('--') ? argv[i].slice(2) : '';
+    if (!ACTIONS.has(name)) continue;
+    const arg = argv[++i];
+    label(`${name}:${arg}`);
+    const eq = arg.indexOf('=');
+    // контрол в свёрнутой карточке скрыт: раскрываем её, как раскрыл бы человек
+    if (name !== 'click') await reveal(`#${eq < 0 ? arg : arg.slice(0, eq)}`);
+    if (name === 'check') {
+      await page.check(`#${arg}`);
+      await page.waitForTimeout(80);
+    } else if (name === 'uncheck') {
+      await page.uncheck(`#${arg}`);
+      await page.waitForTimeout(80);
+    } else if (name === 'set') {
+      const id = arg.slice(0, eq);
+      const value = arg.slice(eq + 1);
+      const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
+      if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
+      else await page.fill(`#${id}`, value);
+      await page.waitForTimeout(80);
+    } else if (name === 'upload') {
+      await page.setInputFiles(`#${arg.slice(0, eq)}`, arg.slice(eq + 1));
+      await page.waitForTimeout(300);
+    } else {
+      await page.click(arg);
+      await page.waitForTimeout(120);
+    }
+  }
 
-// Вращение — обычным перетаскиванием по канвасу, как это делает человек.
-const orbit = flags.get('orbit');
-if (orbit) {
-  const [dx, dy] = orbit.split(',').map(Number);
-  label(`orbit:${orbit}`);
-  const box = await page.locator('#view').boundingBox();
-  const x = box.x + box.width / 2;
-  const y = box.y + box.height / 2;
-  await page.mouse.move(x, y);
-  await page.mouse.down();
-  await page.mouse.move(x + dx, y + dy, { steps: 12 });
-  await page.mouse.up();
-  await page.waitForTimeout(150);
-}
+  /** Раскрывает свёрнутую карточку, в которой лежит элемент. */
+  async function reveal(selector) {
+    await page.locator(selector).evaluate((node) => {
+      const head = node.closest('.fcard.collapsed')?.querySelector(':scope > .fcard-head');
+      if (head instanceof HTMLElement) head.click();
+    });
+  }
 
-await page.waitForTimeout(Number(flags.get('wait') ?? 400));
+  // Вращение — обычным перетаскиванием по канвасу, как это делает человек.
+  const orbit = flags.get('orbit');
+  if (orbit) {
+    const [dx, dy] = orbit.split(',').map(Number);
+    label(`orbit:${orbit}`);
+    const box = await page.locator('#view').boundingBox();
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx, y + dy, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  }
 
-// Кадрирование — только у страницы целиком: у локатора свои координаты,
-// и «вырезать кусок канваса» проще, отсчитывая от левого верхнего угла окна.
-const clip = flags.get('clip');
-if (clip) {
-  const [x, y, width, height] = clip.split(',').map(Number);
-  await page.screenshot({ path: out, clip: { x, y, width, height } });
-} else {
-  const target = flags.has('view') ? page.locator('#viewWrap') : page;
-  await target.screenshot({ path: out });
-}
+  await page.waitForTimeout(Number(flags.get('wait') ?? 400));
 
-const status = await page.locator('#status').textContent();
-const audit = (await page.locator('#audit').textContent()).trim();
-// список сообщений кита: строка на сообщение, блокировки — `.bad`
-const lines = (severity) => page.locator(`#messages .message.${severity}`).allTextContents();
-const warnings = (await lines('warn')).join('\n');
-const blockers = (await lines('bad')).join('\n');
-await app.close();
+  // Кадрирование — только у страницы целиком: у локатора свои координаты,
+  // и «вырезать кусок канваса» проще, отсчитывая от левого верхнего угла окна.
+  const clip = flags.get('clip');
+  if (clip) {
+    const [x, y, width, height] = clip.split(',').map(Number);
+    await page.screenshot({ path: out, clip: { x, y, width, height } });
+  } else {
+    const target = flags.has('view') ? page.locator('#viewWrap') : page;
+    await target.screenshot({ path: out });
+  }
 
-console.log(`snap → ${out}`);
-console.log(`status: ${status}`);
-console.log(`audit: ${audit}`);
-if (warnings) console.log(`warnings: ${warnings}`);
-if (blockers) console.log(`blockers: ${blockers}`);
-if (errors.length) {
-  console.error(`console errors (${errors.length}):`);
-  for (const e of errors) console.error('  ' + e);
-  process.exit(1);
-}
+  const status = await page.locator('#status').textContent();
+  const audit = (await page.locator('#audit').textContent()).trim();
+  // список сообщений кита: строка на сообщение, блокировки — `.bad`
+  const lines = (severity) => page.locator(`#messages .message.${severity}`).allTextContents();
+  const warnings = (await lines('warn')).join('\n');
+  const blockers = (await lines('bad')).join('\n');
+  console.log(`status: ${status}`);
+  console.log(`audit: ${audit}`);
+  if (warnings) console.log(`warnings: ${warnings}`);
+  if (blockers) console.log(`blockers: ${blockers}`);
+}, `snap → ${out}`);

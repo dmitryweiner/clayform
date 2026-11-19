@@ -2,8 +2,8 @@
 // Браузерный смоук: то, что нельзя проверить в vitest — Three.js/WebGL,
 // загрузка WASM-CSG, реальные клики по UI.
 //
-//   node scripts/smoke.mjs                    # dev-сервер
-//   node scripts/smoke.mjs --preview          # прод-сборка (vite preview :4173)
+//   node scripts/smoke.mjs                    # dev-сервер (:5281)
+//   node scripts/smoke.mjs --preview          # прод-сборка (vite preview :4281)
 //   node scripts/smoke.mjs --shots shots      # + скриншот на каждое семейство
 //   node scripts/smoke.mjs --res 384          # экспорт на предельной сетке
 //   node scripts/smoke.mjs --slow             # главный поток ×6 на шагах полосы прогресса
@@ -14,11 +14,14 @@
 // Время каждой выгрузки печатается всегда — этим и меряется, во что обходится
 // экспорт на той или иной детализации.
 //
-// Любая ошибка консоли/страницы → ненулевой код выхода (годится для CI).
+// Любая ошибка консоли/страницы → ненулевой код выхода (годится для CI):
+// прогон — `app.run` китовой обвязки, он же закрывает браузер и сервер.
 
 import { mkdirSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { parseArgs, openApp } from './lib/harness.mjs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { horizontalOverflow, launch, parseArgs, throttle } from './lib/harness.mjs';
 
 const flags = parseArgs(process.argv.slice(2), ['shots', 'res']);
 const shotsDir = flags.get('shots');
@@ -31,831 +34,850 @@ async function auditVerdict(page) {
   return page.locator('#audit').textContent();
 }
 
-const app = await openApp({ preview: flags.has('preview') });
-const { page, errors, label } = app;
+const app = await launch({ preview: flags.has('preview') });
+const { errors } = app;
+/** Шаг сценария: им помечены ошибки консоли, и его же называет провал. */
+let step = 'start';
+const label = (text) => {
+  step = text;
+  app.label(text);
+};
+// одна страница на весь сценарий; браузер в ru-RU — проверки читают русский текст
+const { page } = await app.open({ locale: 'ru-RU' });
 
-// иконка должна реально отдаваться, а не 404 — вкладку по ней и находят
-label('favicon');
-const faviconStatus = await page.evaluate(() =>
-  fetch('./favicon.svg').then(
-    (r) => r.status,
-    () => 0,
-  ),
-);
-if (faviconStatus !== 200) errors.push(`[favicon] favicon.svg отдаёт ${faviconStatus}`);
-
-label('boot');
-await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0, { timeout: 20000 });
-
-// каждое семейство выбирается, строится и объявляет себя замкнутым
-const families = await page.$$eval('#familyGrid .family-btn', (nodes) => nodes.map((n) => n.textContent.trim()));
-if (families.length !== 4) errors.push(`[boot] семейств на панели: ${families.length}, ожидалось 4`);
-
-for (let i = 0; i < families.length; i++) {
-  const name = families[i];
-  label(`family:${name}`);
-  await page.locator('#familyGrid .family-btn').nth(i).click();
-  await page.waitForTimeout(200);
-
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[family:${name}] audit="${verdict}"`);
-
-  const blockers = await messages('bad');
-  if (blockers.trim()) errors.push(`[family:${name}] blockers="${blockers}"`);
-
-  const sliders = await page.locator('#shapeParams input[type=range]').count();
-  if (sliders < 3) errors.push(`[family:${name}] слайдеров ${sliders}, ожидалось ≥3`);
-
-  if (shotsDir) {
-    await page.screenshot({ path: `${shotsDir}/${String(i + 1)}-${name}.png` });
-  }
-}
-
-// крайние положения каждого слайдера не должны ломать сборку
-label('slider-extremes');
-const count = await page.locator('#shapeParams input[type=range]').count();
-for (let i = 0; i < count; i++) {
-  const slider = page.locator('#shapeParams input[type=range]').nth(i);
-  for (const bound of ['min', 'max']) {
-    const value = await slider.getAttribute(bound);
-    await slider.fill(value);
-    await page.waitForTimeout(60);
-  }
-}
-const afterExtremes = await auditVerdict(page);
-if (!afterExtremes.includes('замкнуто ✓')) {
-  errors.push(`[slider-extremes] audit="${afterExtremes}"`);
-}
-
-// выпуклость, её высота и острота — у каждого семейства свои; крайние
-// сочетания не должны рвать меш
-label('bulge-extremes');
-const bulgeControls = ['p_bellyAt', 'p_bulgeMm', 'p_bulgeAt', 'p_sharpness', 'p_curvature', 'p_kneeAt'];
-for (let i = 0; i < families.length; i++) {
-  await page.locator('#familyGrid .family-btn').nth(i).click();
-  await page.waitForTimeout(150);
-  const ids = [];
-  for (const id of bulgeControls) if (await page.locator(`#${id}`).count()) ids.push(id);
-  if (ids.length < 2) errors.push(`[bulge-extremes:${families[i]}] ползунков выпуклости: ${ids.join(',')}`);
-  for (const bound of ['min', 'max']) {
-    for (const id of ids) {
-      const slider = page.locator(`#${id}`);
-      await slider.fill(await slider.getAttribute(bound));
-    }
-    await page.waitForTimeout(150);
-    const verdict = await auditVerdict(page);
-    if (!verdict.includes('замкнуто ✓')) errors.push(`[bulge-extremes:${families[i]}:${bound}] audit="${verdict}"`);
-  }
-}
-
-// высота в миллиметрах доезжает до габаритов модели
-label('height');
-await page.fill('#p_heightMm', '300');
-await page.waitForTimeout(200);
-const heightStatus = await page.locator('#status').textContent();
-if (!heightStatus.includes('× 300 мм')) errors.push(`[height] status="${heightStatus}"`);
-
-// рельеф: каждая форма волны и каждый узор накатки строятся без ошибок
-label('relief');
-await page.locator('#familyGrid .family-btn').nth(0).click();
-await page.waitForTimeout(150);
-await setOn('wave', true);
-await page.fill('#wave_amp', '3');
-await page.waitForTimeout(150);
-for (const shape of await page.$$eval('#wave_shape option', (o) => o.map((x) => x.value))) {
-  label(`wave:${shape}`);
-  await page.selectOption('#wave_shape', shape);
-  for (const axis of ['z', 'theta', 'spiral']) {
-    await page.selectOption('#wave_axis', axis);
-    await page.waitForTimeout(80);
-    const verdict = await auditVerdict(page);
-    if (!verdict.includes('замкнуто ✓')) errors.push(`[wave:${shape}/${axis}] audit="${verdict}"`);
-  }
-}
-
-label('wave2');
-await setOn('wave2', true);
-for (const mode of await page.$$eval('#wave2_mode option', (o) => o.map((x) => x.value))) {
-  await page.selectOption('#wave2_mode', mode);
-  await page.waitForTimeout(120);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[wave2:${mode}] audit="${verdict}"`);
-  // в режиме плетения ползунки модуляции скрыты — иначе непонятно, почему
-  // они ничего не делают
-  const fmVisible = await page.locator('#wave2_fm').isVisible();
-  if (fmVisible !== (mode === 'modulate')) {
-    errors.push(`[wave2:${mode}] ползунки модуляции видимы: ${fmVisible}`);
-  }
-}
-
-// дробный шаг спирали: шов обязан сходиться при любом положении ползунка
-label('spiral');
-await page.selectOption('#wave_axis', 'spiral');
-for (const k of ['-2.35', '0.15', '0.7', '3.85']) {
-  await page.fill('#wave_spiralK', k);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[spiral k=${k}] audit="${verdict}"`);
-}
-await page.selectOption('#wave_axis', 'z');
-
-label('roulette');
-await setOn('roulette', true);
-await page.fill('#roul0_bandWidth', '40');
-await page.fill('#roul0_depth', '2');
-await page.waitForTimeout(150);
-for (const pattern of await page.$$eval('#roul0_pattern option', (o) => o.map((x) => x.value))) {
-  label(`roulette:${pattern}`);
-  await page.selectOption('#roul0_pattern', pattern);
-  await page.waitForTimeout(120);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[roulette:${pattern}] audit="${verdict}"`);
-  if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-${pattern}.png` });
-}
-
-// орнамент картинкой: загрузили PNG — полоса ожила, инверсия появилась
-label('roulette-image');
-await page.selectOption('#roul0_pattern', 'image');
-await page.setInputFiles('#roul0_image', 'tests/fixtures/ornament.png');
-await page
-  .waitForFunction(() => (document.querySelector('#card_roulette .band-note')?.textContent ?? '').includes('по ⌀'), {
-    timeout: 5000,
-  })
-  .catch(() => errors.push('[image] картинка не легла на полосу'));
-const imageVerdict = await auditVerdict(page);
-if (!imageVerdict.includes('замкнуто ✓')) errors.push(`[image] audit="${imageVerdict}"`);
-if (!(await page.locator('#roul0_invert').isVisible())) errors.push('[image] нет флажка инверсии');
-await page.check('#roul0_invert');
-const invertedVerdict = await auditVerdict(page);
-if (!invertedVerdict.includes('замкнуто ✓')) errors.push(`[image:invert] audit="${invertedVerdict}"`);
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-image.png` });
-
-// просвет есть только у одиночных оттисков: непрерывной ленте он не нужен
-label('roulette-gap');
-await page.selectOption('#roul0_pattern', 'meander');
-// каждый вид меандра с референса строится, а переключатель виден только у меандра
-for (const kind of await page.$$eval('#roul0_meander option', (o) => o.map((x) => x.value))) {
-  await page.selectOption('#roul0_meander', kind);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[meander:${kind}] audit="${verdict}"`);
-}
-if (await page.locator('#roul0_gap').isVisible()) errors.push('[gap] у меандра виден просвет');
-await page.selectOption('#roul0_pattern', 'dots');
-if (!(await page.locator('#roul0_gap').isVisible())) errors.push('[gap] у точек скрыт просвет');
-if (await page.locator('#roul0_repeats').count()) errors.push('[gap] ползунок «Оттисков» вернулся');
-
-// просвет между оттисками и несколько полос сразу
-label('roulette-bands');
-await page.fill('#roul0_gap', '8');
-if (!(await auditVerdict(page)).includes('замкнуто ✓')) errors.push('[gap] меш разошёлся');
-
-const addBand = page.locator('#card_roulette .add-button');
-for (let i = 1; i < 4; i++) {
-  await addBand.click();
-  await page.waitForTimeout(120);
-  const boxes = await page.locator('#card_roulette .item-row').count();
-  if (boxes !== i + 1) errors.push(`[bands] полос ${boxes}, ожидалось ${i + 1}`);
-  await page.selectOption(`#roul${i}_pattern`, i === 1 ? 'meander' : 'band');
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[bands:${i + 1}] audit="${verdict}"`);
-}
-// на пределе кнопку добавления прячем
-if (await addBand.isVisible()) errors.push('[bands] кнопка добавления видна на пределе');
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/roulette-bands.png` });
-
-// удаление возвращает список к одной полосе
-for (let i = 3; i >= 1; i--) {
-  await page.locator('#card_roulette .item-row [id$="_remove"]').last().click();
-  await page.waitForTimeout(100);
-}
-const left = await page.locator('#card_roulette .item-row').count();
-if (left !== 1) errors.push(`[bands] после удаления осталось ${left}, ожидалась 1`);
-await page.fill('#roul0_gap', '0');
-
-// каждый встроенный пресет открывается и строится
-label('presets');
-await page.click('#presetBtn');
-const presetValues = await page.$$eval('#presetList [data-ref^="b:"]', (nodes) => nodes.map((n) => n.dataset.ref));
-await page.click('#presetsClose');
-if (presetValues.length < 10) errors.push(`[presets] пресетов ${presetValues.length}, ожидалось ≥10`);
-for (const value of presetValues) {
-  label(`preset:${value}`);
-  await pickPreset(value);
-  await page.waitForTimeout(120);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[${value}] audit="${verdict}"`);
-  const blockers = await messages('bad');
-  if (blockers) errors.push(`[${value}] blockers="${blockers}"`);
-  // Предупреждения о свесах законны: тарелку с почти горизонтальной стенкой
-  // глиной без опор и правда не напечатать, а отливается она прекрасно.
-  // А вот поднутрения — брак пресета: форма его не отпустит.
-  const warnings = await messages('warn');
-  if (warnings.includes('Поднутрения')) errors.push(`[${value}] warnings="${warnings}"`);
-}
-
-// ссылка переносит состояние: открываем её в чистой вкладке и сверяем статус
-label('share');
-await pickPreset(presetValues[1]);
-await auditVerdict(page);
-const beforeShare = await page.locator('#status').textContent();
-await page.click('#shareBtn');
-await page.waitForTimeout(300);
-const shared = page.url();
-if (!shared.includes('#s=')) errors.push(`[share] в адресе нет токена: ${shared}`);
-await page.goto('about:blank');
-await page.goto(shared);
-await auditVerdict(page);
-const afterShare = await page.locator('#status').textContent();
-if (afterShare !== beforeShare) {
-  errors.push(`[share] состояние не восстановилось: "${beforeShare}" → "${afterShare}"`);
-}
-
-// пресет файлом: сохранили, сменили форму, открыли файл — состояние вернулось
-label('preset-file');
-await pickPreset(presetValues[2]);
-await auditVerdict(page);
-const beforeFile = await page.locator('#status').textContent();
-page.once('dialog', (dialog) => dialog.accept(dialog.defaultValue()));
-const [presetDownload] = await Promise.all([page.waitForEvent('download'), page.click('#fileSaveBtn')]);
-if (!/^clayform-.+\.json$/.test(presetDownload.suggestedFilename())) {
-  errors.push(`[preset-file] имя файла "${presetDownload.suggestedFilename()}"`);
-}
-await pickPreset(presetValues[0]);
-await auditVerdict(page);
-await page.setInputFiles('#fileInput', await presetDownload.path());
-await page.waitForTimeout(200);
-await auditVerdict(page);
-const afterFile = await page.locator('#status').textContent();
-if (afterFile !== beforeFile) {
-  errors.push(`[preset-file] состояние не восстановилось: "${beforeFile}" → "${afterFile}"`);
-}
-
-// свой пресет: сохранили под автоименем «Изделие N», он в списке, удалили
-// в два касания — и его нет, а изделие на экране осталось
-label('preset-delete');
-page.once('dialog', (dialog) => dialog.accept(dialog.defaultValue()));
-await page.click('#saveBtn');
-await page.waitForTimeout(150);
-const savedName = (await page.locator('#presetBtn').textContent()).trim();
-if (!/^Изделие \d+$/.test(savedName)) errors.push(`[preset-delete] автоимя "${savedName}"`);
-await page.click('#presetBtn');
-// свой пресет узнаётся по id (`u:u3`), а не по имени: ищем строку с его именем
-// своя строка — поле с именем (переименование на месте): ищем по значению поля
-const savedRef = await page.$$eval(
-  '#presetList [data-ref^="u:"]',
-  (rows, name) => rows.find((row) => row.querySelector('input')?.value === name)?.dataset.ref ?? 'u:?',
-  savedName,
-);
-if (!(await page.locator(`#presetList [data-ref="${savedRef}"]`).count())) {
-  errors.push('[preset-delete] сохранённого пресета нет в списке');
-}
-const statusBeforeDelete = await page.locator('#status').textContent();
-await page.click(`#presetList [data-ref="${savedRef}"] .preset-delete`);
-if ((await page.locator(`#presetList [data-ref="${savedRef}"]`).count()) !== 1) {
-  errors.push('[preset-delete] пресет удалился с первого касания');
-}
-await page.click(`#presetList [data-ref="${savedRef}"] .preset-delete`);
-if (await page.locator(`#presetList [data-ref="${savedRef}"]`).count()) {
-  errors.push('[preset-delete] пресет не удалился со второго касания');
-}
-await page.keyboard.press('Escape');
-if (await page.locator('#presets').isVisible()) errors.push('[preset-delete] Esc не закрыл список');
-if ((await page.locator('#status').textContent()) !== statusBeforeDelete) {
-  errors.push('[preset-delete] удаление пресета поменяло изделие');
-}
-
-// отмена возвращает к прежнему состоянию, повтор — обратно
-label('undo');
-await page.goto(shared.split('#')[0]);
-await auditVerdict(page);
-const initial = await page.locator('#status').textContent();
-await page.fill('#p_heightMm', '260');
-await page.waitForTimeout(900); // дольше склейки истории
-const changed = await page.locator('#status').textContent();
-if (changed === initial) errors.push('[undo] высота не изменилась, проверять нечего');
-await page.click('#undoBtn');
-await page.waitForTimeout(200);
-if ((await page.locator('#status').textContent()) !== initial) {
-  errors.push('[undo] отмена не вернула прежнее состояние');
-}
-await page.click('#redoBtn');
-await page.waitForTimeout(200);
-if ((await page.locator('#status').textContent()) !== changed) {
-  errors.push('[undo] повтор не вернул изменение');
-}
-
-// ручка и носик: крайние значения и обе конфигурации ручки
-label('attachments');
-await setOn('wave', false);
-await setOn('wave2', false);
-await setOn('roulette', false);
-await setOn('handle', true);
-await setOn('spout', true);
-for (const [id, value] of [
-  ['handle_reach', '3'],
-  ['handle_reach', '120'],
-  ['handle_reach', '28'],
-  ['handle_thickness', '3'],
-  ['handle_thickness', '40'],
-  ['handle_thickness', '11'],
-  ['handle_count', '2'],
-  ['handle_count', '1'],
-  ['handle_topAngle', '-75'],
-  ['handle_topAngle', '75'],
-  ['handle_topAngle', '0'],
-  ['handle_bottomAngle', '-75'],
-  ['handle_bottomAngle', '75'],
-  ['handle_bottomAngle', '0'],
-  ['spout_pull', '60'],
-  ['spout_width', '180'],
-  ['spout_pull', '14'],
-  ['spout_width', '60'],
-]) {
-  const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
-  if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
-  else await page.fill(`#${id}`, value);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[attach:${id}=${value}] audit="${verdict}"`);
-}
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/attachments.png` });
-
-// трубчатый носик: переключение вида прячет чужие ползунки и строит трубку
-label('spout-applied');
-await page.selectOption('#spout_kind', 'applied');
-await page.waitForTimeout(150);
-if (await page.locator('#spout_pull').isVisible()) {
-  errors.push('[spout-applied] ползунки оттянутого края видны у трубчатого носика');
-}
-for (const [id, value] of [
-  ['spout_length', '15'],
-  ['spout_length', '150'],
-  ['spout_length', '70'],
-  ['spout_attach', '0.2'],
-  ['spout_attach', '0.85'],
-  ['spout_attach', '0.4'],
-  ['spout_tip', '0.5'],
-  ['spout_tip', '1.3'],
-  ['spout_tip', '1'],
-  ['spout_base', '12'],
-  ['spout_base', '80'],
-  ['spout_base', '32'],
-  ['spout_tipD', '6'],
-  ['spout_tipD', '40'],
-  ['spout_tipD', '15'],
-  ['spout_angle', '20'],
-  ['spout_angle', '85'],
-  ['spout_angle', '55'],
-]) {
-  await page.fill(`#${id}`, value);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[spout:${id}=${value}] audit="${verdict}"`);
-}
-await page.selectOption('#spout_kind', 'lip');
-await page.waitForTimeout(120);
-if (!(await page.locator('#spout_pull').isVisible())) {
-  errors.push('[spout-applied] вернулись к краю, а его ползунки не показались');
-}
-
-// крышка: обе ручки, крайние положения ползунков, посадка на венчик и
-// утопленная. Крышка — отдельная деталь, поэтому её появление видно и в
-// списке деталей, и в числе выгружаемых файлов.
-label('lid');
-await setOn('lid', true);
-await page.waitForTimeout(150);
-const withLidParts = await page.locator('#partList li').count();
-if (withLidParts !== 2) errors.push(`[lid] деталей ${withLidParts}, ожидалось 2 (изделие и крышка)`);
-
-for (const [id, value] of [
-  ['lid_dome', '1'],
-  ['lid_dome', '80'],
-  ['lid_dome', '16'],
-  ['lid_curvature', '0'],
-  ['lid_curvature', '1'],
-  ['lid_curvature', '0.55'],
-  ['lid_depth', '3'],
-  ['lid_depth', '30'],
-  ['lid_depth', '8'],
-  ['lid_ledge', '0'],
-  ['lid_ledge', '10'],
-  ['lid_ledge', '0'],
-  ['lid_clearance', '0.2'],
-  ['lid_clearance', '2'],
-  ['lid_clearance', '0.6'],
-  ['lid_field', '0'],
-  ['lid_field', '30'],
-  ['lid_field', '6'],
-  ['lid_recess', '20'],
-  ['lid_recess', '0'],
-  ['lid_knob', 'tee'],
-  ['lid_capH', '1.5'],
-  ['lid_capH', '15'],
-  ['lid_knobD', '6'],
-  ['lid_knobD', '50'],
-  ['lid_stemD', '30'],
-  ['lid_stemH', '0'],
-  ['lid_stemH', '30'],
-  ['lid_knob', 'ball'],
-  ['lid_knobD', '18'],
-  ['lid_stemD', '8'],
-  ['lid_stemH', '6'],
-]) {
-  const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
-  if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
-  else await page.fill(`#${id}`, value);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[lid:${id}=${value}] audit="${verdict}"`);
-}
-
-// сплющенный шар, накатка на куполе и волна «и на крышке тоже»
-label('lid-relief');
-for (const value of ['0.8', '0.4']) {
-  await page.fill('#lid_knobFlat', value);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[lid:knobFlat=${value}] audit="${verdict}"`);
-}
-await page.locator('#card_lid .add-button').click();
-await page.waitForTimeout(150);
-for (const pattern of ['meander', 'dots', 'rope']) {
-  await page.selectOption('#lidroul0_pattern', pattern);
-  await page.fill('#lidroul0_depth', '-2');
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[lid-roulette:${pattern}] audit="${verdict}"`);
-}
-await setOn('wave', true);
-await page.check('#wave_onLid');
-const lidWaveVerdict = await auditVerdict(page);
-if (!lidWaveVerdict.includes('замкнуто ✓')) errors.push(`[lid-wave] audit="${lidWaveVerdict}"`);
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-relief.png` });
-await page.uncheck('#wave_onLid');
-await setOn('wave', false);
-await page.click('#lidroul_0_remove');
-
-// толщина диска нужна только букве Т — у шара её ползунок ни на что не влияет
-if (await page.locator('#lid_capH').isVisible()) {
-  errors.push('[lid] ползунок толщины диска виден у ручки-шара');
-}
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid.png` });
-
-// оттянутый край с крышкой несовместим и гаснет молча: изделие остаётся
-// собранным, а не разваливается на предупреждения
-label('lid-vs-lip');
-await setOn('spout', true);
-await page.selectOption('#spout_kind', 'lip');
-await page.fill('#spout_pull', '40');
-const lipVerdict = await auditVerdict(page);
-if (!lipVerdict.includes('замкнуто ✓')) errors.push(`[lid-vs-lip] audit="${lipVerdict}"`);
-await setOn('spout', false);
-await setOn('lid', false);
-await page.waitForTimeout(120);
-const noLidParts = await page.locator('#partList li').count();
-if (noLidParts !== 1) errors.push(`[lid] после выключения деталей ${noLidParts}, ожидалась 1`);
-
-// стенка и дно: крайние значения не должны рвать полость
-label('hollow');
-for (const [id, value] of [
-  ['print_wall', '0.8'],
-  ['print_wall', '60'],
-  ['print_wall', '3'],
-  ['print_base', '1'],
-  ['print_base', '60'],
-  ['print_base', '4'],
-  ['print_rim', '0'],
-  ['print_rim', '8'],
-  ['print_rim', '1.5'],
-]) {
-  await page.fill(`#${id}`, value);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[hollow:${id}=${value}] audit="${verdict}"`);
-}
-
-// конечный продукт приложения — файл; проверяем, что он реально выгружается
-label('export');
-await expectDownloads(1, 'vessel');
-
-// Точная сборка изделия: быстрое превью рисует ручку и носик отдельными
-// телами, а следом воркер присылает их настоящее объединение — с срезанными
-// полостью торцами и сквозным носиком. Отличить одно от другого можно по
-// числу треугольников в вердикте: оно обязано смениться.
-label('exact-preview');
-await pickPreset('b:teapot');
-const quickVerdict = await auditVerdict(page);
-const exactStarted = Date.now();
-try {
-  await page.waitForFunction((before) => (document.querySelector('#audit')?.textContent ?? '') !== before, quickVerdict, {
-    timeout: 30000,
-  });
-  console.log(`точная сборка изделия: ${Date.now() - exactStarted} мс после быстрого вердикта`);
-} catch {
-  errors.push(`[exact-preview] точная сборка не доехала: audit так и остался "${quickVerdict}"`);
-}
-const exactVerdict = await auditVerdict(page);
-if (!exactVerdict.includes('замкнуто ✓')) errors.push(`[exact-preview] audit="${exactVerdict}"`);
-
-// Полоса прогресса в превью: точная сборка идёт дольше задержки появления
-// полосы — та обязана показаться и потом спрятаться.
-label('preview-progress');
-await expectPreviewProgress(
-  'exact',
-  async () => {
-    await page.fill('#handle_reach', '34');
-  },
-  true,
-);
-
-// чайник экспортируется целиком: тело с ручкой и трубкой носика — тот самый
-// STL, где сходится весь CSG изделия, — и крышка отдельным файлом, как её и
-// печатают
-label('export-teapot');
-await expectDownloads(2, 'teapot');
-
-// «крышка рядом»: тот же чайник уходит одним файлом — тело и крышка вместе
-label('lid-beside');
-await page.check('#print_lidBeside');
-await page.waitForTimeout(150);
-const besideParts = await page.locator('#partList li').count();
-if (besideParts !== 1) errors.push(`[lid-beside] деталей ${besideParts}, ожидалась 1`);
-const besideVerdict = await auditVerdict(page);
-if (!besideVerdict.includes('замкнуто ✓')) errors.push(`[lid-beside] audit="${besideVerdict}"`);
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-beside.png` });
-await expectDownloads(1, 'teapot-beside');
-await page.uncheck('#print_lidBeside');
-// без крышки галочке делать нечего — она прячется; с крышкой видна снова
-await setOn('lid', false);
-if (await page.locator('#print_lidBeside').isVisible()) errors.push('[lid-beside] «Крышка рядом» видна без крышки');
-await setOn('lid', true);
-if (!(await page.locator('#print_lidBeside').isVisible())) errors.push('[lid-beside] «Крышка рядом» не видна при крышке');
-
-const castHref = await page.locator('#castLink').getAttribute('href');
-if (!castHref?.includes('cast-builder')) errors.push(`[cast-link] ссылка на cast-builder: ${castHref}`);
-await setOn('handle', false);
-await setOn('spout', false);
-await setOn('lid', false);
-
-// Клеймо на донышке: строка шрифтом (шрифты грузятся лениво), дата, лого.
-// Проверяем, что меш цел на всех шрифтах и крайних ползунках и что длинная
-// строка ужимается с предупреждением.
-label('mark');
-await page.locator('#familyGrid .family-btn').nth(0).click();
-await setOn('mark', true);
-await page.fill('#mark_text', 'Мастерская');
-for (const [id, value] of [
-  ['mark_font', 'ptSerif'],
-  ['mark_font', 'comfortaa'],
-  ['mark_font', 'oswald'],
-  ['mark_font', 'rubik'],
-  ['mark_size', '2'],
-  ['mark_size', '15'],
-  ['mark_size', '5'],
-  ['mark_margin', '30'],
-  ['mark_margin', '1.5'],
-  ['mark_depth', '1.5'],
-  ['mark_start', '180'],
-]) {
-  const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
-  if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
-  else await page.fill(`#${id}`, value);
-  const verdict = await auditVerdict(page);
-  if (!verdict.includes('замкнуто ✓')) errors.push(`[mark:${id}=${value}] audit="${verdict}"`);
-}
-await page.check('#mark_date');
-await page.setInputFiles('#mark_logo', 'tests/fixtures/ornament.png');
-await page.waitForTimeout(300);
-for (const id of ['mark_logoAngle', 'mark_logoSize', 'mark_logoInvert', 'mark_logoRemove']) {
-  if (!(await page.locator(`#${id}`).isVisible())) errors.push(`[mark] после загрузки лого не видно #${id}`);
-}
-await page.fill('#mark_logoSize', '120');
-await page.check('#mark_logoInvert');
-const logoVerdict = await auditVerdict(page);
-if (!logoVerdict.includes('замкнуто ✓')) errors.push(`[mark:logo] audit="${logoVerdict}"`);
-await page.click('#mark_view');
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/mark.png` });
-await expectDownloads(1, 'mark');
-// строка длиннее окружности: кегль ужимается, панель об этом говорит
-await page.fill('#mark_size', '15');
-await page.fill('#mark_text', 'Очень длинная строка клейма, которая по кругу никак не влезет');
-try {
-  await page.waitForFunction(() => [...document.querySelectorAll('#messages .message.warn')].some((n) => n.textContent.includes('ужат')), {
-    timeout: 10000,
-  });
-} catch {
-  errors.push('[mark] нет предупреждения о длинной строке');
-}
-await page.fill('#mark_size', '5');
-await page.click('#mark_logoRemove');
-await page.waitForTimeout(150);
-if (await page.locator('#mark_logoSize').isVisible()) errors.push('[mark] лого не убралось');
-await setOn('mark', false);
-await page.waitForTimeout(150);
-
-/** Видимый текст приложения, где кириллица — непереведённое. Имена своих пресетов не в счёт. */
-async function cyrillicLeft(target) {
-  return target.evaluate(() => {
-    const own = new Set([...document.querySelectorAll('#presetList [data-ref^="u:"] input')].map((n) => n.value));
-    const texts = [document.title];
-    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    while (walk.nextNode()) {
-      const node = walk.currentNode;
-      const text = node.textContent.trim();
-      // скрытые строки тоже должны быть переведены — пользователь их откроет
-      if (text && !own.has(text) && node.parentElement?.id !== 'presetBtn') texts.push(text);
-    }
-    for (const node of document.querySelectorAll('body [title], body [aria-label]')) {
-      texts.push(node.getAttribute('title') ?? '', node.getAttribute('aria-label') ?? '');
-    }
-    for (const node of document.querySelectorAll('body option')) texts.push(node.textContent);
-    return texts.filter((text) => /[А-Яа-яЁё]/.test(text) && text !== 'Русский');
-  });
-}
-
-async function checkLanguage() {
-  // Всё показываем разом: карточки раскрыты, полосы накатки на теле и на
-  // крышке есть, список пресетов открыт — чтобы непереведённому негде было
-  // спрятаться.
-  await page.locator('#familyGrid .family-btn').nth(0).click();
-  for (const id of ['wave', 'wave2', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, true);
-  await page.locator('#card_roulette .add-button').click();
-  await page.locator('#card_lid .add-button').click();
-  await page.waitForTimeout(900);
-  // выключенная, но раскрытая: карточка кита под рукой не сворачивается
-  await setOn('wave2', false);
-  await page.waitForTimeout(900);
-  const digits = (text) => (text ?? '').replace(/[^\d]/g, '');
-  const statusBefore = digits(await page.locator('#status').textContent());
-  const undoBefore = await page.locator('#undoBtn').isDisabled();
-  const wave2Open = !(await page.locator('#card_wave2').getAttribute('class')).includes('collapsed');
-  if (!wave2Open) errors.push('[lang] не удалось раскрыть выключенную карточку');
-
-  await page.selectOption('.lang-field select', 'en');
-  await page.waitForTimeout(300);
-  if ((await page.evaluate(() => document.documentElement.lang)) !== 'en') errors.push('[lang] <html lang> не en');
-  if ((await page.locator('.lang-field select').inputValue()) !== 'en') errors.push('[lang] в 🌐 выбран не English');
-  if (!(await auditVerdict(page)).includes('watertight ✓')) errors.push('[lang] вердикт меша не по-английски');
-  if (digits(await page.locator('#status').textContent()) !== statusBefore) {
-    errors.push('[lang] смена языка поменяла изделие');
-  }
-  if ((await page.locator('#undoBtn').isDisabled()) !== undoBefore) errors.push('[lang] история отмены сбилась');
-  if ((await page.locator('#card_wave2').getAttribute('class')).includes('collapsed')) {
-    errors.push('[lang] раскрытая руками карточка свернулась');
-  }
-  await page.click('#presetBtn');
-  const left = await cyrillicLeft(page);
-  if (left.length) errors.push(`[lang] непереведённое: ${left.slice(0, 8).join(' | ')}`);
-  if (shotsDir) await page.screenshot({ path: `${shotsDir}/lang-en.png` });
-  await page.keyboard.press('Escape');
-
-  // выбор языка помнится
-  await page.reload({ waitUntil: 'load' });
-  await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0);
-  if ((await page.evaluate(() => document.documentElement.lang)) !== 'en') {
-    errors.push('[lang] после перезагрузки язык не сохранился');
-  }
-  await page.selectOption('.lang-field select', 'ru');
-  await page.waitForTimeout(300);
-  if ((await page.evaluate(() => document.documentElement.lang)) !== 'ru') errors.push('[lang] обратно на ru не вышло');
-  if (!(await auditVerdict(page)).includes('замкнуто ✓')) errors.push('[lang] вердикт меша не по-русски');
-
-  // чистый браузер на английском — английский интерфейс сразу
-  const fresh = await app.browser.newPage({ locale: 'en-US' });
-  fresh.on('pageerror', (e) => errors.push(`[lang:en-US] ${String(e)}`));
-  await fresh.goto(app.base, { waitUntil: 'load' });
-  await fresh.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0);
-  if ((await fresh.evaluate(() => document.documentElement.lang)) !== 'en') errors.push('[lang:en-US] интерфейс не английский');
-  const freshLeft = await cyrillicLeft(fresh);
-  if (freshLeft.length) errors.push(`[lang:en-US] непереведённое: ${freshLeft.slice(0, 8).join(' | ')}`);
-  await fresh.close();
-
-  for (const id of ['wave', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, false);
-}
-
-/**
- * Включает или выключает эффект галочкой `#<id>_on`. У карточки кита она в
- * теле, а не в шапке: свёрнутую карточку сначала раскрываем.
- */
-async function setOn(id, on) {
-  const card = page.locator(`#card_${id}`);
-  if ((await card.getAttribute('class')).includes('collapsed')) await card.locator('.fcard-head').click();
-  await page.setChecked(`#${id}_on`, on);
-}
-
-/** Строки списка сообщений кита одной важности (`bad` — блокировки, `warn`) одним текстом. */
-async function messages(severity) {
-  return (await page.locator(`#messages .message.${severity}`).allTextContents()).join('\n').trim();
-}
-
-/** Открывает список пресетов и выбирает строку по её ref ('b:teapot', 'u:…'). */
-async function pickPreset(ref) {
-  await page.click('#presetBtn');
-  // встроенный открывается строкой, свой — ↗ (его имя — поле переименования)
-  const row = `#presetList [data-ref="${ref}"]`;
-  await page.click(ref.startsWith('u:') ? `${row} .preset-open` : `${row} .preset-pick`);
-}
-
-/**
- * `action` запускает долгую сборку превью; полоса должна появиться и
- * погаснуть. Без --slow отсутствие полосы — не ошибка там, где на быстрой
- * машине задача успевает раньше задержки (`required = false`).
- */
-async function expectPreviewProgress(tag, action, required) {
-  const slow = flags.has('slow');
-  if (slow) await app.throttle(6);
+await app.run(async () => {
   try {
-    await action();
+    await scenario();
+  } catch (error) {
+    // провал называет свой шаг и оставляет кадр: прогон кита печатает только текст исключения
+    const shot = join(shotsDir ?? tmpdir(), 'smoke-fail.png');
+    await page.screenshot({ path: shot }).catch(() => {});
+    throw new Error(`[${step}] ${error instanceof Error ? error.message : String(error)}\nкадр: ${shot}`, { cause: error });
+  }
+}, 'smoke OK');
+
+async function scenario() {
+  // иконка должна реально отдаваться, а не 404 — вкладку по ней и находят
+  label('favicon');
+  const faviconStatus = await page.evaluate(() =>
+    fetch('./favicon.svg').then(
+      (r) => r.status,
+      () => 0,
+    ),
+  );
+  if (faviconStatus !== 200) errors.push(`[favicon] favicon.svg отдаёт ${faviconStatus}`);
+
+  label('boot');
+  await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0, { timeout: 20000 });
+  const wide = await horizontalOverflow(page);
+  if (wide > 0) errors.push(`[boot] страница шире окна на ${wide} px`);
+
+  // каждое семейство выбирается, строится и объявляет себя замкнутым
+  const families = await page.$$eval('#familyGrid .family-btn', (nodes) => nodes.map((n) => n.textContent.trim()));
+  if (families.length !== 4) errors.push(`[boot] семейств на панели: ${families.length}, ожидалось 4`);
+
+  for (let i = 0; i < families.length; i++) {
+    const name = families[i];
+    label(`family:${name}`);
+    await page.locator('#familyGrid .family-btn').nth(i).click();
+    await page.waitForTimeout(200);
+
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[family:${name}] audit="${verdict}"`);
+
+    const blockers = await messages('bad');
+    if (blockers.trim()) errors.push(`[family:${name}] blockers="${blockers}"`);
+
+    const sliders = await page.locator('#shapeParams input[type=range]').count();
+    if (sliders < 3) errors.push(`[family:${name}] слайдеров ${sliders}, ожидалось ≥3`);
+
+    if (shotsDir) {
+      await page.screenshot({ path: `${shotsDir}/${String(i + 1)}-${name}.png` });
+    }
+  }
+
+  // крайние положения каждого слайдера не должны ломать сборку
+  label('slider-extremes');
+  const count = await page.locator('#shapeParams input[type=range]').count();
+  for (let i = 0; i < count; i++) {
+    const slider = page.locator('#shapeParams input[type=range]').nth(i);
+    for (const bound of ['min', 'max']) {
+      const value = await slider.getAttribute(bound);
+      await slider.fill(value);
+      await page.waitForTimeout(60);
+    }
+  }
+  const afterExtremes = await auditVerdict(page);
+  if (!afterExtremes.includes('замкнуто ✓')) {
+    errors.push(`[slider-extremes] audit="${afterExtremes}"`);
+  }
+
+  // выпуклость, её высота и острота — у каждого семейства свои; крайние
+  // сочетания не должны рвать меш
+  label('bulge-extremes');
+  const bulgeControls = ['p_bellyAt', 'p_bulgeMm', 'p_bulgeAt', 'p_sharpness', 'p_curvature', 'p_kneeAt'];
+  for (let i = 0; i < families.length; i++) {
+    await page.locator('#familyGrid .family-btn').nth(i).click();
+    await page.waitForTimeout(150);
+    const ids = [];
+    for (const id of bulgeControls) if (await page.locator(`#${id}`).count()) ids.push(id);
+    if (ids.length < 2) errors.push(`[bulge-extremes:${families[i]}] ползунков выпуклости: ${ids.join(',')}`);
+    for (const bound of ['min', 'max']) {
+      for (const id of ids) {
+        const slider = page.locator(`#${id}`);
+        await slider.fill(await slider.getAttribute(bound));
+      }
+      await page.waitForTimeout(150);
+      const verdict = await auditVerdict(page);
+      if (!verdict.includes('замкнуто ✓')) errors.push(`[bulge-extremes:${families[i]}:${bound}] audit="${verdict}"`);
+    }
+  }
+
+  // высота в миллиметрах доезжает до габаритов модели
+  label('height');
+  await page.fill('#p_heightMm', '300');
+  await page.waitForTimeout(200);
+  const heightStatus = await page.locator('#status').textContent();
+  if (!heightStatus.includes('× 300 мм')) errors.push(`[height] status="${heightStatus}"`);
+
+  // рельеф: каждая форма волны и каждый узор накатки строятся без ошибок
+  label('relief');
+  await page.locator('#familyGrid .family-btn').nth(0).click();
+  await page.waitForTimeout(150);
+  await setOn('wave', true);
+  await page.fill('#wave_amp', '3');
+  await page.waitForTimeout(150);
+  for (const shape of await page.$$eval('#wave_shape option', (o) => o.map((x) => x.value))) {
+    label(`wave:${shape}`);
+    await page.selectOption('#wave_shape', shape);
+    for (const axis of ['z', 'theta', 'spiral']) {
+      await page.selectOption('#wave_axis', axis);
+      await page.waitForTimeout(80);
+      const verdict = await auditVerdict(page);
+      if (!verdict.includes('замкнуто ✓')) errors.push(`[wave:${shape}/${axis}] audit="${verdict}"`);
+    }
+  }
+
+  label('wave2');
+  await setOn('wave2', true);
+  for (const mode of await page.$$eval('#wave2_mode option', (o) => o.map((x) => x.value))) {
+    await page.selectOption('#wave2_mode', mode);
+    await page.waitForTimeout(120);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[wave2:${mode}] audit="${verdict}"`);
+    // в режиме плетения ползунки модуляции скрыты — иначе непонятно, почему
+    // они ничего не делают
+    const fmVisible = await page.locator('#wave2_fm').isVisible();
+    if (fmVisible !== (mode === 'modulate')) {
+      errors.push(`[wave2:${mode}] ползунки модуляции видимы: ${fmVisible}`);
+    }
+  }
+
+  // дробный шаг спирали: шов обязан сходиться при любом положении ползунка
+  label('spiral');
+  await page.selectOption('#wave_axis', 'spiral');
+  for (const k of ['-2.35', '0.15', '0.7', '3.85']) {
+    await page.fill('#wave_spiralK', k);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[spiral k=${k}] audit="${verdict}"`);
+  }
+  await page.selectOption('#wave_axis', 'z');
+
+  label('roulette');
+  await setOn('roulette', true);
+  await page.fill('#roul0_bandWidth', '40');
+  await page.fill('#roul0_depth', '2');
+  await page.waitForTimeout(150);
+  for (const pattern of await page.$$eval('#roul0_pattern option', (o) => o.map((x) => x.value))) {
+    label(`roulette:${pattern}`);
+    await page.selectOption('#roul0_pattern', pattern);
+    await page.waitForTimeout(120);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[roulette:${pattern}] audit="${verdict}"`);
+    if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-${pattern}.png` });
+  }
+
+  // орнамент картинкой: загрузили PNG — полоса ожила, инверсия появилась
+  label('roulette-image');
+  await page.selectOption('#roul0_pattern', 'image');
+  await page.setInputFiles('#roul0_image', 'tests/fixtures/ornament.png');
+  await page
+    .waitForFunction(() => (document.querySelector('#card_roulette .band-note')?.textContent ?? '').includes('по ⌀'), {
+      timeout: 5000,
+    })
+    .catch(() => errors.push('[image] картинка не легла на полосу'));
+  const imageVerdict = await auditVerdict(page);
+  if (!imageVerdict.includes('замкнуто ✓')) errors.push(`[image] audit="${imageVerdict}"`);
+  if (!(await page.locator('#roul0_invert').isVisible())) errors.push('[image] нет флажка инверсии');
+  await page.check('#roul0_invert');
+  const invertedVerdict = await auditVerdict(page);
+  if (!invertedVerdict.includes('замкнуто ✓')) errors.push(`[image:invert] audit="${invertedVerdict}"`);
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/relief-image.png` });
+
+  // просвет есть только у одиночных оттисков: непрерывной ленте он не нужен
+  label('roulette-gap');
+  await page.selectOption('#roul0_pattern', 'meander');
+  // каждый вид меандра с референса строится, а переключатель виден только у меандра
+  for (const kind of await page.$$eval('#roul0_meander option', (o) => o.map((x) => x.value))) {
+    await page.selectOption('#roul0_meander', kind);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[meander:${kind}] audit="${verdict}"`);
+  }
+  if (await page.locator('#roul0_gap').isVisible()) errors.push('[gap] у меандра виден просвет');
+  await page.selectOption('#roul0_pattern', 'dots');
+  if (!(await page.locator('#roul0_gap').isVisible())) errors.push('[gap] у точек скрыт просвет');
+  if (await page.locator('#roul0_repeats').count()) errors.push('[gap] ползунок «Оттисков» вернулся');
+
+  // просвет между оттисками и несколько полос сразу
+  label('roulette-bands');
+  await page.fill('#roul0_gap', '8');
+  if (!(await auditVerdict(page)).includes('замкнуто ✓')) errors.push('[gap] меш разошёлся');
+
+  const addBand = page.locator('#card_roulette .add-button');
+  for (let i = 1; i < 4; i++) {
+    await addBand.click();
+    await page.waitForTimeout(120);
+    const boxes = await page.locator('#card_roulette .item-row').count();
+    if (boxes !== i + 1) errors.push(`[bands] полос ${boxes}, ожидалось ${i + 1}`);
+    await page.selectOption(`#roul${i}_pattern`, i === 1 ? 'meander' : 'band');
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[bands:${i + 1}] audit="${verdict}"`);
+  }
+  // на пределе кнопку добавления прячем
+  if (await addBand.isVisible()) errors.push('[bands] кнопка добавления видна на пределе');
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/roulette-bands.png` });
+
+  // удаление возвращает список к одной полосе
+  for (let i = 3; i >= 1; i--) {
+    await page.locator('#card_roulette .item-row [id$="_remove"]').last().click();
+    await page.waitForTimeout(100);
+  }
+  const left = await page.locator('#card_roulette .item-row').count();
+  if (left !== 1) errors.push(`[bands] после удаления осталось ${left}, ожидалась 1`);
+  await page.fill('#roul0_gap', '0');
+
+  // каждый встроенный пресет открывается и строится
+  label('presets');
+  await page.click('#presetBtn');
+  const presetValues = await page.$$eval('#presetList [data-ref^="b:"]', (nodes) => nodes.map((n) => n.dataset.ref));
+  await page.click('#presetsClose');
+  if (presetValues.length < 10) errors.push(`[presets] пресетов ${presetValues.length}, ожидалось ≥10`);
+  for (const value of presetValues) {
+    label(`preset:${value}`);
+    await pickPreset(value);
+    await page.waitForTimeout(120);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[${value}] audit="${verdict}"`);
+    const blockers = await messages('bad');
+    if (blockers) errors.push(`[${value}] blockers="${blockers}"`);
+    // Предупреждения о свесах законны: тарелку с почти горизонтальной стенкой
+    // глиной без опор и правда не напечатать, а отливается она прекрасно.
+    // А вот поднутрения — брак пресета: форма его не отпустит.
+    const warnings = await messages('warn');
+    if (warnings.includes('Поднутрения')) errors.push(`[${value}] warnings="${warnings}"`);
+  }
+
+  // ссылка переносит состояние: открываем её в чистой вкладке и сверяем статус
+  label('share');
+  await pickPreset(presetValues[1]);
+  await auditVerdict(page);
+  const beforeShare = await page.locator('#status').textContent();
+  await page.click('#shareBtn');
+  await page.waitForTimeout(300);
+  const shared = page.url();
+  if (!shared.includes('#s=')) errors.push(`[share] в адресе нет токена: ${shared}`);
+  await page.goto('about:blank');
+  await page.goto(shared);
+  await auditVerdict(page);
+  const afterShare = await page.locator('#status').textContent();
+  if (afterShare !== beforeShare) {
+    errors.push(`[share] состояние не восстановилось: "${beforeShare}" → "${afterShare}"`);
+  }
+
+  // пресет файлом: сохранили, сменили форму, открыли файл — состояние вернулось
+  label('preset-file');
+  await pickPreset(presetValues[2]);
+  await auditVerdict(page);
+  const beforeFile = await page.locator('#status').textContent();
+  page.once('dialog', (dialog) => dialog.accept(dialog.defaultValue()));
+  const [presetDownload] = await Promise.all([page.waitForEvent('download'), page.click('#fileSaveBtn')]);
+  if (!/^clayform-.+\.json$/.test(presetDownload.suggestedFilename())) {
+    errors.push(`[preset-file] имя файла "${presetDownload.suggestedFilename()}"`);
+  }
+  await pickPreset(presetValues[0]);
+  await auditVerdict(page);
+  await page.setInputFiles('#fileInput', await presetDownload.path());
+  await page.waitForTimeout(200);
+  await auditVerdict(page);
+  const afterFile = await page.locator('#status').textContent();
+  if (afterFile !== beforeFile) {
+    errors.push(`[preset-file] состояние не восстановилось: "${beforeFile}" → "${afterFile}"`);
+  }
+
+  // свой пресет: сохранили под автоименем «Изделие N», он в списке, удалили
+  // в два касания — и его нет, а изделие на экране осталось
+  label('preset-delete');
+  page.once('dialog', (dialog) => dialog.accept(dialog.defaultValue()));
+  await page.click('#saveBtn');
+  await page.waitForTimeout(150);
+  const savedName = (await page.locator('#presetBtn').textContent()).trim();
+  if (!/^Изделие \d+$/.test(savedName)) errors.push(`[preset-delete] автоимя "${savedName}"`);
+  await page.click('#presetBtn');
+  // свой пресет узнаётся по id (`u:u3`), а не по имени: ищем строку с его именем
+  // своя строка — поле с именем (переименование на месте): ищем по значению поля
+  const savedRef = await page.$$eval(
+    '#presetList [data-ref^="u:"]',
+    (rows, name) => rows.find((row) => row.querySelector('input')?.value === name)?.dataset.ref ?? 'u:?',
+    savedName,
+  );
+  if (!(await page.locator(`#presetList [data-ref="${savedRef}"]`).count())) {
+    errors.push('[preset-delete] сохранённого пресета нет в списке');
+  }
+  const statusBeforeDelete = await page.locator('#status').textContent();
+  await page.click(`#presetList [data-ref="${savedRef}"] .preset-delete`);
+  if ((await page.locator(`#presetList [data-ref="${savedRef}"]`).count()) !== 1) {
+    errors.push('[preset-delete] пресет удалился с первого касания');
+  }
+  await page.click(`#presetList [data-ref="${savedRef}"] .preset-delete`);
+  if (await page.locator(`#presetList [data-ref="${savedRef}"]`).count()) {
+    errors.push('[preset-delete] пресет не удалился со второго касания');
+  }
+  await page.keyboard.press('Escape');
+  if (await page.locator('#presets').isVisible()) errors.push('[preset-delete] Esc не закрыл список');
+  if ((await page.locator('#status').textContent()) !== statusBeforeDelete) {
+    errors.push('[preset-delete] удаление пресета поменяло изделие');
+  }
+
+  // отмена возвращает к прежнему состоянию, повтор — обратно
+  label('undo');
+  await page.goto(shared.split('#')[0]);
+  await auditVerdict(page);
+  const initial = await page.locator('#status').textContent();
+  await page.fill('#p_heightMm', '260');
+  await page.waitForTimeout(900); // дольше склейки истории
+  const changed = await page.locator('#status').textContent();
+  if (changed === initial) errors.push('[undo] высота не изменилась, проверять нечего');
+  await page.click('#undoBtn');
+  await page.waitForTimeout(200);
+  if ((await page.locator('#status').textContent()) !== initial) {
+    errors.push('[undo] отмена не вернула прежнее состояние');
+  }
+  await page.click('#redoBtn');
+  await page.waitForTimeout(200);
+  if ((await page.locator('#status').textContent()) !== changed) {
+    errors.push('[undo] повтор не вернул изменение');
+  }
+
+  // ручка и носик: крайние значения и обе конфигурации ручки
+  label('attachments');
+  await setOn('wave', false);
+  await setOn('wave2', false);
+  await setOn('roulette', false);
+  await setOn('handle', true);
+  await setOn('spout', true);
+  for (const [id, value] of [
+    ['handle_reach', '3'],
+    ['handle_reach', '120'],
+    ['handle_reach', '28'],
+    ['handle_thickness', '3'],
+    ['handle_thickness', '40'],
+    ['handle_thickness', '11'],
+    ['handle_count', '2'],
+    ['handle_count', '1'],
+    ['handle_topAngle', '-75'],
+    ['handle_topAngle', '75'],
+    ['handle_topAngle', '0'],
+    ['handle_bottomAngle', '-75'],
+    ['handle_bottomAngle', '75'],
+    ['handle_bottomAngle', '0'],
+    ['spout_pull', '60'],
+    ['spout_width', '180'],
+    ['spout_pull', '14'],
+    ['spout_width', '60'],
+  ]) {
+    const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
+    if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
+    else await page.fill(`#${id}`, value);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[attach:${id}=${value}] audit="${verdict}"`);
+  }
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/attachments.png` });
+
+  // трубчатый носик: переключение вида прячет чужие ползунки и строит трубку
+  label('spout-applied');
+  await page.selectOption('#spout_kind', 'applied');
+  await page.waitForTimeout(150);
+  if (await page.locator('#spout_pull').isVisible()) {
+    errors.push('[spout-applied] ползунки оттянутого края видны у трубчатого носика');
+  }
+  for (const [id, value] of [
+    ['spout_length', '15'],
+    ['spout_length', '150'],
+    ['spout_length', '70'],
+    ['spout_attach', '0.2'],
+    ['spout_attach', '0.85'],
+    ['spout_attach', '0.4'],
+    ['spout_tip', '0.5'],
+    ['spout_tip', '1.3'],
+    ['spout_tip', '1'],
+    ['spout_base', '12'],
+    ['spout_base', '80'],
+    ['spout_base', '32'],
+    ['spout_tipD', '6'],
+    ['spout_tipD', '40'],
+    ['spout_tipD', '15'],
+    ['spout_angle', '20'],
+    ['spout_angle', '85'],
+    ['spout_angle', '55'],
+  ]) {
+    await page.fill(`#${id}`, value);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[spout:${id}=${value}] audit="${verdict}"`);
+  }
+  await page.selectOption('#spout_kind', 'lip');
+  await page.waitForTimeout(120);
+  if (!(await page.locator('#spout_pull').isVisible())) {
+    errors.push('[spout-applied] вернулись к краю, а его ползунки не показались');
+  }
+
+  // крышка: обе ручки, крайние положения ползунков, посадка на венчик и
+  // утопленная. Крышка — отдельная деталь, поэтому её появление видно и в
+  // списке деталей, и в числе выгружаемых файлов.
+  label('lid');
+  await setOn('lid', true);
+  await page.waitForTimeout(150);
+  const withLidParts = await page.locator('#partList li').count();
+  if (withLidParts !== 2) errors.push(`[lid] деталей ${withLidParts}, ожидалось 2 (изделие и крышка)`);
+
+  for (const [id, value] of [
+    ['lid_dome', '1'],
+    ['lid_dome', '80'],
+    ['lid_dome', '16'],
+    ['lid_curvature', '0'],
+    ['lid_curvature', '1'],
+    ['lid_curvature', '0.55'],
+    ['lid_depth', '3'],
+    ['lid_depth', '30'],
+    ['lid_depth', '8'],
+    ['lid_ledge', '0'],
+    ['lid_ledge', '10'],
+    ['lid_ledge', '0'],
+    ['lid_clearance', '0.2'],
+    ['lid_clearance', '2'],
+    ['lid_clearance', '0.6'],
+    ['lid_field', '0'],
+    ['lid_field', '30'],
+    ['lid_field', '6'],
+    ['lid_recess', '20'],
+    ['lid_recess', '0'],
+    ['lid_knob', 'tee'],
+    ['lid_capH', '1.5'],
+    ['lid_capH', '15'],
+    ['lid_knobD', '6'],
+    ['lid_knobD', '50'],
+    ['lid_stemD', '30'],
+    ['lid_stemH', '0'],
+    ['lid_stemH', '30'],
+    ['lid_knob', 'ball'],
+    ['lid_knobD', '18'],
+    ['lid_stemD', '8'],
+    ['lid_stemH', '6'],
+  ]) {
+    const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
+    if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
+    else await page.fill(`#${id}`, value);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[lid:${id}=${value}] audit="${verdict}"`);
+  }
+
+  // сплющенный шар, накатка на куполе и волна «и на крышке тоже»
+  label('lid-relief');
+  for (const value of ['0.8', '0.4']) {
+    await page.fill('#lid_knobFlat', value);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[lid:knobFlat=${value}] audit="${verdict}"`);
+  }
+  await page.locator('#card_lid .add-button').click();
+  await page.waitForTimeout(150);
+  for (const pattern of ['meander', 'dots', 'rope']) {
+    await page.selectOption('#lidroul0_pattern', pattern);
+    await page.fill('#lidroul0_depth', '-2');
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[lid-roulette:${pattern}] audit="${verdict}"`);
+  }
+  await setOn('wave', true);
+  await page.check('#wave_onLid');
+  const lidWaveVerdict = await auditVerdict(page);
+  if (!lidWaveVerdict.includes('замкнуто ✓')) errors.push(`[lid-wave] audit="${lidWaveVerdict}"`);
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-relief.png` });
+  await page.uncheck('#wave_onLid');
+  await setOn('wave', false);
+  await page.click('#lidroul_0_remove');
+
+  // толщина диска нужна только букве Т — у шара её ползунок ни на что не влияет
+  if (await page.locator('#lid_capH').isVisible()) {
+    errors.push('[lid] ползунок толщины диска виден у ручки-шара');
+  }
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid.png` });
+
+  // оттянутый край с крышкой несовместим и гаснет молча: изделие остаётся
+  // собранным, а не разваливается на предупреждения
+  label('lid-vs-lip');
+  await setOn('spout', true);
+  await page.selectOption('#spout_kind', 'lip');
+  await page.fill('#spout_pull', '40');
+  const lipVerdict = await auditVerdict(page);
+  if (!lipVerdict.includes('замкнуто ✓')) errors.push(`[lid-vs-lip] audit="${lipVerdict}"`);
+  await setOn('spout', false);
+  await setOn('lid', false);
+  await page.waitForTimeout(120);
+  const noLidParts = await page.locator('#partList li').count();
+  if (noLidParts !== 1) errors.push(`[lid] после выключения деталей ${noLidParts}, ожидалась 1`);
+
+  // стенка и дно: крайние значения не должны рвать полость
+  label('hollow');
+  for (const [id, value] of [
+    ['print_wall', '0.8'],
+    ['print_wall', '60'],
+    ['print_wall', '3'],
+    ['print_base', '1'],
+    ['print_base', '60'],
+    ['print_base', '4'],
+    ['print_rim', '0'],
+    ['print_rim', '8'],
+    ['print_rim', '1.5'],
+  ]) {
+    await page.fill(`#${id}`, value);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[hollow:${id}=${value}] audit="${verdict}"`);
+  }
+
+  // конечный продукт приложения — файл; проверяем, что он реально выгружается
+  label('export');
+  await expectDownloads(1, 'vessel');
+
+  // Точная сборка изделия: быстрое превью рисует ручку и носик отдельными
+  // телами, а следом воркер присылает их настоящее объединение — с срезанными
+  // полостью торцами и сквозным носиком. Отличить одно от другого можно по
+  // числу треугольников в вердикте: оно обязано смениться.
+  label('exact-preview');
+  await pickPreset('b:teapot');
+  const quickVerdict = await auditVerdict(page);
+  const exactStarted = Date.now();
+  try {
+    await page.waitForFunction((before) => (document.querySelector('#audit')?.textContent ?? '') !== before, quickVerdict, {
+      timeout: 30000,
+    });
+    console.log(`точная сборка изделия: ${Date.now() - exactStarted} мс после быстрого вердикта`);
+  } catch {
+    errors.push(`[exact-preview] точная сборка не доехала: audit так и остался "${quickVerdict}"`);
+  }
+  const exactVerdict = await auditVerdict(page);
+  if (!exactVerdict.includes('замкнуто ✓')) errors.push(`[exact-preview] audit="${exactVerdict}"`);
+
+  // Полоса прогресса в превью: точная сборка идёт дольше задержки появления
+  // полосы — та обязана показаться и потом спрятаться.
+  label('preview-progress');
+  await expectPreviewProgress(
+    'exact',
+    async () => {
+      await page.fill('#handle_reach', '34');
+    },
+    true,
+  );
+
+  // чайник экспортируется целиком: тело с ручкой и трубкой носика — тот самый
+  // STL, где сходится весь CSG изделия, — и крышка отдельным файлом, как её и
+  // печатают
+  label('export-teapot');
+  await expectDownloads(2, 'teapot');
+
+  // «крышка рядом»: тот же чайник уходит одним файлом — тело и крышка вместе
+  label('lid-beside');
+  await page.check('#print_lidBeside');
+  await page.waitForTimeout(150);
+  const besideParts = await page.locator('#partList li').count();
+  if (besideParts !== 1) errors.push(`[lid-beside] деталей ${besideParts}, ожидалась 1`);
+  const besideVerdict = await auditVerdict(page);
+  if (!besideVerdict.includes('замкнуто ✓')) errors.push(`[lid-beside] audit="${besideVerdict}"`);
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-beside.png` });
+  await expectDownloads(1, 'teapot-beside');
+  await page.uncheck('#print_lidBeside');
+  // без крышки галочке делать нечего — она прячется; с крышкой видна снова
+  await setOn('lid', false);
+  if (await page.locator('#print_lidBeside').isVisible()) errors.push('[lid-beside] «Крышка рядом» видна без крышки');
+  await setOn('lid', true);
+  if (!(await page.locator('#print_lidBeside').isVisible())) errors.push('[lid-beside] «Крышка рядом» не видна при крышке');
+
+  const castHref = await page.locator('#castLink').getAttribute('href');
+  if (!castHref?.includes('cast-builder')) errors.push(`[cast-link] ссылка на cast-builder: ${castHref}`);
+  await setOn('handle', false);
+  await setOn('spout', false);
+  await setOn('lid', false);
+
+  // Клеймо на донышке: строка шрифтом (шрифты грузятся лениво), дата, лого.
+  // Проверяем, что меш цел на всех шрифтах и крайних ползунках и что длинная
+  // строка ужимается с предупреждением.
+  label('mark');
+  await page.locator('#familyGrid .family-btn').nth(0).click();
+  await setOn('mark', true);
+  await page.fill('#mark_text', 'Мастерская');
+  for (const [id, value] of [
+    ['mark_font', 'ptSerif'],
+    ['mark_font', 'comfortaa'],
+    ['mark_font', 'oswald'],
+    ['mark_font', 'rubik'],
+    ['mark_size', '2'],
+    ['mark_size', '15'],
+    ['mark_size', '5'],
+    ['mark_margin', '30'],
+    ['mark_margin', '1.5'],
+    ['mark_depth', '1.5'],
+    ['mark_start', '180'],
+  ]) {
+    const tag = await page.locator(`#${id}`).evaluate((n) => n.tagName);
+    if (tag === 'SELECT') await page.selectOption(`#${id}`, value);
+    else await page.fill(`#${id}`, value);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[mark:${id}=${value}] audit="${verdict}"`);
+  }
+  await page.check('#mark_date');
+  await page.setInputFiles('#mark_logo', 'tests/fixtures/ornament.png');
+  await page.waitForTimeout(300);
+  for (const id of ['mark_logoAngle', 'mark_logoSize', 'mark_logoInvert', 'mark_logoRemove']) {
+    if (!(await page.locator(`#${id}`).isVisible())) errors.push(`[mark] после загрузки лого не видно #${id}`);
+  }
+  await page.fill('#mark_logoSize', '120');
+  await page.check('#mark_logoInvert');
+  const logoVerdict = await auditVerdict(page);
+  if (!logoVerdict.includes('замкнуто ✓')) errors.push(`[mark:logo] audit="${logoVerdict}"`);
+  await page.click('#mark_view');
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/mark.png` });
+  await expectDownloads(1, 'mark');
+  // строка длиннее окружности: кегль ужимается, панель об этом говорит
+  await page.fill('#mark_size', '15');
+  await page.fill('#mark_text', 'Очень длинная строка клейма, которая по кругу никак не влезет');
+  try {
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('#messages .message.warn')].some((n) => n.textContent.includes('ужат')),
+      {
+        timeout: 10000,
+      },
+    );
+  } catch {
+    errors.push('[mark] нет предупреждения о длинной строке');
+  }
+  await page.fill('#mark_size', '5');
+  await page.click('#mark_logoRemove');
+  await page.waitForTimeout(150);
+  if (await page.locator('#mark_logoSize').isVisible()) errors.push('[mark] лого не убралось');
+  await setOn('mark', false);
+  await page.waitForTimeout(150);
+
+  /** Видимый текст приложения, где кириллица — непереведённое. Имена своих пресетов не в счёт. */
+  async function cyrillicLeft(target) {
+    return target.evaluate(() => {
+      const own = new Set([...document.querySelectorAll('#presetList [data-ref^="u:"] input')].map((n) => n.value));
+      const texts = [document.title];
+      const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      while (walk.nextNode()) {
+        const node = walk.currentNode;
+        const text = node.textContent.trim();
+        // скрытые строки тоже должны быть переведены — пользователь их откроет
+        if (text && !own.has(text) && node.parentElement?.id !== 'presetBtn') texts.push(text);
+      }
+      for (const node of document.querySelectorAll('body [title], body [aria-label]')) {
+        texts.push(node.getAttribute('title') ?? '', node.getAttribute('aria-label') ?? '');
+      }
+      for (const node of document.querySelectorAll('body option')) texts.push(node.textContent);
+      return texts.filter((text) => /[А-Яа-яЁё]/.test(text) && text !== 'Русский');
+    });
+  }
+
+  async function checkLanguage() {
+    // Всё показываем разом: карточки раскрыты, полосы накатки на теле и на
+    // крышке есть, список пресетов открыт — чтобы непереведённому негде было
+    // спрятаться.
+    await page.locator('#familyGrid .family-btn').nth(0).click();
+    for (const id of ['wave', 'wave2', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, true);
+    await page.locator('#card_roulette .add-button').click();
+    await page.locator('#card_lid .add-button').click();
+    await page.waitForTimeout(900);
+    // выключенная, но раскрытая: карточка кита под рукой не сворачивается
+    await setOn('wave2', false);
+    await page.waitForTimeout(900);
+    const digits = (text) => (text ?? '').replace(/[^\d]/g, '');
+    const statusBefore = digits(await page.locator('#status').textContent());
+    const undoBefore = await page.locator('#undoBtn').isDisabled();
+    const wave2Open = !(await page.locator('#card_wave2').getAttribute('class')).includes('collapsed');
+    if (!wave2Open) errors.push('[lang] не удалось раскрыть выключенную карточку');
+
+    await page.selectOption('.lang-field select', 'en');
+    await page.waitForTimeout(300);
+    if ((await page.evaluate(() => document.documentElement.lang)) !== 'en') errors.push('[lang] <html lang> не en');
+    if ((await page.locator('.lang-field select').inputValue()) !== 'en') errors.push('[lang] в 🌐 выбран не English');
+    if (!(await auditVerdict(page)).includes('watertight ✓')) errors.push('[lang] вердикт меша не по-английски');
+    if (digits(await page.locator('#status').textContent()) !== statusBefore) {
+      errors.push('[lang] смена языка поменяла изделие');
+    }
+    if ((await page.locator('#undoBtn').isDisabled()) !== undoBefore) errors.push('[lang] история отмены сбилась');
+    if ((await page.locator('#card_wave2').getAttribute('class')).includes('collapsed')) {
+      errors.push('[lang] раскрытая руками карточка свернулась');
+    }
+    await page.click('#presetBtn');
+    const left = await cyrillicLeft(page);
+    if (left.length) errors.push(`[lang] непереведённое: ${left.slice(0, 8).join(' | ')}`);
+    if (shotsDir) await page.screenshot({ path: `${shotsDir}/lang-en.png` });
+    await page.keyboard.press('Escape');
+
+    // выбор языка помнится
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0);
+    if ((await page.evaluate(() => document.documentElement.lang)) !== 'en') {
+      errors.push('[lang] после перезагрузки язык не сохранился');
+    }
+    await page.selectOption('.lang-field select', 'ru');
+    await page.waitForTimeout(300);
+    if ((await page.evaluate(() => document.documentElement.lang)) !== 'ru') errors.push('[lang] обратно на ru не вышло');
+    if (!(await auditVerdict(page)).includes('замкнуто ✓')) errors.push('[lang] вердикт меша не по-русски');
+
+    // чистый браузер на английском — английский интерфейс сразу
+    const { page: fresh, context: freshContext } = await app.open({ locale: 'en-US' });
+    await fresh.waitForFunction(() => (document.querySelector('#status')?.textContent ?? '').length > 0);
+    if ((await fresh.evaluate(() => document.documentElement.lang)) !== 'en') errors.push('[lang:en-US] интерфейс не английский');
+    const freshLeft = await cyrillicLeft(fresh);
+    if (freshLeft.length) errors.push(`[lang:en-US] непереведённое: ${freshLeft.slice(0, 8).join(' | ')}`);
+    await freshContext.close();
+
+    for (const id of ['wave', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, false);
+  }
+
+  /**
+   * Включает или выключает эффект галочкой `#<id>_on`. У карточки кита она в
+   * теле, а не в шапке: свёрнутую карточку сначала раскрываем.
+   */
+  async function setOn(id, on) {
+    const card = page.locator(`#card_${id}`);
+    if ((await card.getAttribute('class')).includes('collapsed')) await card.locator('.fcard-head').click();
+    await page.setChecked(`#${id}_on`, on);
+  }
+
+  /** Строки списка сообщений кита одной важности (`bad` — блокировки, `warn`) одним текстом. */
+  async function messages(severity) {
+    return (await page.locator(`#messages .message.${severity}`).allTextContents()).join('\n').trim();
+  }
+
+  /** Открывает список пресетов и выбирает строку по её ref ('b:teapot', 'u:…'). */
+  async function pickPreset(ref) {
+    await page.click('#presetBtn');
+    // встроенный открывается строкой, свой — ↗ (его имя — поле переименования)
+    const row = `#presetList [data-ref="${ref}"]`;
+    await page.click(ref.startsWith('u:') ? `${row} .preset-open` : `${row} .preset-pick`);
+  }
+
+  /**
+   * `action` запускает долгую сборку превью; полоса должна появиться и
+   * погаснуть. Без --slow отсутствие полосы — не ошибка там, где на быстрой
+   * машине задача успевает раньше задержки (`required = false`).
+   */
+  async function expectPreviewProgress(tag, action, required) {
+    const slow = flags.has('slow');
+    if (slow) await throttle(page, 6);
     try {
-      await page.waitForFunction(() => !document.querySelector('#progressWrap')?.hidden, { timeout: slow ? 30000 : 5000, polling: 20 });
+      await action();
+      try {
+        await page.waitForFunction(() => !document.querySelector('#progressWrap')?.hidden, { timeout: slow ? 30000 : 5000, polling: 20 });
+      } catch {
+        if (required || slow) errors.push(`[progress:${tag}] полоса не показалась`);
+        return;
+      }
+      try {
+        await page.waitForFunction(() => document.querySelector('#progressWrap')?.hidden, { timeout: 60000 });
+      } catch {
+        errors.push(`[progress:${tag}] полоса не спряталась`);
+      }
+    } finally {
+      if (slow) await throttle(page, 1);
+    }
+  }
+
+  /**
+   * Клик по «Экспорт» → столько-то реальных файлов. `watchProgress` заодно
+   * следит, что полоса прогресса ожила: сборку считает воркер, и полоса —
+   * единственный признак, что вкладка не умерла, а работает.
+   */
+  async function expectDownloads(count, tag, watchProgress = false) {
+    // Пресеты сбрасывают детализацию к своей, поэтому ставим её перед каждым
+    // экспортом, а не один раз на весь прогон.
+    if (resolution) {
+      await page.selectOption('#print_resolution', resolution);
+      await page.waitForTimeout(200);
+    }
+    const seen = [];
+    const collect = (download) => seen.push(download);
+    page.on('download', collect);
+    const started = Date.now();
+    await page.click('#exportBtn');
+    const deadline = started + 300000;
+    let progressSeen = false;
+    while (seen.length < count && Date.now() < deadline) {
+      if (watchProgress && !progressSeen) {
+        progressSeen = await page.locator('#progressWrap').isVisible();
+      }
+      await page.waitForTimeout(200);
+    }
+    page.off('download', collect);
+    console.log(
+      `export ${tag}: ${seen.length} файл(ов) за ${Date.now() - started} мс` + `${resolution ? `, детализация ${resolution}` : ''}`,
+    );
+    if (watchProgress && !progressSeen) errors.push(`[${tag}] полоса прогресса ни разу не показалась`);
+    // файлы уходят по одному с паузой, так что полоса гаснет чуть позже
+    // последней загрузки — ждём, а не проверяем мгновенно
+    try {
+      await page.waitForFunction(() => document.querySelector('#progressWrap')?.hidden, { timeout: 5000 });
     } catch {
-      if (required || slow) errors.push(`[progress:${tag}] полоса не показалась`);
+      errors.push(`[${tag}] полоса прогресса осталась висеть после экспорта`);
+    }
+    if (seen.length !== count) {
+      errors.push(`[${tag}] файлов ${seen.length}, ожидалось ${count}`);
       return;
     }
-    try {
-      await page.waitForFunction(() => document.querySelector('#progressWrap')?.hidden, { timeout: 60000 });
-    } catch {
-      errors.push(`[progress:${tag}] полоса не спряталась`);
+    for (const download of seen) {
+      if (!download.suggestedFilename().endsWith('.stl')) {
+        errors.push(`[${tag}] имя файла "${download.suggestedFilename()}"`);
+      }
+      const { size } = await stat(await download.path());
+      // 84 байта заголовка + 50 на треугольник
+      if (size < 84 + 50 * 1000) errors.push(`[${tag}] подозрительно маленький STL: ${size} байт`);
     }
-  } finally {
-    if (slow) await app.throttle(1);
   }
+
+  // язык: кнопка в шапке переключает интерфейс на месте — изделие, история
+  // отмены и свёрнутость карточек остаются; выбор переживает перезагрузку.
+  // Чистый браузер en-US сразу получает английский.
+  label('lang');
+  await checkLanguage();
+
+  // мобильный режим: панель — нижний лист; тап по канвасу прячет её,
+  // «Настройки» внизу возвращают
+  label('mobile');
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.waitForTimeout(400);
+  /** Виден ли лист: после закрытия он уезжает за нижний край окна. */
+  const sheetUp = async () => ((await page.locator('#panel').boundingBox())?.y ?? 800) < 790;
+  if (!(await sheetUp())) errors.push('[mobile] панель при загрузке не показана');
+  const phoneWide = await horizontalOverflow(page);
+  if (phoneWide > 0) errors.push(`[mobile] страница шире телефона на ${phoneWide} px`);
+  if (await page.locator('#sheetOpen').isVisible()) errors.push('[mobile] кнопка «Настройки» видна при открытой панели');
+  // тап по открытой части вида закрывает лист кита
+  await page.locator('#viewWrap').click({ position: { x: 195, y: 60 } });
+  await page.waitForTimeout(400);
+  if (await sheetUp()) errors.push('[mobile] тап по канвасу не спрятал панель');
+  if (!(await page.locator('#sheetOpen').isVisible())) errors.push('[mobile] кнопка «Настройки» не появилась');
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/mobile-closed.png` });
+  await page.click('#sheetOpen');
+  await page.waitForTimeout(400);
+  if (!(await sheetUp())) errors.push('[mobile] «Настройки» не вернули панель');
+
+  console.log(`семейств: ${families.length}`);
 }
-
-/**
- * Клик по «Экспорт» → столько-то реальных файлов. `watchProgress` заодно
- * следит, что полоса прогресса ожила: сборку считает воркер, и полоса —
- * единственный признак, что вкладка не умерла, а работает.
- */
-async function expectDownloads(count, tag, watchProgress = false) {
-  // Пресеты сбрасывают детализацию к своей, поэтому ставим её перед каждым
-  // экспортом, а не один раз на весь прогон.
-  if (resolution) {
-    await page.selectOption('#print_resolution', resolution);
-    await page.waitForTimeout(200);
-  }
-  const seen = [];
-  const collect = (download) => seen.push(download);
-  page.on('download', collect);
-  const started = Date.now();
-  await page.click('#exportBtn');
-  const deadline = started + 300000;
-  let progressSeen = false;
-  while (seen.length < count && Date.now() < deadline) {
-    if (watchProgress && !progressSeen) {
-      progressSeen = await page.locator('#progressWrap').isVisible();
-    }
-    await page.waitForTimeout(200);
-  }
-  page.off('download', collect);
-  console.log(
-    `export ${tag}: ${seen.length} файл(ов) за ${Date.now() - started} мс` + `${resolution ? `, детализация ${resolution}` : ''}`,
-  );
-  if (watchProgress && !progressSeen) errors.push(`[${tag}] полоса прогресса ни разу не показалась`);
-  // файлы уходят по одному с паузой, так что полоса гаснет чуть позже
-  // последней загрузки — ждём, а не проверяем мгновенно
-  try {
-    await page.waitForFunction(() => document.querySelector('#progressWrap')?.hidden, { timeout: 5000 });
-  } catch {
-    errors.push(`[${tag}] полоса прогресса осталась висеть после экспорта`);
-  }
-  if (seen.length !== count) {
-    errors.push(`[${tag}] файлов ${seen.length}, ожидалось ${count}`);
-    return;
-  }
-  for (const download of seen) {
-    if (!download.suggestedFilename().endsWith('.stl')) {
-      errors.push(`[${tag}] имя файла "${download.suggestedFilename()}"`);
-    }
-    const { size } = await stat(await download.path());
-    // 84 байта заголовка + 50 на треугольник
-    if (size < 84 + 50 * 1000) errors.push(`[${tag}] подозрительно маленький STL: ${size} байт`);
-  }
-}
-
-// язык: кнопка в шапке переключает интерфейс на месте — изделие, история
-// отмены и свёрнутость карточек остаются; выбор переживает перезагрузку.
-// Чистый браузер en-US сразу получает английский.
-label('lang');
-await checkLanguage();
-
-// мобильный режим: панель — нижний лист; тап по канвасу прячет её,
-// «Настройки» внизу возвращают
-label('mobile');
-await page.setViewportSize({ width: 390, height: 800 });
-await page.waitForTimeout(400);
-/** Виден ли лист: после закрытия он уезжает за нижний край окна. */
-const sheetUp = async () => ((await page.locator('#panel').boundingBox())?.y ?? 800) < 790;
-if (!(await sheetUp())) errors.push('[mobile] панель при загрузке не показана');
-if (await page.locator('#sheetOpen').isVisible()) errors.push('[mobile] кнопка «Настройки» видна при открытой панели');
-// тап по открытой части вида закрывает лист кита
-await page.locator('#viewWrap').click({ position: { x: 195, y: 60 } });
-await page.waitForTimeout(400);
-if (await sheetUp()) errors.push('[mobile] тап по канвасу не спрятал панель');
-if (!(await page.locator('#sheetOpen').isVisible())) errors.push('[mobile] кнопка «Настройки» не появилась');
-if (shotsDir) await page.screenshot({ path: `${shotsDir}/mobile-closed.png` });
-await page.click('#sheetOpen');
-await page.waitForTimeout(400);
-if (!(await sheetUp())) errors.push('[mobile] «Настройки» не вернули панель');
-
-await app.close();
-
-if (errors.length) {
-  console.error(`smoke FAILED (${errors.length}):`);
-  for (const e of errors) console.error('  ' + e);
-  process.exit(1);
-}
-console.log(`smoke OK (семейств: ${families.length})`);
