@@ -16,18 +16,19 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
-    "manifold-3d": "^3.0.1",
+    "manifold-3d": "^3.5.5",
     "three": "^0.178.0"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
+    "@types/node": "^24.19.2",
     "@types/three": "^0.178.0",
+    "jsdom": "^29.1.1",
     "oxlint": "^1.92.0",
     "oxlint-tsgolint": "^7.0.2006",
-    "playwright": "^1.61.1",
+    "playwright": "^1.64.1",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2",
-    "vite": "^5.4.10",
-    "vitest": "^2.1.4"
+    "vite": "^8.3.8",
+    "vitest": "^4.1.12"
   }
 }

@@ -16,7 +16,11 @@ export default defineConfig({
     // и вернувшийся посетитель забирает 30 КБ вместо 152.
     rollupOptions: {
       output: {
-        manualChunks: { three: ['three', 'three/addons/controls/OrbitControls.js'] },
+        // Rolldown (Vite 8) принимает только функцию; OrbitControls лежит
+        // в том же пакете и уходит в тот же чанк.
+        manualChunks(id: string) {
+          return id.includes('node_modules/three/') ? 'three' : undefined;
+        },
       },
     },
     // Порог предупреждения — выше вендорного чанка. О том, что Three весит
