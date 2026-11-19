@@ -1,6 +1,6 @@
 # PLAN-MAKER-KIT.md — clayform на maker-kit (M4)
 
-**Статус: все PR открыты (2026-11-18)** — #4 план и инструменты, #5 core, #6 controls, #7 ui, #8 3d, #9 harness, #10 docs, #11 📄, #12 изделие в браузере, #13 PWA; стопкой, сливать по порядку. Кит — `v0.5.1` без правок; строка M4 в его плане — maker-kit#28.
+**Статус: сделан (2026-11-19)** — PR слиты по порядку: #4 план и инструменты, #5 core, #6 controls, #7 ui, #8 3d, #9 harness, #10 docs, #11 📄, #12 изделие в браузере, #13 PWA. Кит — `v0.5.1` без правок; строка M4 в его плане — maker-kit#28.
 
 Case Constructor, Plate Builder и Cast Builder уже стоят на
 [maker-kit](https://github.com/dmitryweiner/maker-kit) (`~/projects/maker-kit`,
