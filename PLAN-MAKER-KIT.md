@@ -1,6 +1,6 @@
 # PLAN-MAKER-KIT.md — clayform на maker-kit (M4)
 
-**Статус: согласован (2026-11-18), идёт PR 0.**
+**Статус: согласован (2026-11-18).** PR 0–5 открыты (#4–#9), идут docs, 📄, PWA.
 
 Case Constructor, Plate Builder и Cast Builder уже стоят на
 [maker-kit](https://github.com/dmitryweiner/maker-kit) (`~/projects/maker-kit`,
