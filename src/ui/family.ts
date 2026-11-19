@@ -4,7 +4,7 @@
 
 import type { FamilyDef } from '../geo/profiles';
 import { FAMILIES, buildProfile, profileRadius } from '../geo/profiles';
-import { make } from './dom';
+import { make } from 'maker-kit/ui/dom';
 import { tDynamic } from '../i18n';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

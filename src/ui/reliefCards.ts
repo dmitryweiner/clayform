@@ -13,10 +13,10 @@ import {
   defaultBand,
   isContinuous,
 } from '../geo/roulette';
-import type { Control, SelectOption } from './controls';
+import { createCard } from 'maker-kit/ui/card';
+import { make } from 'maker-kit/ui/dom';
+import type { Change, Control, SelectOption } from './controls';
 import { renderControls } from './controls';
-import { createCard } from './card';
-import { make } from './dom';
 import { t } from '../i18n';
 
 const AXIS_OPTIONS: SelectOption[] = [
@@ -60,6 +60,13 @@ const MODE_OPTIONS: SelectOption[] = [
 ];
 
 const WAVE_CONTROLS: Control<ReliefState>[] = [
+  {
+    kind: 'check',
+    key: 'on',
+    label: 'ctl.on',
+    get: (s) => s.wave.on,
+    set: (s, v) => ({ ...s, wave: { ...s.wave, on: v } }),
+  },
   {
     kind: 'check',
     key: 'onLid',
@@ -161,6 +168,13 @@ const WAVE_CONTROLS: Control<ReliefState>[] = [
 const WAVE2_CONTROLS: Control<ReliefState>[] = [
   {
     kind: 'check',
+    key: 'on',
+    label: 'ctl.on',
+    get: (s) => s.wave2.on,
+    set: (s, v) => ({ ...s, wave2: { ...s.wave2, on: v } }),
+  },
+  {
+    kind: 'check',
     key: 'onLid',
     label: 'ctl.onLid',
     hint: 'wave2.onLid.hint',
@@ -222,6 +236,20 @@ const WAVE2_CONTROLS: Control<ReliefState>[] = [
     hint: 'ctl.spiralK.hint',
     get: (s) => s.wave2.spiralK,
     set: (s, v) => ({ ...s, wave2: { ...s.wave2, spiralK: v } }),
+  },
+];
+
+/**
+ * «Включено» у накатки — общий выключатель: полосы остаются на месте со
+ * своими настройками, но перестают действовать.
+ */
+const ROULETTE_ON: Control<RouletteState>[] = [
+  {
+    kind: 'check',
+    key: 'on',
+    label: 'ctl.on',
+    get: (s) => s.bands.some((band) => band.on),
+    set: (s, v) => ({ bands: s.bands.map((band) => ({ ...band, on: v })) }),
   },
 ];
 
@@ -391,7 +419,7 @@ export interface ReliefCardsHandle {
 export function renderBandList(
   host: HTMLElement,
   read: () => RouletteState,
-  onChange: (state: RouletteState) => void,
+  onChange: Change<RouletteState>,
   idPrefix = 'roul',
 ): { sync(state: RouletteState, describe: (band: RouletteBand) => string): void } {
   let rows: ReturnType<typeof renderControls<RouletteState>>[] = [];
@@ -403,7 +431,7 @@ export function renderBandList(
   addBtn.addEventListener('click', () => {
     const bands = read().bands;
     if (bands.length >= MAX_BANDS) return;
-    onChange({ bands: [...bands, { ...defaultBand(), on: true, bandCenter: nextCentre(bands) }] });
+    onChange({ bands: [...bands, { ...defaultBand(), on: true, bandCenter: nextCentre(bands) }] }, true);
   });
 
   /** Новую полосу ставим туда, где ещё нет соседей. */
@@ -426,7 +454,7 @@ export function renderBandList(
       remove.type = 'button';
       remove.title = t('band.remove');
       remove.addEventListener('click', () => {
-        onChange({ bands: read().bands.filter((_, i) => i !== index) });
+        onChange({ bands: read().bands.filter((_, i) => i !== index) }, true);
       });
       head.append(remove);
       box.append(head);
@@ -460,8 +488,8 @@ export function renderReliefCards(
   container: HTMLElement,
   readRelief: () => ReliefState,
   readRoulette: () => RouletteState,
-  onRelief: (relief: ReliefState) => void,
-  onRoulette: (roulette: RouletteState) => void,
+  onRelief: Change<ReliefState>,
+  onRoulette: Change<RouletteState>,
 ): ReliefCardsHandle {
   container.textContent = '';
 
@@ -470,7 +498,7 @@ export function renderReliefCards(
     title: 'wave.title',
     desc: 'wave.desc',
     enabled: readRelief().wave.on,
-    onToggle: (on) => onRelief({ ...readRelief(), wave: { ...readRelief().wave, on } }),
+    t,
   });
   const waveRows = renderControls(waveCard.body, WAVE_CONTROLS, readRelief, onRelief, 'wave');
 
@@ -480,7 +508,7 @@ export function renderReliefCards(
     tag: 'wave2.tag',
     desc: 'wave2.desc',
     enabled: readRelief().wave2.on,
-    onToggle: (on) => onRelief({ ...readRelief(), wave2: { ...readRelief().wave2, on } }),
+    t,
   });
   const wave2Rows = renderControls(wave2Card.body, WAVE2_CONTROLS, readRelief, onRelief, 'wave2');
   const modulateHost = make('div');
@@ -492,11 +520,13 @@ export function renderReliefCards(
     title: 'roulette.title',
     desc: 'roulette.desc',
     enabled: readRoulette().bands.some((band) => band.on),
-    // Тумблер карточки — общий выключатель: полосы остаются на месте со
-    // своими настройками, но перестают действовать.
-    onToggle: (on) => onRoulette({ bands: readRoulette().bands.map((band) => ({ ...band, on })) }),
+    t,
   });
-  const bandList = renderBandList(rouletteCard.body, readRoulette, onRoulette);
+  const rouletteOnHost = make('div');
+  const bandsHost = make('div');
+  rouletteCard.body.append(rouletteOnHost, bandsHost);
+  const rouletteOnRows = renderControls(rouletteOnHost, ROULETTE_ON, readRoulette, onRoulette, 'roulette');
+  const bandList = renderBandList(bandsHost, readRoulette, onRoulette);
   let describeBand: (band: RouletteBand) => string = () => '';
 
   return {
@@ -510,6 +540,7 @@ export function renderReliefCards(
       // чтобы не гадать, почему они не работают
       modulateHost.hidden = relief.wave2.mode !== 'modulate';
       modulateRows.sync(relief);
+      rouletteOnRows.sync(roulette);
       bandList.sync(roulette, describeBand);
     },
     setBandNote(describe): void {

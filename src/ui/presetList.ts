@@ -9,7 +9,7 @@
 // удаляет. Системный confirm блокировал бы страницу (и смоук вместе с ней),
 // а промахнуться пальцем по соседней строке на телефоне проще простого.
 
-import { make } from './dom';
+import { make } from 'maker-kit/ui/dom';
 import { t } from '../i18n';
 
 export interface PresetRow {

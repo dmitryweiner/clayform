@@ -29,8 +29,8 @@ export const ru = {
   'topbar.redo.title': 'Повторить (Ctrl/Cmd+Shift+Z)',
   'topbar.panel': '⚙ Настройки',
   'topbar.panel.title': 'Настройки',
-  'topbar.height': 'Высота',
   'unit.mm': 'мм',
+  'unit.deg': '°',
 
   // --- разделы панели ---
   'panel.shape': 'Форма',
@@ -56,7 +56,8 @@ export const ru = {
   'param.footFillet.hint': 'радиус перехода от ножки к телу: в остром внутреннем углу керамика трескается',
   'param.sharpness': 'Острота',
   'param.sharpness.hint': '−1 — полнее, к плато; 0 — плавно; +1 — ребро',
-  'param.auto': 'авто',
+  'param.heightMm': 'Высота',
+  'param.auto': 'авто: как велит округлость',
 
   'param.pot.dBelly': 'Ширина',
   'param.pot.dBelly.hint': 'диаметр в самом широком месте, мм',
@@ -104,6 +105,7 @@ export const ru = {
   'ctl.depth': 'Глубина',
   'ctl.width': 'Ширина',
   'ctl.height': 'Высота',
+  'ctl.on': 'Включено',
   'ctl.onLid': 'И на крышке тоже',
   'ctl.axis': 'Куда бежит',
   'ctl.shape': 'Форма',

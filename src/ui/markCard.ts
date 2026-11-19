@@ -14,18 +14,24 @@ import {
   LOGO_MAX_PX,
   todayIso,
 } from '../geo/mark';
-import type { Control } from './controls';
+import { createCard } from 'maker-kit/ui/card';
+import type { CardHandle } from 'maker-kit/ui/card';
+import { make } from 'maker-kit/ui/dom';
+import type { Change, Control, ControlsHandle } from './controls';
 import { renderControls } from './controls';
-import type { ControlsHandle } from './controls';
-import { createCard } from './card';
-import type { CardHandle } from './card';
-import { make } from './dom';
 import { t } from '../i18n';
 import { MARK_FONT_FILES } from './fonts';
 
 const hasLogo = (s: MarkState): boolean => s.logo !== null;
 
 const MARK_CONTROLS: Control<MarkState>[] = [
+  {
+    kind: 'check',
+    key: 'on',
+    label: 'ctl.on',
+    get: (s) => s.on,
+    set: (s, v) => ({ ...s, on: v }),
+  },
   {
     kind: 'text',
     key: 'text',
@@ -160,7 +166,7 @@ export interface MarkCardHandle {
 export function renderMarkCard(
   container: HTMLElement,
   read: () => MarkState,
-  write: (next: MarkState) => void,
+  write: Change<MarkState>,
   onView: () => void,
 ): MarkCardHandle {
   const card = createCard(container, {
@@ -168,10 +174,10 @@ export function renderMarkCard(
     title: 'mark.title',
     desc: 'mark.desc',
     enabled: read().on,
-    onToggle: (on) => write({ ...read(), on }),
+    t,
   });
   // renderControls очищает свой контейнер — кнопке нужен свой
-  const view = make('button', 'tb-btn', t('mark.view'));
+  const view = make('button', 'row-btn', t('mark.view'));
   view.type = 'button';
   view.id = 'mark_view';
   view.addEventListener('click', onView);

@@ -110,7 +110,7 @@ for (let i = 0; i < families.length; i++) {
 
 // высота в миллиметрах доезжает до габаритов модели
 label('height');
-await page.fill('#heightMm', '300');
+await page.fill('#p_heightMm', '300');
 await page.waitForTimeout(200);
 const heightStatus = await page.locator('#status').textContent();
 if (!heightStatus.includes('× 300 мм')) errors.push(`[height] status="${heightStatus}"`);
@@ -119,7 +119,7 @@ if (!heightStatus.includes('× 300 мм')) errors.push(`[height] status="${heigh
 label('relief');
 await page.locator('#familyGrid .family-btn').nth(0).click();
 await page.waitForTimeout(150);
-await page.check('#on_wave');
+await setOn('wave', true);
 await page.fill('#wave_amp', '3');
 await page.waitForTimeout(150);
 for (const shape of await page.$$eval('#wave_shape option', (o) => o.map((x) => x.value))) {
@@ -134,7 +134,7 @@ for (const shape of await page.$$eval('#wave_shape option', (o) => o.map((x) => 
 }
 
 label('wave2');
-await page.check('#on_wave2');
+await setOn('wave2', true);
 for (const mode of await page.$$eval('#wave2_mode option', (o) => o.map((x) => x.value))) {
   await page.selectOption('#wave2_mode', mode);
   await page.waitForTimeout(120);
@@ -159,7 +159,7 @@ for (const k of ['-2.35', '0.15', '0.7', '3.85']) {
 await page.selectOption('#wave_axis', 'z');
 
 label('roulette');
-await page.check('#on_roulette');
+await setOn('roulette', true);
 await page.fill('#roul0_bandWidth', '40');
 await page.fill('#roul0_depth', '2');
 await page.waitForTimeout(150);
@@ -324,7 +324,7 @@ label('undo');
 await page.goto(shared.split('#')[0]);
 await auditVerdict(page);
 const initial = await page.locator('#status').textContent();
-await page.fill('#heightMm', '260');
+await page.fill('#p_heightMm', '260');
 await page.waitForTimeout(900); // дольше склейки истории
 const changed = await page.locator('#status').textContent();
 if (changed === initial) errors.push('[undo] высота не изменилась, проверять нечего');
@@ -341,11 +341,11 @@ if ((await page.locator('#status').textContent()) !== changed) {
 
 // ручка и носик: крайние значения и обе конфигурации ручки
 label('attachments');
-await page.uncheck('#on_wave');
-await page.uncheck('#on_wave2');
-await page.uncheck('#on_roulette');
-await page.check('#on_handle');
-await page.check('#on_spout');
+await setOn('wave', false);
+await setOn('wave2', false);
+await setOn('roulette', false);
+await setOn('handle', true);
+await setOn('spout', true);
 for (const [id, value] of [
   ['handle_reach', '3'],
   ['handle_reach', '120'],
@@ -415,7 +415,7 @@ if (!(await page.locator('#spout_pull').isVisible())) {
 // утопленная. Крышка — отдельная деталь, поэтому её появление видно и в
 // списке деталей, и в числе выгружаемых файлов.
 label('lid');
-await page.check('#on_lid');
+await setOn('lid', true);
 await page.waitForTimeout(150);
 const withLidParts = await page.locator('#partList li').count();
 if (withLidParts !== 2) errors.push(`[lid] деталей ${withLidParts}, ожидалось 2 (изделие и крышка)`);
@@ -476,13 +476,13 @@ for (const pattern of ['meander', 'dots', 'rope']) {
   const verdict = await auditVerdict(page);
   if (!verdict.includes('замкнуто ✓')) errors.push(`[lid-roulette:${pattern}] audit="${verdict}"`);
 }
-await page.check('#on_wave');
+await setOn('wave', true);
 await page.check('#wave_onLid');
 const lidWaveVerdict = await auditVerdict(page);
 if (!lidWaveVerdict.includes('замкнуто ✓')) errors.push(`[lid-wave] audit="${lidWaveVerdict}"`);
 if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-relief.png` });
 await page.uncheck('#wave_onLid');
-await page.uncheck('#on_wave');
+await setOn('wave', false);
 await page.locator('#card_lid .band-del').click();
 
 // толщина диска нужна только букве Т — у шара её ползунок ни на что не влияет
@@ -494,13 +494,13 @@ if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid.png` });
 // оттянутый край с крышкой несовместим и гаснет молча: изделие остаётся
 // собранным, а не разваливается на предупреждения
 label('lid-vs-lip');
-await page.check('#on_spout');
+await setOn('spout', true);
 await page.selectOption('#spout_kind', 'lip');
 await page.fill('#spout_pull', '40');
 const lipVerdict = await auditVerdict(page);
 if (!lipVerdict.includes('замкнуто ✓')) errors.push(`[lid-vs-lip] audit="${lipVerdict}"`);
-await page.uncheck('#on_spout');
-await page.uncheck('#on_lid');
+await setOn('spout', false);
+await setOn('lid', false);
 await page.waitForTimeout(120);
 const noLidParts = await page.locator('#partList li').count();
 if (noLidParts !== 1) errors.push(`[lid] после выключения деталей ${noLidParts}, ожидалась 1`);
@@ -575,23 +575,23 @@ if (shotsDir) await page.screenshot({ path: `${shotsDir}/lid-beside.png` });
 await expectDownloads(1, 'teapot-beside');
 await page.uncheck('#print_lidBeside');
 // без крышки галочке делать нечего — она прячется; с крышкой видна снова
-await page.uncheck('#on_lid');
+await setOn('lid', false);
 if (await page.locator('#print_lidBeside').isVisible()) errors.push('[lid-beside] «Крышка рядом» видна без крышки');
-await page.check('#on_lid');
+await setOn('lid', true);
 if (!(await page.locator('#print_lidBeside').isVisible())) errors.push('[lid-beside] «Крышка рядом» не видна при крышке');
 
 const castHref = await page.locator('#castLink').getAttribute('href');
 if (!castHref?.includes('cast-builder')) errors.push(`[cast-link] ссылка на cast-builder: ${castHref}`);
-await page.uncheck('#on_handle');
-await page.uncheck('#on_spout');
-await page.uncheck('#on_lid');
+await setOn('handle', false);
+await setOn('spout', false);
+await setOn('lid', false);
 
 // Клеймо на донышке: строка шрифтом (шрифты грузятся лениво), дата, лого.
 // Проверяем, что меш цел на всех шрифтах и крайних ползунках и что длинная
 // строка ужимается с предупреждением.
 label('mark');
 await page.locator('#familyGrid .family-btn').nth(0).click();
-await page.check('#on_mark');
+await setOn('mark', true);
 await page.fill('#mark_text', 'Мастерская');
 for (const [id, value] of [
   ['mark_font', 'ptSerif'],
@@ -637,7 +637,7 @@ await page.fill('#mark_size', '5');
 await page.click('#mark_logoRemove');
 await page.waitForTimeout(150);
 if (await page.locator('#mark_logoSize').isVisible()) errors.push('[mark] лого не убралось');
-await page.uncheck('#on_mark');
+await setOn('mark', false);
 await page.waitForTimeout(150);
 
 /** Видимый текст приложения, где кириллица — непереведённое. Имена своих пресетов не в счёт. */
@@ -665,12 +665,12 @@ async function checkLanguage() {
   // крышке есть, список пресетов открыт — чтобы непереведённому негде было
   // спрятаться.
   await page.locator('#familyGrid .family-btn').nth(0).click();
-  for (const id of ['wave', 'wave2', 'roulette', 'handle', 'spout', 'lid']) await page.check(`#on_${id}`);
+  for (const id of ['wave', 'wave2', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, true);
   await page.locator('#card_roulette .fcard-body button', { hasText: 'Полоса' }).click();
   await page.locator('#card_lid .fcard-body button', { hasText: 'Полоса' }).click();
-  await page.waitForTimeout(900); // дольше склейки истории
-  await page.uncheck('#on_wave2');
-  await page.locator('#card_wave2 .fcard-head').click(); // выключенная, но раскрытая руками
+  await page.waitForTimeout(900);
+  // выключенная, но раскрытая: карточка кита под рукой не сворачивается
+  await setOn('wave2', false);
   await page.waitForTimeout(900);
   const digits = (text) => (text ?? '').replace(/[^\d]/g, '');
   const statusBefore = digits(await page.locator('#status').textContent());
@@ -717,7 +717,17 @@ async function checkLanguage() {
   if (freshLeft.length) errors.push(`[lang:en-US] непереведённое: ${freshLeft.slice(0, 8).join(' | ')}`);
   await fresh.close();
 
-  for (const id of ['wave', 'roulette', 'handle', 'spout', 'lid']) await page.uncheck(`#on_${id}`);
+  for (const id of ['wave', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, false);
+}
+
+/**
+ * Включает или выключает эффект галочкой `#<id>_on`. У карточки кита она в
+ * теле, а не в шапке: свёрнутую карточку сначала раскрываем.
+ */
+async function setOn(id, on) {
+  const card = page.locator(`#card_${id}`);
+  if ((await card.getAttribute('class')).includes('collapsed')) await card.locator('.fcard-head').click();
+  await page.setChecked(`#${id}_on`, on);
 }
 
 /** Открывает список пресетов и выбирает строку по её ref ('b:teapot', 'u:…'). */

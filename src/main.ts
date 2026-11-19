@@ -7,20 +7,22 @@
 // в главный поток не грузится вовсе, и вкладка не замирает. Оснастку —
 // формы, ванночки, отминку — строит cast-builder по выгруженному STL.
 
+import 'maker-kit/styles/kit.css';
 import './style.css';
-import { el } from './ui/dom';
+import { el } from 'maker-kit/ui/dom';
+import { restoreCards, snapshotCards } from 'maker-kit/ui/card';
 import { createScene } from './render/scene';
 import { renderFamilyPicker } from './ui/family';
-import { renderParams } from './ui/params';
+import { shapeControls } from './ui/params';
+import type { ControlsHandle } from './ui/controls';
+import { renderControls } from './ui/controls';
 import { renderReliefCards } from './ui/reliefCards';
 import { renderAttachCards } from './ui/attachCards';
 import { renderExportPanel } from './ui/exportPanel';
-import { setupAdjustmentButtons } from './ui/adjust';
 import { drawProfileGraph } from './ui/graph';
 import { createProgress } from './ui/progress';
 import { renderPresetList } from './ui/presetList';
 import type { PresetRow } from './ui/presetList';
-import { snapshotCards, restoreCards } from './ui/card';
 import { applyStaticText } from './ui/staticText';
 import type { Lang } from './i18n';
 import { initLang, lang, setLang, onLangChange, t, tm, tDynamic, autoPresetPrefixes } from './i18n';
@@ -34,7 +36,7 @@ import type { MarkRaster } from './geo/mark';
 import { markStrip } from './ui/markRaster';
 import { buildHollowVessel } from './geo/hollow';
 import { lidFit, lidSeat, buildLidMesh, lidHeightMm, lidDomeContext } from './geo/lid';
-import { buildProfile, familyById, profileRadius } from './geo/profiles';
+import { buildProfile, profileRadius } from './geo/profiles';
 import { bandLayout, isContinuous } from './geo/roulette';
 import type { RouletteBand, RouletteContext } from './geo/roulette';
 import { encodeSTL } from './geo/stl';
@@ -70,11 +72,6 @@ const AUDIT_DELAY_MS = 220;
 const CSG_DELAY_MS = 400;
 /** Зазор между изделием и крышкой рядом — тот же, что воркер кладёт в STL. */
 const BESIDE_GAP_MM = LID_BESIDE_GAP_MM;
-/**
- * Через сколько тишины изменение попадает в историю. Протаскивание ползунка
- * от края до края — это одно действие пользователя, а не двести.
- */
-const HISTORY_DELAY_MS = 500;
 /** Сколько шагов помнит отмена. */
 const HISTORY_LIMIT = 80;
 /**
@@ -96,7 +93,6 @@ const reliefCards = el('reliefCards', HTMLDivElement);
 const attachCards = el('attachCards', HTMLDivElement);
 const exportParams = el('exportParams', HTMLDivElement);
 const profileGraph = el('profileGraph', HTMLCanvasElement);
-const heightInput = el('heightMm', HTMLInputElement);
 const resolutionSel = el('resolution', HTMLSelectElement);
 const exportBtn = el('exportBtn', HTMLButtonElement);
 const statusEl = el('status', HTMLParagraphElement);
@@ -131,19 +127,17 @@ function startingState(): AppState {
   return (token && decodeStateToken(token)) || defaultState();
 }
 
-setupAdjustmentButtons(panel);
-
 // Панель целиком: строится при старте и заново на каждой смене языка —
 // подписи переводятся при отрисовке. Состояние при этом не трогается.
 let picker: ReturnType<typeof renderFamilyPicker>;
-let paramRows: ReturnType<typeof renderParams>;
+let paramRows: ControlsHandle<AppState>;
 let reliefRows: ReturnType<typeof renderReliefCards>;
 let attachRows: ReturnType<typeof renderAttachCards>;
 let exportPanel: ReturnType<typeof renderExportPanel>;
 
 function renderPanel(): void {
   picker = renderFamilyPicker(familyGrid, state.family, (id) => {
-    applyState(stateForFamily(id, state));
+    applyState(stateForFamily(id, state), true);
   });
 
   paramRows = renderShapeParams();
@@ -152,8 +146,8 @@ function renderPanel(): void {
     reliefCards,
     () => state.relief,
     () => state.roulette,
-    (relief) => applyState({ ...state, relief }),
-    (roulette) => applyState({ ...state, roulette }),
+    (relief, final) => applyState({ ...state, relief }, final),
+    (roulette, final) => applyState({ ...state, roulette }, final),
   );
 
   attachRows = renderAttachCards(
@@ -165,36 +159,41 @@ function renderPanel(): void {
       mark: () => state.mark,
     },
     {
-      handle: (handle) => applyState({ ...state, handle }),
-      spout: (spout) => applyState({ ...state, spout }),
-      lid: (lid) => applyState({ ...state, lid }),
-      mark: (mark) => applyState({ ...state, mark }),
+      handle: (handle, final) => applyState({ ...state, handle }, final),
+      spout: (spout, final) => applyState({ ...state, spout }, final),
+      lid: (lid, final) => applyState({ ...state, lid }, final),
+      mark: (mark, final) => applyState({ ...state, mark }, final),
       viewBottom: () => scene.viewBottom(),
     },
   );
 
-  exportPanel = renderExportPanel(
-    exportParams,
-    el('partList', HTMLUListElement),
-    () => state,
-    (next) => applyState(next),
-  );
+  exportPanel = renderExportPanel(exportParams, el('partList', HTMLUListElement), () => state, applyState);
 }
 renderPanel();
 
-function renderShapeParams(): ReturnType<typeof renderParams> {
-  return renderParams(shapeParams, state.family, familyById(state.family).params, state.shape, (key, value) => {
-    applyState({ ...state, shape: { ...state.shape, [key]: value } });
-  });
+/** Высота и параметры семейства: `#p_heightMm`, `#p_dBelly`… */
+function renderShapeParams(): ControlsHandle<AppState> {
+  return renderControls(shapeParams, shapeControls(state.family), () => state, applyState, 'p');
 }
 
-function applyState(next: AppState, record = true): void {
+/**
+ * Правка из панели. Кадр жеста (`final` = false: ползунок тащат) показывается
+ * сразу, но шагом отмены становится только законченная правка — протаскивание
+ * ползунка от края до края это одно действие, а не двести.
+ */
+function applyState(next: AppState, final: boolean): void {
+  const clean = sanitizeState(next);
+  if (final) history.commit(clean);
+  else history.live(clean);
+  showState(clean);
+}
+
+/** Показывает состояние, которое история уже держит: правку, отмену, старт. */
+function showState(next: AppState): void {
   // у каждого семейства свой набор параметров, поэтому смена семейства
   // требует пересоздать строки, а не просто обновить значения
   const familyChanged = next.family !== state.family;
-  state = sanitizeState(next);
-  // без записи — только состояние, которое история уже держит (отмена, старт)
-  if (record) rememberLater(state);
+  state = next;
   if (familyChanged) {
     picker.setActive(state.family);
     paramRows = renderShapeParams();
@@ -204,27 +203,13 @@ function applyState(next: AppState, record = true): void {
 
 /** Значения панели — из состояния; плюс пересчёт всего, что от него зависит. */
 function syncPanel(): void {
-  paramRows.setValues(state.shape);
+  paramRows.sync(state);
   reliefRows.sync(state.relief, state.roulette);
   attachRows.sync(state.handle, state.spout, state.lid, state.mark);
   exportPanel.sync(state);
-  heightInput.value = String(Math.round(state.heightMm));
   resolutionSel.value = String(state.resolution);
   updateHistoryButtons();
   refresh();
-}
-
-let historyTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** Кадр жеста — сразу в историю, шагом он становится после паузы. */
-function rememberLater(next: AppState): void {
-  history.live(next);
-  if (historyTimer) clearTimeout(historyTimer);
-  historyTimer = setTimeout(() => {
-    historyTimer = null;
-    history.commit(next);
-    updateHistoryButtons();
-  }, HISTORY_DELAY_MS);
 }
 
 function updateHistoryButtons(): void {
@@ -441,10 +426,6 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-heightInput.addEventListener('input', () => {
-  applyState({ ...state, heightMm: Number(heightInput.value) });
-});
-
 resolutionSel.textContent = '';
 for (const value of RESOLUTIONS) {
   const option = document.createElement('option');
@@ -453,7 +434,7 @@ for (const value of RESOLUTIONS) {
   resolutionSel.append(option);
 }
 resolutionSel.addEventListener('change', () => {
-  applyState({ ...state, resolution: Number(resolutionSel.value) });
+  applyState({ ...state, resolution: Number(resolutionSel.value) }, true);
 });
 
 exportBtn.addEventListener('click', () => {
@@ -563,12 +544,12 @@ function openPreset(ref: string): void {
   if (ref.startsWith('b:')) {
     const preset = presetById(id);
     if (!preset) return;
-    applyState(preset.build());
+    applyState(preset.build(), true);
     setPresetRef(ref, builtinName(id));
   } else {
     const preset = userPresets.find((item) => item.id === id);
     if (!preset) return;
-    applyState(preset.state);
+    applyState(preset.state, true);
     setPresetRef(ref, preset.name);
   }
 }
@@ -639,7 +620,7 @@ async function openPresetFile(file: File): Promise<void> {
     blockersEl.textContent = t(`kit.file.${decoded.reason}` as const);
     return;
   }
-  applyState(decoded.state);
+  applyState(decoded.state, true);
   // в «Мои» открытый файл не попадает — только имя на кнопке
   setPresetRef('', decoded.name);
   flash(fileOpenBtn, '✓');
@@ -686,15 +667,8 @@ undoBtn.addEventListener('click', () => stepHistory('undo'));
 redoBtn.addEventListener('click', () => stepHistory('redo'));
 
 function stepHistory(direction: 'undo' | 'redo'): void {
-  // Ждущий жест сначала становится шагом: отмена снимает его целиком, а
-  // повтор возвращает (история кита отменила бы его без повтора).
-  if (historyTimer) {
-    clearTimeout(historyTimer);
-    historyTimer = null;
-    history.commit(state);
-  }
   const restored = direction === 'undo' ? history.undo() : history.redo();
-  if (restored) applyState(restored, false);
+  if (restored) showState(restored);
 }
 
 window.addEventListener('keydown', (event) => {
@@ -749,4 +723,4 @@ onLangChange(() => {
   syncPanel();
 });
 
-applyState(state, false);
+showState(state);
