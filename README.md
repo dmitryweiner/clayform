@@ -149,7 +149,7 @@ to delete; a ● before the name when the piece has left its preset) and as
 files: 📂 opens a JSON (you can also drop it onto the window), ⬇️ saves the
 current state to `clayform-<name>.json`. The 🔗 link carries the whole
 state. The piece is kept in the browser and is there after a reload; 📄
-starts a new one. Undo and redo — ↶ ↷, Ctrl/Cmd+Z on any keyboard layout: a dragged
+starts a new one. Undo and redo — ↩ ↪, Ctrl/Cmd+Z on any keyboard layout: a dragged
 slider is one step.
 
 **The interface is in English and Russian.** The language comes from the
