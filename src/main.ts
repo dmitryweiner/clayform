@@ -747,7 +747,7 @@ function flash(button: HTMLButtonElement, mark: string): void {
 
 // --- отмена и повтор ---
 //
-// ↶ ↷ и Ctrl/⌘+Z, Shift+Ctrl/⌘+Z, Ctrl/⌘+Y — китовые (`historyKeys`): на любой
+// ↩ ↪ и Ctrl/⌘+Z, Shift+Ctrl/⌘+Z, Ctrl/⌘+Y — китовые (`historyKeys`): на любой
 // раскладке и сразу после ползунка; набранный текст отменяется сам.
 
 function stepHistory(direction: 'undo' | 'redo'): void {
