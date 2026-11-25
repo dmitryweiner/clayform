@@ -3,6 +3,7 @@
 // быстрее, чем ждать пересборку 3D.
 
 import type { ProfileDef } from '../geo/profiles';
+import type { SectionPoint } from '../geo/concave';
 import { profileRadius } from '../geo/profiles';
 import { t } from '../i18n';
 
@@ -11,7 +12,8 @@ const STROKE = '#d98b5f';
 const AXIS = 'rgba(164, 148, 138, 0.45)';
 const LABEL = '#a4948a';
 
-export function drawProfileGraph(canvas: HTMLCanvasElement, def: ProfileDef): void {
+/** `bottom` — сечение вогнутого дна: снизу силуэта вырез по нему. */
+export function drawProfileGraph(canvas: HTMLCanvasElement, def: ProfileDef, bottom?: readonly SectionPoint[]): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -49,6 +51,11 @@ export function drawProfileGraph(canvas: HTMLCanvasElement, def: ProfileDef): vo
   }
   for (let i = N; i >= 0; i--) {
     ctx.lineTo(cx - rs[i] * scale, y0 - (i / N) * def.heightMm * scale);
+  }
+  // дно: прямая, а у вогнутого — его сечение от левого края через ось к правому
+  if (bottom) {
+    for (let k = bottom.length - 1; k >= 0; k--) ctx.lineTo(cx - bottom[k].r * scale, y0 - bottom[k].z * scale);
+    for (const point of bottom) ctx.lineTo(cx + point.r * scale, y0 - point.z * scale);
   }
   ctx.closePath();
   ctx.fillStyle = FILL;

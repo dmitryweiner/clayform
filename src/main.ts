@@ -18,6 +18,8 @@ import type { ControlsHandle } from './ui/controls';
 import { renderControls } from './ui/controls';
 import { renderReliefCards } from './ui/reliefCards';
 import { renderAttachCards } from './ui/attachCards';
+import type { ConcaveCardHandle } from './ui/concaveCard';
+import { renderConcaveCard } from './ui/concaveCard';
 import { renderExportPanel } from './ui/exportPanel';
 import { drawProfileGraph } from './ui/graph';
 import { createProgress } from 'maker-kit/ui/progress';
@@ -42,7 +44,7 @@ import { placeInRow, LID_BESIDE_GAP_MM } from './geo/layout';
 import { buildVessel, vesselSurface } from './geo/build';
 import { buildHandles } from './geo/handle';
 import { buildAppliedSpout } from './geo/spout';
-import { markWarnings } from './geo/mark';
+import { MARK_DEPTH_MAX_MM, markWarnings } from './geo/mark';
 import type { MarkRaster } from './geo/mark';
 import { markStrip } from './ui/markRaster';
 import { buildHollowVessel } from './geo/hollow';
@@ -52,7 +54,10 @@ import { bandLayout, isContinuous } from './geo/roulette';
 import type { RouletteBand, RouletteContext } from './geo/roulette';
 import { encodeSTL } from 'maker-kit/3d/stl';
 import { validateMesh, assessExport, signedVolume } from 'maker-kit/3d/validate';
+import type { OverhangSkip } from './geo/overhang';
 import { overhangFraction } from './geo/overhang';
+import type { ConcaveLayout } from './geo/concave';
+import { concaveLayout, concaveWarnings } from './geo/concave';
 import type { AppState } from './state/schema';
 import { defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, lidRelief } from './state/schema';
 import { BLANK_PRESET, PRESETS, presetById, presetSignature } from './state/presets';
@@ -105,6 +110,7 @@ const view = el('view', HTMLCanvasElement);
 const panel = el('panel', HTMLElement);
 const familyGrid = el('familyGrid', HTMLDivElement);
 const shapeParams = el('shapeParams', HTMLDivElement);
+const concaveHost = el('concaveCard', HTMLDivElement);
 const reliefCards = el('reliefCards', HTMLDivElement);
 const attachCards = el('attachCards', HTMLDivElement);
 const exportParams = el('exportParams', HTMLDivElement);
@@ -157,6 +163,7 @@ function openingProject(): StoredProject {
 // подписи переводятся при отрисовке. Состояние при этом не трогается.
 let picker: ReturnType<typeof renderFamilyPicker>;
 let paramRows: ControlsHandle<AppState>;
+let concaveRows: ConcaveCardHandle;
 let reliefRows: ReturnType<typeof renderReliefCards>;
 let attachRows: ReturnType<typeof renderAttachCards>;
 let exportPanel: ReturnType<typeof renderExportPanel>;
@@ -167,6 +174,13 @@ function renderPanel(): void {
   });
 
   paramRows = renderShapeParams();
+
+  concaveRows = renderConcaveCard(
+    concaveHost,
+    () => state.concave,
+    (concave, final) => applyState({ ...state, concave }, final),
+    () => scene?.viewBottom(),
+  );
 
   reliefRows = renderReliefCards(
     reliefCards,
@@ -231,6 +245,7 @@ function showState(next: AppState): void {
 /** Значения панели — из состояния; плюс пересчёт всего, что от него зависит. */
 function syncPanel(): void {
   paramRows.sync(state);
+  concaveRows.sync(state.concave);
   reliefRows.sync(state.relief, state.roulette);
   attachRows.sync(state.handle, state.spout, state.lid, state.mark);
   exportPanel.sync(state);
@@ -268,13 +283,18 @@ let exactTimer: ReturnType<typeof setTimeout> | null = null;
 let generation = 0;
 /** Растр строки клейма последней сборки — его же получает воркер. */
 let markRaster: MarkRaster | null = null;
+/** Вогнутое дно последней сборки: проверка меша не считает его свесом. */
+let concave: ConcaveLayout | null = null;
 
 function refresh(): void {
   generation++;
   const stamp = generation;
 
   const profile = buildProfile(state.family, state.shape, state.heightMm);
-  drawProfileGraph(profileGraph, profile);
+  const flatMm = profileRadius(profile, 0);
+  concave = concaveLayout(state.concave, flatMm, state.heightMm);
+  concaveRows.setDepth(concave?.depthMm ?? null);
+  drawProfileGraph(profileGraph, profile, concave?.section);
 
   reliefRows.setBandNote((band) =>
     describeBand(band, {
@@ -317,7 +337,9 @@ function refresh(): void {
   if (hollow.pinchedFraction > 0) {
     baseWarnings.push(line('warn', { code: 'warn.pinched', params: { pct: (hollow.pinchedFraction * 100).toFixed(1) } }));
   }
-  baseWarnings.push(...markWarnings(buildParams.mark, profileRadius(profile, 0)).map((message) => line('warn', message)));
+  baseWarnings.push(...concaveWarnings(state.concave, flatMm, state.heightMm).map((message) => line('warn', message)));
+  // клеймо на вогнутом дне — в утопленном круге
+  baseWarnings.push(...markWarnings(buildParams.mark, concave?.markMm ?? flatMm).map((message) => line('warn', message)));
   if (fit?.tooNarrow) {
     baseWarnings.push(line('warn', { code: 'warn.lidNarrow', params: { d: (fit.seatMm * 2).toFixed(0) } }));
   }
@@ -422,7 +444,7 @@ function audit(meshes: SurfaceMesh[]): void {
   const assessments = reports.map((report) => assessExport(report, true));
   const triangles = reports.reduce((sum, report) => sum + report.triangleCount, 0);
   const blocking = assessments.flatMap((assessment) => assessment.blockers);
-  const overhang = overhangFraction(meshes[0], 60);
+  const overhang = overhangFraction(meshes[0], 60, bottomSkip());
 
   auditEl.textContent = reports.every((report) => report.watertight)
     ? t('audit.watertight', { k: Math.round(triangles / 1000) })
@@ -436,6 +458,14 @@ function audit(meshes: SurfaceMesh[]): void {
   failures = [];
   showMessages();
   exportBtn.disabled = blocking.length > 0;
+}
+
+/**
+ * Вогнутое дно нависает нарочно — это решение, а не ошибка формы, и в
+ * процент свесов оно не идёт: цилиндр под ним вместе с оттиском клейма.
+ */
+function bottomSkip(): OverhangSkip | undefined {
+  return concave ? { radiusMm: concave.footprintMm + 0.01, heightMm: concave.depthMm + MARK_DEPTH_MAX_MM + 0.01 } : undefined;
 }
 
 /**
