@@ -11,6 +11,9 @@ export type MessageCode =
   // клеймо на дне (mark)
   | 'mark.tooLong'
   | 'mark.noRoom'
+  // вогнутое дно (concave)
+  | 'concave.tooDeep'
+  | 'concave.noRoom'
   // этапы задач воркера
   | 'progress.loading'
   | 'progress.vessel'

@@ -18,6 +18,8 @@ import type { MarkInput } from './mark';
 import { markCap, markStepMm } from './mark';
 import type { SpoutState } from './spout';
 import { defaultSpout, makeSpout } from './spout';
+import type { ConcaveLayout, ConcaveState } from './concave';
+import { concaveLayout } from './concave';
 
 export interface BuildParams {
   /** идентификатор семейства: pot | bowl | cup | vase */
@@ -32,6 +34,8 @@ export interface BuildParams {
   relief: ReliefState;
   roulette: RouletteState;
   spout: SpoutState;
+  /** вогнутое дно; нет поля — дно плоское */
+  concave?: ConcaveState;
   /** клеймо на донышке; растр строки приходит из главного потока */
   mark?: MarkInput;
 }
@@ -81,10 +85,15 @@ export interface VesselSurface {
   pullAt(u: number, v: number): number;
 }
 
+/** Высота изделия, как её понимает сборка. */
+function heightOf(p: BuildParams): number {
+  return Number.isFinite(p.heightMm) ? Math.max(1, p.heightMm) : 100;
+}
+
 export function vesselSurface(p: BuildParams): VesselSurface {
   const nu = clampInt(p.nu, NU_MIN, NU_MAX);
   const nv = clampInt(p.nv, NV_MIN, NV_MAX);
-  const heightMm = Number.isFinite(p.heightMm) ? Math.max(1, p.heightMm) : 100;
+  const heightMm = heightOf(p);
   const profile = buildProfile(p.family, p.shape, heightMm);
 
   const relief = p.relief ?? defaultRelief();
@@ -203,17 +212,36 @@ export function buildVessel(p: BuildParams): SurfaceMesh {
 }
 
 /**
- * Наружное дно изделия своей сеткой, если на нём клеймо; иначе undefined —
- * веер. Радиус плоского дна меряется по нижнему кольцу сетки: рельеф у дна
- * гаснет (BASE_GUARD), и кольцо — это ровно край плоского дна.
+ * Радиус плоского дна — по нижнему кольцу сетки: рельеф у дна гаснет
+ * (BASE_GUARD), и кольцо — это ровно край плоского дна.
+ */
+function bottomRadius(grid: Grid): number {
+  let flat = Infinity;
+  for (let i = 0; i < grid.nu; i++) flat = Math.min(flat, gridRadiusAt(grid, i, 0));
+  return flat;
+}
+
+/** Вогнутое дно изделия на его сетке; null — дно плоское. */
+export function vesselConcave(p: BuildParams, grid: Grid): ConcaveLayout | null {
+  return p.concave ? concaveLayout(p.concave, bottomRadius(grid), heightOf(p)) : null;
+}
+
+/**
+ * Наружное дно изделия своей сеткой, если на нём клеймо или вогнутость;
+ * иначе undefined — веер. Клеймо на вогнутом дне — только в утопленном
+ * круге (у сферы это всё дно): на ступеньке и поясе его нет.
  * `maxDepthMm` — сколько дно может отдать оттиску (у полого — толщина дна
  * минус минимальная стенка).
  */
 export function vesselBottom(p: BuildParams, grid: Grid, maxDepthMm = Infinity): CapSpec | undefined {
-  if (!p.mark) return undefined;
-  let flat = Infinity;
-  for (let i = 0; i < grid.nu; i++) flat = Math.min(flat, gridRadiusAt(grid, i, 0));
-  return markCap(p.mark, flat, markStepMm(grid.nu), maxDepthMm);
+  const flat = bottomRadius(grid);
+  const concave = vesselConcave(p, grid);
+  const mark = markCap(p.mark, concave ? concave.markMm : flat, markStepMm(grid.nu), maxDepthMm);
+  if (!concave) return mark;
+  const depth = mark?.heightAt;
+  if (!mark || !depth) return { ...mark, section: concave.section };
+  const edge = concave.markMm;
+  return { ...mark, section: concave.section, heightAt: (x, y) => (Math.hypot(x, y) <= edge ? depth(x, y) : 0) };
 }
 
 /** Радиус узла сетки (i, j) — удобно тестам и анализатору поднутрений. */

@@ -5,11 +5,19 @@
 
 import type { SurfaceMesh } from 'maker-kit/3d/mesh';
 
+/** Цилиндр у дна вокруг оси, грани в котором не считаются. */
+export interface OverhangSkip {
+  radiusMm: number;
+  heightMm: number;
+}
+
 /**
  * Доля площади, нависающей круче limitDeg от вертикали (плохо для FDM).
- * Грани у самого дна (первые слои на столе) не считаются.
+ * Грани у самого дна (первые слои на столе) не считаются, как и грани с
+ * центром в цилиндре `skip`: вогнутое дно нависает нарочно, и о нём не
+ * предупреждают.
  */
-export function overhangFraction(mesh: Pick<SurfaceMesh, 'positions' | 'indices'>, limitDeg = 60): number {
+export function overhangFraction(mesh: Pick<SurfaceMesh, 'positions' | 'indices'>, limitDeg = 60, skip?: OverhangSkip): number {
   const { positions, indices } = mesh;
   let zMin = Infinity;
   let zMax = -Infinity;
@@ -26,6 +34,12 @@ export function overhangFraction(mesh: Pick<SurfaceMesh, 'positions' | 'indices'
     const b = indices[t + 1] * 3;
     const c = indices[t + 2] * 3;
     if (positions[a + 2] < bedZ && positions[b + 2] < bedZ && positions[c + 2] < bedZ) continue;
+    if (skip) {
+      const x = (positions[a] + positions[b] + positions[c]) / 3;
+      const y = (positions[a + 1] + positions[b + 1] + positions[c + 1]) / 3;
+      const z = (positions[a + 2] + positions[b + 2] + positions[c + 2]) / 3;
+      if (z < skip.heightMm && Math.hypot(x, y) < skip.radiusMm) continue;
+    }
     const abx = positions[b] - positions[a];
     const aby = positions[b + 1] - positions[a + 1];
     const abz = positions[b + 2] - positions[a + 2];

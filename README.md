@@ -35,6 +35,13 @@ radius of the transition from foot to body. A sharp edge chips, ceramics
 crack in a sharp inner corner, and clay will not release from a sharp corner
 of the mold.
 
+**A concave base**, for every shape: the base goes up into the piece and the
+piece stands on its edge, so it does not rock if the base sags a little in
+drying. Spherical — the sphere takes the whole base, its radius sets the
+depth — or recessed flat: the depth, the width of the foot ring the piece
+stands on, and one radius for both corners of the step. The floor inside
+follows it: the base stays a plate of one thickness.
+
 The bowl also sets the angle at which the wall leaves the base: 0 is auto (as
 the roundness dictates, a shelf from the foot), more makes the wall a Bézier
 curve leaving the foot edge at that angle and reaching the rim by the
@@ -205,7 +212,8 @@ src/geo/       pure geometry core, no Three.js, in millimetres
   roulette     roulette patterns on a tile
   build        silhouette → lathe mesh → relief → mesh
   hollow       the cavity for direct printing
-  bottom       the outer base on its own grid, for the mark
+  concave      concave base: its section and the floor of even thickness over it
+  bottom       the outer base on its own grid, for the mark or a concave base
   mark         maker's mark on the base: a line of text and a logo
   handle       handle: a section swept along a Bézier arc (sweep)
   spout        spout: pulled lip and applied tube with a channel

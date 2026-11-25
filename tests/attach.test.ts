@@ -17,6 +17,7 @@ import { sanitizeHollow, buildHollowVessel } from '../src/geo/hollow';
 import { assembleMesh } from '../src/geo/surface';
 import { validateMesh } from 'maker-kit/3d/validate';
 import { buildProfile, profileRadius, defaultFamilyParams, familyById } from '../src/geo/profiles';
+import { sanitizeConcave } from '../src/geo/concave';
 
 let csg: CsgApi;
 beforeAll(async () => {
@@ -209,6 +210,21 @@ describe('полая кружка с ручкой', () => {
     // а вот сквозное отверстие под пальцы — да
     expect(genusOf(result.mesh)).toBe(1);
     expect(result.capacityMl).toBeGreaterThan(100);
+  });
+
+  it('с вогнутым дном — тоже: замкнута, род 1, полость с помостом вычтена', () => {
+    for (const kind of ['sphere', 'flat']) {
+      const params = cup({ concave: sanitizeConcave({ on: true, kind, radiusMm: 120, depthMm: 5 }) });
+      const hollow = sanitizeHollow({ wallMm: 3, baseMm: 4 });
+      const result = buildPrintableVessel(csg, params, hollow, handleOn(), defaultSpout());
+      expect(validateMesh(result.mesh).watertight, kind).toBe(true);
+      expect(genusOf(result.mesh), kind).toBe(1);
+      const plain = buildHollowVessel(params, hollow);
+      const grew = validateMesh(result.mesh).volume - validateMesh(plain.mesh).volume;
+      // сверху — только ручка: полость с помостом вычтена та же, что в оболочке
+      expect(grew, kind).toBeGreaterThan(0);
+      expect(grew, kind).toBeLessThan(validateMesh(buildHandles(handleOn(), buildProfile('cup', params.shape, 95), 95)[0]).volume);
+    }
   });
 
   it('в полость не выступает ни миллиметра ручки', () => {

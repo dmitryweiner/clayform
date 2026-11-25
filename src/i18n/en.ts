@@ -205,6 +205,24 @@ export const en: Record<keyof typeof ru, string> = {
   'spout.tipD.hint': 'never wider than the base — the tube narrows towards its mouth',
   'spout.angle': 'Tip angle',
 
+  // --- concave base ---
+  'concave.title': 'Concave base',
+  'concave.desc':
+    'The base goes up into the piece, and the piece stands on its edge: it does not rock even if the base sags a little in drying. The floor inside follows it — the base is equally thick everywhere.',
+  'concave.kind': 'Kind',
+  'concave.kind.sphere': 'spherical',
+  'concave.kind.flat': 'recessed flat',
+  'concave.radius': 'Sphere radius',
+  'concave.radius.hint': 'the smaller, the deeper; the sphere takes the whole base, the piece stands on its edge',
+  'concave.depthNote': 'Depth {d} mm',
+  'concave.depth': 'Depth',
+  'concave.depth.hint': 'how far the base is recessed; at most a quarter of the piece height',
+  'concave.ring': 'Foot ring',
+  'concave.ring.hint': 'width of the band the piece stands on',
+  'concave.fillet': 'Rounding',
+  'concave.fillet.hint': 'radius of both corners of the step; the outer edge is rounded by “Base fillet”',
+  'concave.view': 'Show base',
+
   // --- lid ---
   'mark.title': 'Maker’s mark',
   'mark.desc': 'Text impressed around the base and a logo in the middle. Reads on the upturned piece; see it with “Show base”.',
@@ -304,6 +322,9 @@ export const en: Record<keyof typeof ru, string> = {
   // --- core messages (geo/message.ts) ---
   'mark.tooLong': 'The mark text is longer than the circle — letters shrunk to {pct} %.',
   'mark.noRoom': 'No room for the mark text on the base: reduce the letter size or the edge margin.',
+  'concave.tooDeep':
+    'The concave base is limited to {d} mm deep: no deeper than a quarter of the height (and a sphere no deeper than a hemisphere).',
+  'concave.noRoom': 'The foot ring is as wide as the base — nothing is left to recess: make the ring narrower.',
   'progress.loading': 'loading the boolean operations module',
   'progress.vessel': 'building the piece',
   'progress.lid': 'building the lid',

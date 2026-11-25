@@ -20,6 +20,8 @@ import type { MarkRaster, MarkState } from '../geo/mark';
 import { defaultMark, sanitizeMark } from '../geo/mark';
 import type { LidState } from '../geo/lid';
 import { defaultLid, sanitizeLid } from '../geo/lid';
+import type { ConcaveState } from '../geo/concave';
+import { defaultConcave, sanitizeConcave } from '../geo/concave';
 
 export const STATE_VERSION = 1;
 
@@ -30,6 +32,8 @@ export interface AppState {
   /** параметры выбранного семейства */
   shape: Params;
   heightMm: number;
+  /** вогнутое дно; старые ссылки и пресеты поля не знают — выключено */
+  concave: ConcaveState;
   relief: ReliefState;
   roulette: RouletteState;
   handle: HandleState;
@@ -58,6 +62,7 @@ export function defaultState(): AppState {
     family: family.id,
     shape: clampFamilyParams(family.id, {}),
     heightMm: family.defaultHeightMm,
+    concave: defaultConcave(),
     relief: defaultRelief(),
     roulette: defaultRoulette(),
     handle: defaultHandle(),
@@ -115,6 +120,7 @@ export function sanitizeState(raw: unknown): AppState {
     family,
     shape: clampFamilyParams(family, numericRecord(source.shape)),
     heightMm,
+    concave: sanitizeConcave(source.concave),
     relief: sanitizeRelief(source.relief),
     roulette: sanitizeRoulette(source.roulette),
     handle: sanitizeHandle(source.handle),
@@ -166,6 +172,8 @@ export function toBuildParams(state: AppState, segments: number, markStrip: Mark
     relief: state.relief,
     roulette: state.roulette,
     spout: effectiveSpout(state),
+    // выключенная вогнутость идёт прежним путём, меш байт в байт прежний
+    ...(state.concave.on ? { concave: state.concave } : {}),
     ...(state.mark.on ? { mark: { state: state.mark, strip: markStrip } } : {}),
   };
 }

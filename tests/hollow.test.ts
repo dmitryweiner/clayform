@@ -8,8 +8,11 @@ import { buildHollowVessel, defaultHollow, sanitizeHollow } from '../src/geo/hol
 import { buildVessel, defaultBuildParams } from '../src/geo/build';
 import { sanitizeSpout, makeSpout } from '../src/geo/spout';
 import { validateMesh } from 'maker-kit/3d/validate';
+import { meshNormals } from 'maker-kit/3d/mesh';
 import { FAMILY_IDS, defaultFamilyParams, familyById, buildProfile, profileRadius } from '../src/geo/profiles';
 import { sanitizeRelief } from '../src/geo/relief';
+import type { SectionPoint } from '../src/geo/concave';
+import { concaveLayout, sanitizeConcave } from '../src/geo/concave';
 
 const params = (family: string, over: Record<string, unknown> = {}) => ({
   ...defaultBuildParams(),
@@ -248,5 +251,109 @@ describe('sanitizeHollow', () => {
   it('идемпотентен', () => {
     const once = sanitizeHollow({ wallMm: 2.7, baseMm: 3.4 });
     expect(sanitizeHollow(once)).toEqual(once);
+  });
+});
+
+describe('buildHollowVessel: вогнутое дно', () => {
+  const KINDS = [
+    { kind: 'sphere', radiusMm: 150 },
+    { kind: 'flat', depthMm: 6, ringMm: 8, filletMm: 2 },
+    { kind: 'flat', depthMm: 3, ringMm: 6, filletMm: 0 },
+  ];
+  const concave = (raw: Record<string, unknown>) => ({ concave: sanitizeConcave({ on: true, ...raw }) });
+
+  /** Расстояние от точки осевого сечения до наружного дна (за краем — стол). */
+  function toBottom(section: readonly SectionPoint[], r: number, z: number): number {
+    const outer = [...section, { r: 1e4, z: 0 }];
+    let best = Infinity;
+    for (let i = 1; i < outer.length; i++) {
+      const a = outer[i - 1];
+      const b = outer[i];
+      const dr = b.r - a.r;
+      const dz = b.z - a.z;
+      const len2 = dr * dr + dz * dz;
+      const t = len2 > 0 ? Math.min(1, Math.max(0, ((r - a.r) * dr + (z - a.z) * dz) / len2)) : 0;
+      best = Math.min(best, Math.hypot(r - (a.r + t * dr), z - (a.z + t * dz)));
+    }
+    return best;
+  }
+
+  it('каждое семейство с каждым видом — замкнутый солид, материал плюс полость = сплошное тело', () => {
+    for (const family of FAMILY_IDS) {
+      for (const kind of KINDS) {
+        const p = params(family, concave(kind));
+        const label = `${family} ${JSON.stringify(kind)}`;
+        const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 4, rimRadiusMm: 0 }));
+        const report = validateMesh(hollow.mesh);
+        expect(report.watertight, label).toBe(true);
+        expect(report.volume, label).toBeGreaterThan(0);
+        expect(
+          validateMesh({ ...hollow.cavity, normals: meshNormals(hollow.cavity.positions, hollow.cavity.indices) }).watertight,
+          label,
+        ).toBe(true);
+        const solid = validateMesh(buildVessel(p)).volume;
+        expect(report.volume + hollow.capacityMl * 1000, label).toBeCloseTo(solid, 0);
+        // помост внутри отнимает вместимость
+        const flatBase = buildHollowVessel(params(family), sanitizeHollow({ wallMm: 3, baseMm: 4, rimRadiusMm: 0 }));
+        expect(hollow.capacityMl, label).toBeLessThan(flatBase.capacityMl);
+      }
+    }
+  });
+
+  it('дно — пластина ровной толщины: пол полости везде на толщину дна от наружного дна', () => {
+    for (const kind of KINDS) {
+      const p = params('pot', concave(kind));
+      const baseMm = 4;
+      const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm }));
+      const profile = buildProfile('pot', p.shape, p.heightMm);
+      const layout = concaveLayout(p.concave, profileRadius(profile, 0), p.heightMm);
+      if (!layout) throw new Error('no layout');
+      // вершины пола полости — после сетки и центра верхней крышки
+      const { nu, nv } = hollow.innerGrid;
+      const first = nu * (nv + 1) + 1;
+      const positions = hollow.cavity.positions;
+      let checked = 0;
+      for (let k = first * 3; k < positions.length; k += 3) {
+        const r = Math.hypot(positions[k], positions[k + 1]);
+        const d = toBottom(layout.section, r, positions[k + 2]);
+        expect(d, `${kind.kind} r=${r.toFixed(2)}`).toBeGreaterThan(baseMm - 0.03);
+        expect(d, `${kind.kind} r=${r.toFixed(2)}`).toBeLessThan(baseMm + 0.15);
+        checked++;
+      }
+      expect(checked).toBeGreaterThan(100);
+    }
+  });
+
+  it('первое кольцо полости стоит на полу: стенка полости начинается там, где кончается пол', () => {
+    const p = params('bowl', concave(KINDS[1]));
+    const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 4 }));
+    const { nu } = hollow.innerGrid;
+    const positions = hollow.innerGrid.positions;
+    const z0 = positions[2];
+    for (let i = 0; i < nu; i++) expect(positions[i * 3 + 2]).toBeCloseTo(z0, 5);
+    // пол у стенки — на толщине дна над столом: пояс там на столе
+    expect(z0).toBeCloseTo(4, 3);
+  });
+
+  it('выключенная вогнутость — тот же меш байт в байт', () => {
+    const hollow = sanitizeHollow({ wallMm: 3, baseMm: 4 });
+    for (const family of FAMILY_IDS) {
+      const plain = buildHollowVessel(params(family), hollow).mesh;
+      const off = buildHollowVessel(params(family, { concave: sanitizeConcave({ on: false, kind: 'flat' }) }), hollow).mesh;
+      expect(off.positions, family).toEqual(plain.positions);
+      expect(off.indices, family).toEqual(plain.indices);
+    }
+  });
+
+  it('толстое дно на низком изделии: помост не выше 0,7 высоты, меш цел', () => {
+    const p = params('cup', { heightMm: 30, ...concave({ kind: 'flat', depthMm: 7, ringMm: 6, filletMm: 1 }) });
+    const hollow = buildHollowVessel(p, sanitizeHollow({ wallMm: 3, baseMm: 60 }));
+    expect(validateMesh(hollow.mesh).watertight).toBe(true);
+    // вершины пола полости — после сетки и центра верхней крышки
+    const { nu, nv } = hollow.innerGrid;
+    let top = 0;
+    for (let k = (nu * (nv + 1) + 1) * 3; k < hollow.cavity.positions.length; k += 3) top = Math.max(top, hollow.cavity.positions[k + 2]);
+    expect(top).toBeLessThanOrEqual((30 - 1.5) * 0.7 + 1e-6);
+    expect(hollow.capacityMl).toBeGreaterThan(0);
   });
 });

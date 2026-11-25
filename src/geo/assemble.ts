@@ -11,7 +11,6 @@
 // ручки под форму стенки вручную.
 
 import type { SurfaceMesh } from 'maker-kit/3d/mesh';
-import { assembleMesh } from './surface';
 import type { CsgApi } from 'maker-kit/csg/manifold';
 import { CsgScope, toManifold, fromManifold } from 'maker-kit/csg/manifold';
 import type { BuildParams } from './build';
@@ -71,7 +70,7 @@ export function buildPrintableVessel(
     // Утопленные в стенку торцы ручки торчат внутрь полости — срезаем их,
     // чтобы внутри кружки не осталось бугра. Тем же вычитанием канал носика
     // пробивает стенку и вскрывает устье трубки.
-    const cavity = scope.keep(toManifold(csg, assembleMesh(result.innerGrid, 'both')));
+    const cavity = scope.keep(toManifold(csg, result.cavity));
     const inside = channel ? scope.keep(csg.Manifold.union([cavity, scope.keep(toManifold(csg, channel))])) : cavity;
     const mesh = fromManifold(scope.keep(outside.subtract(inside)));
     // Вместимость считаем по полости тела: вклад канала — единицы миллилитров,
