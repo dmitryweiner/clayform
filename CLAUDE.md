@@ -63,6 +63,8 @@ cast-builder стоят на STL, выгруженных ядром clayform (`f
 - `plans/PLAN-MAKER-KIT.md` — переезд на maker-kit (M4: PR по группам —
   инструменты, core, controls, ui, 3d, harness, docs, 📄, изделие в
   браузере, PWA).
+- `plans/PLAN-CONCAVE.md` — вогнутое дно: сфера и утопленное плоское,
+  пол ровной толщины (C0…C8). **В работе.**
 
 Планы оснастки (`PLAN-MOLDING.md`, части `PLAN.md` и
 `PLAN-IMPROVEMENTS*.md`) — история: код уехал в cast-builder.
