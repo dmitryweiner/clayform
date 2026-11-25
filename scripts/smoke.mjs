@@ -698,6 +698,58 @@ async function scenario() {
   await setOn('mark', false);
   await page.waitForTimeout(150);
 
+  // Вогнутое дно: у каждого семейства сфера и утопленное плоское, крайние
+  // ползунки; под радиусом — глубина, свода в процентах свесов нет; одна
+  // выгрузка STL с вогнутостью (время печатается — им меряется стоимость).
+  label('concave');
+  for (let i = 0; i < families.length; i++) {
+    const name = families[i];
+    await page.locator('#familyGrid .family-btn').nth(i).click();
+    await setOn('concave', true);
+    await page.selectOption('#concave_kind', 'sphere');
+    for (const value of ['20', '1000', '150']) {
+      await page.fill('#concave_radius', value);
+      const verdict = await auditVerdict(page);
+      if (!verdict.includes('замкнуто ✓')) errors.push(`[concave:${name}:radius=${value}] audit="${verdict}"`);
+    }
+    const note = await page.locator('#concave_radius_note').textContent();
+    if (!/Глубина \d+\.\d мм/.test(note ?? '')) errors.push(`[concave:${name}] заметка глубины: "${note}"`);
+    await page.selectOption('#concave_kind', 'flat');
+    if (await page.locator('#concave_radius').isVisible()) errors.push(`[concave:${name}] радиус сферы виден у плоского`);
+    for (const [id, value] of [
+      ['concave_depth', '40'],
+      ['concave_fillet', '10'],
+      ['concave_ring', '60'],
+      ['concave_ring', '1'],
+      ['concave_fillet', '0'],
+      ['concave_depth', '0.5'],
+      ['concave_depth', '6'],
+      ['concave_fillet', '2'],
+      ['concave_ring', '8'],
+    ]) {
+      await page.fill(`#${id}`, value);
+      const verdict = await auditVerdict(page);
+      if (!verdict.includes('замкнуто ✓')) errors.push(`[concave:${name}:${id}=${value}] audit="${verdict}"`);
+    }
+    const blockers = await messages('bad');
+    if (blockers) errors.push(`[concave:${name}] blockers="${blockers}"`);
+  }
+  // свод нависает нарочно: о свесах у горшка не говорим; глубина больше
+  // четверти высоты — ужимается с предупреждением
+  await page.locator('#familyGrid .family-btn').nth(0).click();
+  await page.fill('#concave_depth', '40');
+  await auditVerdict(page);
+  if (await page.locator('#messages [data-code="warn.overhang"]').count()) errors.push('[concave] вогнутое дно попало в свесы');
+  if (!(await page.locator('#messages [data-code="concave.tooDeep"]').count())) errors.push('[concave] нет предупреждения о глубине');
+  await page.fill('#concave_depth', '8');
+  await page.click('#concave_view');
+  // точная сборка подъезжает после паузы — для кадра ждём её
+  await page.waitForTimeout(2500);
+  if (shotsDir) await page.screenshot({ path: `${shotsDir}/concave.png` });
+  await expectDownloads(1, 'concave');
+  await setOn('concave', false);
+  await page.waitForTimeout(150);
+
   /** Видимый текст приложения, где кириллица — непереведённое. Имена своих пресетов не в счёт. */
   async function cyrillicLeft(target) {
     return target.evaluate(() => {
@@ -723,7 +775,7 @@ async function scenario() {
     // крышке есть, список пресетов открыт — чтобы непереведённому негде было
     // спрятаться.
     await page.locator('#familyGrid .family-btn').nth(0).click();
-    for (const id of ['wave', 'wave2', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, true);
+    for (const id of ['concave', 'wave', 'wave2', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, true);
     await page.locator('#card_roulette .add-button').click();
     await page.locator('#card_lid .add-button').click();
     await page.waitForTimeout(900);
@@ -773,7 +825,7 @@ async function scenario() {
     if (freshLeft.length) errors.push(`[lang:en-US] непереведённое: ${freshLeft.slice(0, 8).join(' | ')}`);
     await freshContext.close();
 
-    for (const id of ['wave', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, false);
+    for (const id of ['concave', 'wave', 'roulette', 'handle', 'spout', 'lid']) await setOn(id, false);
   }
 
   /**
