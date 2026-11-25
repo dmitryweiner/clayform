@@ -1,5 +1,6 @@
 // Полое изделие для прямой печати глиной: внешняя поверхность с рельефом,
-// внутри — гладкая полость с плоским полом.
+// внутри — гладкая полость с плоским полом. Под вогнутым дном пол повторяет
+// его: дно — пластина ровной толщины, выгнутая внутрь (`geo/concave.ts`).
 //
 // Полость строится офсетом ГЛАДКОГО силуэта по нормали, а не офсетом уже
 // смещённой рельефом поверхности. Две причины:
@@ -16,8 +17,11 @@ import { assembleHollowMesh, assembleMesh } from './surface';
 import { meshNormals } from 'maker-kit/3d/mesh';
 import { signedVolume } from 'maker-kit/3d/validate';
 import type { BuildParams } from './build';
-import { vesselBottom, vesselGrid, vesselSurface } from './build';
+import { vesselBottom, vesselConcave, vesselGrid, vesselSurface } from './build';
 import { profileRadius } from './profiles';
+import type { CapSpec } from './bottom';
+import type { ConcaveFloor } from './concave';
+import { concaveFloor } from './concave';
 
 export interface HollowState {
   /** толщина стенки по нормали, мм */
@@ -63,6 +67,8 @@ export interface HollowResult {
   mesh: SurfaceMesh;
   /** поверхность полости той же раскладки, что и внешняя сетка */
   innerGrid: Grid;
+  /** замкнутая полость — с тем же полом, что в оболочке; её вычитает CSG */
+  cavity: Omit<SurfaceMesh, 'normals'>;
   /** вместимость полости, мл */
   capacityMl: number;
   /**
@@ -185,14 +191,21 @@ export function cavityPoint(radiusAt: (v: number) => number, heightMm: number, w
   return { r: radiusAt(v) - wallMm * nr, z: v * heightMm - wallMm * nz };
 }
 
-/** Доля высоты, на которой офсет силуэта поднимается до уровня пола. */
-function floorParam(radiusAt: (v: number) => number, heightMm: number, wallMm: number, floorZ: number): number {
-  if (cavityPoint(radiusAt, heightMm, wallMm, 0).z >= floorZ) return 0;
+/**
+ * Доля высоты, на которой офсет силуэта поднимается до пола. Пол — высота
+ * на радиусе: плоский или над вогнутым дном.
+ */
+function floorParam(radiusAt: (v: number) => number, heightMm: number, wallMm: number, floorAt: (r: number) => number): number {
+  const below = (v: number): boolean => {
+    const point = cavityPoint(radiusAt, heightMm, wallMm, v);
+    return point.z < floorAt(point.r);
+  };
+  if (!below(0)) return 0;
   let lo = 0;
   let hi = 1;
   for (let i = 0; i < 48; i++) {
     const mid = (lo + hi) / 2;
-    if (cavityPoint(radiusAt, heightMm, wallMm, mid).z < floorZ) lo = mid;
+    if (below(mid)) lo = mid;
     else hi = mid;
   }
   return hi;
@@ -216,12 +229,17 @@ export function buildHollowVessel(p: BuildParams, hollow: HollowState, seat?: Se
   const vTop = zTop / heightMm;
   const outer = vesselGrid(p, { minDepthMm: depthFloorMm, vMax: vTop });
 
-  const floorZ = Math.min(hollow.baseMm, zTop * MAX_BASE_FRACTION);
-  const vFloor = floorParam(radiusAt, heightMm, wallMm, floorZ);
+  // Над вогнутым дном пол поднят на глубину, и под потолок 0,7 высоты
+  // уходит уже верх помоста: толщина дна ужимается, а не он.
+  const concave = vesselConcave(p, outer);
+  const baseMm = Math.max(0, Math.min(hollow.baseMm, zTop * MAX_BASE_FRACTION - (concave?.depthMm ?? 0)));
+  const floor = concave ? concaveFloor(concave, baseMm) : null;
+  const floorAt = floor ? floor.heightAt : (): number => baseMm;
+  const vFloor = floorParam(radiusAt, heightMm, wallMm, floorAt);
 
   const inner = new Float32Array(outer.positions.length);
   let pinched = 0;
-  let previousZ = floorZ;
+  let previousZ = -Infinity;
 
   for (let j = 0; j <= nv; j++) {
     // Полость параметризуется по-своему: её j = 0 — это край пола, а не низ
@@ -236,7 +254,7 @@ export function buildHollowVessel(p: BuildParams, hollow: HollowState, seat?: Se
     //  — не выше среза стенки: у отогнутого края внешняя нормаль смотрит
     //    вниз-наружу, офсет внутрь уводит вверх, и изделие оказывалось бы
     //    выше заданной высоты.
-    const z = Math.min(Math.max(point.z, floorZ, previousZ), zTop);
+    const z = Math.min(Math.max(point.z, floorAt(point.r), previousZ), zTop);
     previousZ = z;
 
     // Офсет внутрь на wallMm всегда меньше исходного радиуса (нормаль
@@ -264,13 +282,27 @@ export function buildHollowVessel(p: BuildParams, hollow: HollowState, seat?: Se
   }
 
   // клеймо вдавливается в дно, но не глубже, чем оставит минимальную стенку
-  const mark = vesselBottom(p, outer, floorZ - MIN_WALL_MM);
-  const shell = assembleHollowMesh(outer, inner, rimRings(outer, inner, nu, nv, rimR), mark ? { outer: mark } : undefined);
-  const cavity = assembleMesh({ nu, nv, positions: inner }, 'both');
+  const bottom = vesselBottom(p, outer, baseMm - MIN_WALL_MM);
+  const innerFloor = floor ? floorCap(floor, inner, nu) : undefined;
+  const caps = bottom || innerFloor ? { ...(bottom ? { outer: bottom } : {}), ...(innerFloor ? { inner: innerFloor } : {}) } : undefined;
+  const shell = assembleHollowMesh(outer, inner, rimRings(outer, inner, nu, nv, rimR), caps);
+  const cavity = assembleMesh({ nu, nv, positions: inner }, 'both', innerFloor);
   return {
     mesh: { ...shell, normals: meshNormals(shell.positions, shell.indices) },
     innerGrid: { nu, nv, positions: inner },
+    cavity,
     capacityMl: signedVolume(cavity.positions, cavity.indices) / 1000,
     pinchedFraction: pinched / (nu * (nv + 1)),
   };
+}
+
+/**
+ * Пол полости своей сеткой: сечение над вогнутым дном от оси до первого
+ * кольца полости, подъём — над высотой этого кольца.
+ */
+function floorCap(floor: ConcaveFloor, inner: Float32Array, nu: number): CapSpec {
+  let edge = Infinity;
+  for (let i = 0; i < nu; i++) edge = Math.min(edge, Math.hypot(inner[i * 3], inner[i * 3 + 1]));
+  const planeZ = inner[2];
+  return { planeZ, section: floor.section(edge).map((point) => ({ r: point.r, z: point.z - planeZ })) };
 }

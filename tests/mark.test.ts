@@ -4,7 +4,8 @@
 import { sanitizeMark, defaultMark, markText, markLayout, markDepth, markActive, sanitizeMarkRaster, MARK_TEXT_MAX } from '../src/geo/mark';
 import type { MarkRaster, MarkState } from '../src/geo/mark';
 import { encodeBase64 } from '../src/geo/bytes';
-import { buildVessel, defaultBuildParams } from '../src/geo/build';
+import { buildVessel, defaultBuildParams, vesselBottom, vesselConcave, vesselGrid } from '../src/geo/build';
+import { sanitizeConcave } from '../src/geo/concave';
 import { buildHollowVessel, defaultHollow } from '../src/geo/hollow';
 import { defaultFamilyParams, familyById } from '../src/geo/profiles';
 import { validateMesh } from 'maker-kit/3d/validate';
@@ -182,5 +183,55 @@ describe('клеймо в изделии', () => {
     }
     expect(highest).toBeLessThanOrEqual(1.2 - 0.6 + 1e-6);
     expect(highest).toBeGreaterThan(0.5);
+  });
+});
+
+describe('клеймо на вогнутом дне', () => {
+  const input = () => ({ state: mark({ depthMm: 1, marginMm: 2 }), strip: strip(400, 50, () => true) });
+  /** точка дна на радиусе r, на полрадиана по строке от её начала (как видно снизу) */
+  const along = (r: number): [number, number] => [-r * Math.sin(0.5), r * Math.cos(0.5)];
+  const recessed = (raw: Record<string, unknown>) => ({
+    ...params('pot', input()),
+    concave: sanitizeConcave({ on: true, ...raw }),
+  });
+
+  it('у утопленного дна строка — у края утопленного круга, на ступеньке и поясе оттиска нет', () => {
+    const p = recessed({ kind: 'flat', depthMm: 5, ringMm: 10, filletMm: 1 });
+    const grid = vesselGrid(p);
+    const layout = vesselConcave(p, grid);
+    const cap = vesselBottom(p, grid);
+    if (!layout || !cap?.heightAt || !cap.section) throw new Error('no concave cap');
+    const rho = layout.markMm;
+    expect(rho).toBeLessThan(layout.footprintMm - 10);
+    // верх букв — на отступ от края утопленного круга
+    expect(cap.heightAt(...along(rho - 2.2))).toBeCloseTo(1, 6);
+    expect(cap.heightAt(...along(rho - 1.8))).toBe(0);
+    // за краем круга — ни на ступеньке, ни на поясе
+    for (const r of [rho + 0.5, layout.footprintMm - 5]) expect(cap.heightAt(r, 0)).toBe(0);
+    expect(cap.section).toEqual(layout.section);
+  });
+
+  it('у сферы — по всему дну, как на плоском', () => {
+    const p = recessed({ kind: 'sphere', radiusMm: 200 });
+    const grid = vesselGrid(p);
+    const layout = vesselConcave(p, grid);
+    const cap = vesselBottom(p, grid);
+    if (!layout || !cap?.heightAt) throw new Error('no concave cap');
+    expect(layout.markMm).toBe(layout.footprintMm);
+    expect(cap.heightAt(...along(layout.footprintMm - 2.2))).toBeCloseTo(1, 6);
+  });
+
+  it('полое изделие с вогнутым дном и клеймом — замкнуто, оттиск не глубже, чем оставит дно', () => {
+    for (const raw of [
+      { kind: 'flat', depthMm: 5, ringMm: 10, filletMm: 1 },
+      { kind: 'sphere', radiusMm: 200 },
+    ]) {
+      const p = { ...recessed(raw), mark: { state: mark({ depthMm: 1.5 }), strip: strip(400, 50, () => true) } };
+      const plain = buildHollowVessel({ ...p, mark: undefined }, { ...defaultHollow(), baseMm: 1.2 });
+      const marked = buildHollowVessel(p, { ...defaultHollow(), baseMm: 1.2 });
+      expect(validateMesh(marked.mesh).watertight, raw.kind).toBe(true);
+      // глубже 1,2 − 0,6 мм оттиск не уходит: объём убыл меньше, чем на полный
+      expect(validateMesh(marked.mesh).volume, raw.kind).toBeLessThan(validateMesh(plain.mesh).volume);
+    }
   });
 });
