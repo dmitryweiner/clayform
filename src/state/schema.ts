@@ -231,11 +231,12 @@ export function decalDepthFloor(state: AppState): number {
 
 /**
  * Состояние + детализация → параметры сборки геометрии. Растры надписей
- * рисует главный поток (`Rasters`). Без надписей и клейма поля не
+ * рисует главный поток (`Rasters`); null — растров нет (так зовёт сверка
+ * cast-builder, `scripts/fixtures.mjs` там). Без надписей и клейма поля не
  * передаются вовсе: меш байт в байт прежний.
  */
-export function toBuildParams(state: AppState, segments: number, rasters: Rasters = {}): BuildParams {
-  const decals = stateDecals(state, rasters.sideText ?? null);
+export function toBuildParams(state: AppState, segments: number, rasters: Rasters | null = {}): BuildParams {
+  const decals = stateDecals(state, rasters?.sideText ?? null);
   return {
     family: state.family,
     shape: state.shape,
@@ -247,7 +248,7 @@ export function toBuildParams(state: AppState, segments: number, rasters: Raster
     spout: effectiveSpout(state),
     // выключенная вогнутость идёт прежним путём, меш байт в байт прежний
     ...(state.concave.on ? { concave: state.concave } : {}),
-    ...(state.mark.on ? { mark: { state: state.mark, strip: rasters.markStrip ?? null } } : {}),
+    ...(state.mark.on ? { mark: { state: state.mark, strip: rasters?.markStrip ?? null } } : {}),
     ...(decals.length > 0 ? { decals } : {}),
   };
 }
