@@ -52,8 +52,8 @@ interpolated with cubic Hermite splines and the Fritsch–Carlson limiter: a
 plain spline overshoots the control points by 5–10 %, and a “180 mm belly”
 turns into 190.
 
-**Relief** — a wave along the height, around the axis or in a spiral, in four
-shapes (sine, triangle, square, half-round ridges). Depth in millimetres, a
+**Relief** — a wave along the height, around the axis or in a spiral, in five
+shapes (sine, triangle, square, half-round ridges, a thin thread). Depth in millimetres, a
 zone of effect along the height. The spiral pitch is fractional: per turn the
 wave argument grows by freq × pitch, and the seam closes when the product is
 whole — with 16 crests, pitches in multiples of ¹⁄₁₆ work.
@@ -61,7 +61,9 @@ whole — with 16 crests, pitches in multiples of ¹⁄₁₆ work.
 **A second wave** combines with the first in two ways. *Weave* is the
 product of the waves: one runs around, the other along the height, giving
 basketry or a waffle. *Modulation* lets the second wave bend the first,
-shifting its crests and changing their depth; stranger and richer.
+shifting its crests and changing their depth; stranger and richer. Five
+ready **patterns** (ripple, flow, basket, flame, swirl) set both waves at
+once: a good combination is hard to find by hand.
 
 **Roulette** — a stamping wheel rolled along a band: plain band, rope, Greek
 key, zigzag, dots, diamonds, notches, lattice — or **your own image**. Up to

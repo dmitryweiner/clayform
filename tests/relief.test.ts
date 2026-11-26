@@ -20,8 +20,8 @@ describe('waveform', () => {
     }
   });
 
-  it('все формы нечётны относительно нуля и проходят через ноль в 0 и 0.5', () => {
-    for (const shape of WAVE_SHAPES) {
+  it('все формы, кроме нити, нечётны относительно нуля и проходят через ноль в 0 и 0.5', () => {
+    for (const shape of WAVE_SHAPES.filter((item) => item !== 'thread')) {
       expect(waveform(shape, 0), shape).toBeCloseTo(0, 9);
       expect(waveform(shape, 0.5), shape).toBeCloseTo(0, 9);
       expect(waveform(shape, 0.25), shape).toBeGreaterThan(0.5);
@@ -53,6 +53,18 @@ describe('waveform', () => {
       expect(Math.abs(value - previous)).toBeLessThan(0.2);
       previous = value;
     }
+  });
+
+  it('thread — узкий валик на ровном поле: гребень там же, где у остальных', () => {
+    expect(waveform('thread', 0.25)).toBeCloseTo(1, 9);
+    for (const p of [0, 0.05, 0.45, 0.5, 0.75, 0.95]) expect(waveform('thread', p), `@${p}`).toBe(0);
+    // поле ровное больше чем на половине периода, сам валик плавный
+    let flat = 0;
+    for (let i = 0; i < 200; i++) if (waveform('thread', i / 200) === 0) flat++;
+    expect(flat / 200).toBeGreaterThan(0.6);
+    expect(waveform('thread', 0.2)).toBeGreaterThan(0);
+    expect(waveform('thread', 0.2)).toBeCloseTo(waveform('thread', 0.3), 9);
+    for (let i = 0; i <= 40; i++) expect(waveform('thread', i / 40)).toBeGreaterThanOrEqual(0);
   });
 
   it('rounded — полукруглые валики: круче синуса у гребня', () => {

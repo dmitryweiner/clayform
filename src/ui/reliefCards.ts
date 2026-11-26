@@ -1,7 +1,10 @@
-// Карточки рельефа: волна, волна волны и накатка роликом.
+// Карточки рельефа: волна (со второй волной подблоком и готовыми узорами)
+// и накатка роликом.
 
 import type { ReliefState } from '../geo/relief';
-import { AMP_MAX_MM, FREQ_MAX, SPIRAL_K_MAX } from '../geo/relief';
+import { AMP_MAX_MM, FREQ_MAX, SPIRAL_K_MAX, WAVE_SHAPES } from '../geo/relief';
+import type { WavePresetId } from '../geo/wavePresets';
+import { WAVE_PRESETS, applyWavePreset, wavePresetOf } from '../geo/wavePresets';
 import type { RouletteState, RouletteBand, RoulettePattern, MeanderKind } from '../geo/roulette';
 import {
   BAND_MAX_MM,
@@ -18,6 +21,7 @@ import { make } from 'maker-kit/ui/dom';
 import { renderItemList } from 'maker-kit/ui/listCard';
 import type { Change, Control, ControlsHandle, SelectOption } from './controls';
 import { renderControls } from './controls';
+import type { Key } from '../i18n';
 import { t } from '../i18n';
 
 const AXIS_OPTIONS: SelectOption[] = [
@@ -31,6 +35,37 @@ const SHAPE_OPTIONS: SelectOption[] = [
   { value: 'tri', label: 'shape.tri' },
   { value: 'square', label: 'shape.square' },
   { value: 'rounded', label: 'shape.rounded' },
+  { value: 'thread', label: 'shape.thread' },
+];
+
+/**
+ * Готовые узоры. «Своя» — не выбор, а подпись: так список выглядит, когда
+ * числа волн ни с одним узором не совпадают; выбрать её нельзя.
+ */
+const PRESET_LABELS: Record<WavePresetId, Key> = {
+  ripple: 'wavePreset.ripple',
+  flow: 'wavePreset.flow',
+  basket: 'wavePreset.basket',
+  flame: 'wavePreset.flame',
+  swirl: 'wavePreset.swirl',
+};
+
+const PRESET_OPTIONS: SelectOption[] = [
+  { value: '', label: 'wavePreset.custom' },
+  ...WAVE_PRESETS.map((preset): SelectOption => ({ value: preset.id, label: PRESET_LABELS[preset.id] })),
+];
+
+const WAVE_PRESET_ROW: Control<ReliefState>[] = [
+  {
+    kind: 'select',
+    key: 'preset',
+    label: 'wavePreset.label',
+    hint: 'wavePreset.hint',
+    options: PRESET_OPTIONS,
+    optionDisabled: (_, value) => value === '',
+    get: (s) => wavePresetOf(s),
+    set: (s, v) => applyWavePreset(s, v),
+  },
 ];
 
 const PATTERN_OPTIONS: SelectOption[] = [
@@ -393,7 +428,7 @@ function axis(value: string): ReliefState['wave']['axis'] {
 }
 
 function shape(value: string): ReliefState['wave']['shape'] {
-  return value === 'tri' || value === 'square' || value === 'rounded' ? value : 'sin';
+  return WAVE_SHAPES.find((item) => item === value) ?? 'sin';
 }
 
 function meanderKind(value: string): MeanderKind {
@@ -485,6 +520,8 @@ export function renderReliefCards(
 ): ReliefCardsHandle {
   container.textContent = '';
 
+  // Одна карточка на обе волны: сверху готовый узор, внизу — «Волна волны»
+  // подблоком (складная карточка кита внутри карточки).
   const waveCard = createCard(container, {
     id: 'wave',
     title: 'wave.title',
@@ -492,12 +529,15 @@ export function renderReliefCards(
     enabled: readRelief().wave.on,
     t,
   });
-  const waveRows = renderControls(waveCard.body, WAVE_CONTROLS, readRelief, onRelief, 'wave');
+  const presetHost = make('div');
+  const waveHost = make('div');
+  waveCard.body.append(presetHost, waveHost);
+  const presetRows = renderControls(presetHost, WAVE_PRESET_ROW, readRelief, onRelief, 'wave');
+  const waveRows = renderControls(waveHost, WAVE_CONTROLS, readRelief, onRelief, 'wave');
 
-  const wave2Card = createCard(container, {
+  const wave2Card = createCard(waveCard.body, {
     id: 'wave2',
     title: 'wave2.title',
-    tag: 'wave2.tag',
     desc: 'wave2.desc',
     enabled: readRelief().wave2.on,
     t,
@@ -526,6 +566,7 @@ export function renderReliefCards(
       waveCard.setEnabled(relief.wave.on);
       wave2Card.setEnabled(relief.wave2.on);
       rouletteCard.setEnabled(roulette.bands.some((band) => band.on));
+      presetRows.sync(relief);
       waveRows.sync(relief);
       wave2Rows.sync(relief);
       // в режиме плетения эти два ползунка ни на что не влияют — прячем,

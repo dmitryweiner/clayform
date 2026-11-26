@@ -185,6 +185,22 @@ async function scenario() {
   }
   await page.selectOption('#wave_axis', 'z');
 
+  // готовые узоры волны: каждый собирается замкнутым и узнаётся списком;
+  // правка ползунка волны делает узор своим
+  for (const preset of await page.$$eval('#wave_preset option', (o) => o.map((x) => x.value).filter(Boolean))) {
+    label(`wave-preset:${preset}`);
+    await page.selectOption('#wave_preset', preset);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[wave-preset:${preset}] audit="${verdict}"`);
+    if ((await page.inputValue('#wave_preset')) !== preset) errors.push(`[wave-preset:${preset}] список не узнал узор`);
+    if (!(await page.locator('#wave2_on').isChecked())) errors.push(`[wave-preset:${preset}] вторая волна выключена`);
+    if (shotsDir) await page.screenshot({ path: `${shotsDir}/wave-${preset}.png` });
+  }
+  await page.fill('#wave_freq_n', '7');
+  await page.press('#wave_freq_n', 'Enter');
+  if ((await page.inputValue('#wave_preset')) !== '') errors.push('[wave-preset] правка не сделала узор своим');
+  await setOn('wave2', false);
+
   label('roulette');
   await setOn('roulette', true);
   await page.fill('#roul0_bandWidth', '40');
@@ -836,8 +852,13 @@ async function scenario() {
    * теле, а не в шапке: свёрнутую карточку сначала раскрываем.
    */
   async function setOn(id, on) {
-    const card = page.locator(`#card_${id}`);
-    if ((await card.getAttribute('class')).includes('collapsed')) await card.locator('.fcard-head').click();
+    // подблок («Волна волны», «Лого») раскрывается вместе с внешней карточкой
+    await page.locator(`#card_${id}`).evaluate((node) => {
+      for (let card = node; card; card = card.parentElement?.closest('.fcard') ?? null) {
+        const head = card.querySelector(':scope > .fcard-head');
+        if (card.classList.contains('collapsed') && head instanceof HTMLElement) head.click();
+      }
+    });
     await page.setChecked(`#${id}_on`, on);
   }
 
