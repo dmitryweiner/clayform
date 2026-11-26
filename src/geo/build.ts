@@ -20,6 +20,8 @@ import type { SpoutState } from './spout';
 import { defaultSpout, makeSpout } from './spout';
 import type { ConcaveLayout, ConcaveState } from './concave';
 import { concaveLayout } from './concave';
+import type { Decal } from './decal';
+import { decalField } from './decal';
 
 export interface BuildParams {
   /** идентификатор семейства: pot | bowl | cup | vase */
@@ -38,6 +40,16 @@ export interface BuildParams {
   concave?: ConcaveState;
   /** клеймо на донышке; растр строки приходит из главного потока */
   mark?: MarkInput;
+  /**
+   * Надписи на боку. Тела их строит воркер (`geo/decalSolid.ts`); сетка
+   * тела под ними держит рельеф ровным, а с `decalProxy` ещё и рисует их
+   * грубым оттиском.
+   */
+  decals?: Decal[];
+  /** главный поток: показать надписи оттиском по сетке, пока воркер считает тела */
+  decalProxy?: boolean;
+  /** экспорт: тела надписей мелким шагом */
+  decalFine?: boolean;
 }
 
 const NU_MIN = 8;
@@ -106,16 +118,22 @@ export function vesselSurface(p: BuildParams): VesselSurface {
   });
   const flat = !relief.wave.on && !roulette.bands.some((band) => band.on);
   const pull = makeSpout(p.spout ?? defaultSpout());
+  const decals = p.decals && p.decals.length > 0 ? decalField(p.decals, profile, heightMm) : null;
+  const proxy = decals && p.decalProxy ? decals.proxy : null;
+
+  const reliefAt = (u: number, v: number): number => {
+    if (flat) return 0;
+    const depth = (reliefDepth(relief, u, v) + roll(u, v)) * smoothstep(v / BASE_GUARD);
+    // под надписью рельеф ровный: множитель — только когда надписи есть
+    return decals ? depth * decals.calm(u, v) : depth;
+  };
 
   return {
     profile,
     heightMm,
     nu,
     nv,
-    depthAt(u, v) {
-      if (flat) return 0;
-      return (reliefDepth(relief, u, v) + roll(u, v)) * smoothstep(v / BASE_GUARD);
-    },
+    depthAt: proxy ? (u, v) => reliefAt(u, v) + proxy(u, v) : reliefAt,
     pullAt: pull,
   };
 }

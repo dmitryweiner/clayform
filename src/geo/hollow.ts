@@ -84,7 +84,7 @@ export const BASE_MIN_MM = 1;
 export const BASE_MAX_MM = 60;
 
 /** Минимальный остаток стенки: тоньше глина не держится вовсе. */
-const MIN_WALL_MM = 0.6;
+export const MIN_WALL_MM = 0.6;
 /** Ниже этого радиуса полость считается схлопнувшейся. */
 const MIN_CAVITY_MM = 0.3;
 /** Дно не может съесть всё изделие. */

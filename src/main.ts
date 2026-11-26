@@ -310,7 +310,7 @@ function refresh(): void {
   // Строку клейма рисует шрифтом только главный поток; воркеру она уходит
   // готовым растром вместе с задачей.
   markRaster = markStrip(state.mark, () => refresh());
-  const buildParams = toBuildParams(state, PREVIEW_SEGMENTS, markRaster);
+  const buildParams = toBuildParams(state, PREVIEW_SEGMENTS, { markStrip: markRaster });
   // Посадку под крышку считаем от того же силуэта и той же стенки, из
   // которых строится полость: крышка обязана входить именно в неё.
   const fit = state.lid.on ? lidFit(profile, state.heightMm, state.hollow, state.lid) : null;

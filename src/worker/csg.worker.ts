@@ -89,7 +89,7 @@ function printableVessel(csg: CsgApi, state: AppState, segments: number): Surfac
   const fit = fitOf(state);
   return buildPrintableVessel(
     csg,
-    toBuildParams(state, segments, markStrip),
+    toBuildParams(state, segments, { markStrip }),
     state.hollow,
     state.handle,
     effectiveSpout(state),
