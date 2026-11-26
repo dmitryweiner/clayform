@@ -1,5 +1,5 @@
-// Карточки приставных деталей: ручка, носик-слив и крышка; следом — клеймо
-// на донышке, тоже включаемое галочкой.
+// Карточки приставных деталей: ручка, носик-слив и крышка. Клеймо — в
+// группе «Надписи» (ui/decorCards.ts).
 
 import type { HandleState } from '../geo/handle';
 import { REACH_MAX_MM, THICKNESS_MAX_MM, ANGLE_MAX_DEG } from '../geo/handle';
@@ -14,8 +14,6 @@ import { t } from '../i18n';
 import { LID_LIMITS } from '../geo/lid';
 import type { Change, Control } from './controls';
 import { renderControls } from './controls';
-import type { MarkState } from '../geo/mark';
-import { renderMarkCard } from './markCard';
 
 const HANDLE_CONTROLS: Control<HandleState>[] = [
   {
@@ -402,20 +400,16 @@ export interface AttachSources {
   handle: () => HandleState;
   spout: () => SpoutState;
   lid: () => LidState;
-  mark: () => MarkState;
 }
 
 export interface AttachSinks {
   handle: Change<HandleState>;
   spout: Change<SpoutState>;
   lid: Change<LidState>;
-  mark: Change<MarkState>;
-  /** развернуть камеру на донышко */
-  viewBottom: () => void;
 }
 
 export interface AttachCardsHandle {
-  sync(handle: HandleState, spout: SpoutState, lid: LidState, mark: MarkState): void;
+  sync(handle: HandleState, spout: SpoutState, lid: LidState): void;
   /** подпись полосы накатки на куполе: сколько оттисков ляжет за оборот */
   setLidBandNote(describe: (band: RouletteBand) => string): void;
 }
@@ -461,12 +455,8 @@ export function renderAttachCards(container: HTMLElement, read: AttachSources, w
   );
   let describeLidBand: (band: RouletteBand) => string = () => '';
 
-  const mark = renderMarkCard(container, read.mark, write.mark, write.viewBottom);
-
   return {
-    sync(handle, spout, lid, markState): void {
-      mark.card.setEnabled(markState.on);
-      mark.rows.sync(markState);
+    sync(handle, spout, lid): void {
       handleCard.setEnabled(handle.on);
       spoutCard.setEnabled(spout.on);
       lidCard.setEnabled(lid.on);

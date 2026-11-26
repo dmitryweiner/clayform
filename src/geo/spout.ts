@@ -107,7 +107,7 @@ export function sanitizeSpout(raw: unknown): SpoutState {
   const baseMm = within('baseMm', source.baseMm);
   return {
     on: typeof source.on === 'boolean' ? source.on : fallback.on,
-    // Старые ссылки и пресеты поля kind не знают — и означают оттянутый край.
+    // Старые пресеты поля kind не знают — и означают оттянутый край.
     kind: source.kind === 'applied' ? 'applied' : 'lip',
     pullMm: clamp(num(source.pullMm, fallback.pullMm), 0, PULL_MAX_MM),
     widthDeg: clamp(num(source.widthDeg, fallback.widthDeg), 15, 180),

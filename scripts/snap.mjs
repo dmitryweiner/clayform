@@ -123,11 +123,13 @@ await app.run(async () => {
     }
   }
 
-  /** Раскрывает свёрнутую карточку, в которой лежит элемент. */
+  /** Раскрывает свёрнутые карточки, в которых лежит элемент: подблок — вместе с внешней. */
   async function reveal(selector) {
     await page.locator(selector).evaluate((node) => {
-      const head = node.closest('.fcard.collapsed')?.querySelector(':scope > .fcard-head');
-      if (head instanceof HTMLElement) head.click();
+      for (let card = node.closest('.fcard'); card; card = card.parentElement?.closest('.fcard') ?? null) {
+        const head = card.querySelector(':scope > .fcard-head');
+        if (card.classList.contains('collapsed') && head instanceof HTMLElement) head.click();
+      }
     });
   }
 

@@ -82,9 +82,11 @@
   background: var(--accent-soft);
 }
 
-/* складная карточка внутри карточки — «Вогнутое дно» в «Форме»: подблок
-   без своей подложки, от строк над ним его отделяет черта */
-.card .fcard {
+/* складная карточка внутри карточки — «Вогнутое дно» в «Форме», «Волна
+   волны» в «Волне», «Лого» в «Клейме»: подблок без своей подложки, от строк
+   над ним его отделяет черта */
+.card .fcard,
+.fcard .fcard {
   margin: var(--space-2) 0 0;
   padding: var(--space-1) 0 0;
   border-block-start: 1px solid var(--line);
@@ -103,8 +105,15 @@
 /* кнопка, миниатюра и размер картинки — одна ячейка строки */
 .image-pick {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* ✕ рядом с «Файл…»: квадратная, как −/+ */
+.image-remove {
+  min-inline-size: var(--control-h);
+  padding-inline: 0;
 }
 
 .ornament-thumb {

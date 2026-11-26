@@ -1,5 +1,5 @@
 // Сериализуемое состояние приложения и единственный шлюз, через который в
-// ядро попадают числа извне: UI, share-ссылки, localStorage-пресеты. Всё,
+// ядро попадают числа извне: UI, файлы и localStorage-пресеты. Всё,
 // что приходит снаружи, проходит sanitizeState — ядро вправе считать, что
 // параметры уже валидны.
 
@@ -22,6 +22,15 @@ import type { LidState } from '../geo/lid';
 import { defaultLid, sanitizeLid } from '../geo/lid';
 import type { ConcaveState } from '../geo/concave';
 import { defaultConcave, sanitizeConcave } from '../geo/concave';
+import type { SideTextState } from '../geo/sideText';
+import { defaultSideText, sanitizeSideText } from '../geo/sideText';
+import type { SideImageState } from '../geo/sideImage';
+import { defaultSideImage, sanitizeSideImage } from '../geo/sideImage';
+import type { Decal } from '../geo/decal';
+import type { DecodedImage } from '../geo/roulette';
+import { decodeImage } from '../geo/roulette';
+import { MIN_WALL_MM } from '../geo/hollow';
+import type { TextRaster } from 'maker-kit/core/raster';
 
 export const STATE_VERSION = 1;
 
@@ -32,7 +41,7 @@ export interface AppState {
   /** параметры выбранного семейства */
   shape: Params;
   heightMm: number;
-  /** вогнутое дно; старые ссылки и пресеты поля не знают — выключено */
+  /** вогнутое дно; старые пресеты поля не знают — выключено */
   concave: ConcaveState;
   relief: ReliefState;
   roulette: RouletteState;
@@ -41,6 +50,10 @@ export interface AppState {
   lid: LidState;
   /** клеймо на донышке */
   mark: MarkState;
+  /** текст на боку; старые пресеты поля не знают — выключен */
+  sideText: SideTextState;
+  /** картинка на боку */
+  sideImage: SideImageState;
   hollow: HollowState;
   /**
    * Крышка рядом с изделием, юбкой вниз, — и в превью, и одним STL на двоих:
@@ -69,6 +82,8 @@ export function defaultState(): AppState {
     spout: defaultSpout(),
     lid: defaultLid(),
     mark: defaultMark(),
+    sideText: defaultSideText(),
+    sideImage: defaultSideImage(),
     hollow: defaultHollow(),
     lidBeside: false,
     resolution: 192,
@@ -127,6 +142,8 @@ export function sanitizeState(raw: unknown): AppState {
     spout: sanitizeSpout(source.spout),
     lid: sanitizeLid(source.lid),
     mark: sanitizeMark(source.mark),
+    sideText: sanitizeSideText(source.sideText),
+    sideImage: sanitizeSideImage(source.sideImage),
     hollow: sanitizeHollow(source.hollow),
     lidBeside: typeof source.lidBeside === 'boolean' ? source.lidBeside : false,
     resolution,
@@ -159,10 +176,67 @@ export function lidRelief(state: AppState): ReliefState {
 }
 
 /**
- * Состояние + детализация → параметры сборки геометрии. `markStrip` — растр
- * строки клейма: шрифтом его рисует главный поток, в состоянии его нет.
+ * Растры надписей. Шрифтами их рисует главный поток, в состоянии их нет:
+ * строка клейма и текст на боку.
  */
-export function toBuildParams(state: AppState, segments: number, markStrip: MarkRaster | null = null): BuildParams {
+export interface Rasters {
+  markStrip?: MarkRaster | null;
+  sideText?: TextRaster | null;
+}
+
+/** Последняя декодированная картинка на боку: не декодировать её на каждом кадре. */
+let pictureCache: { data: string; decoded: DecodedImage | null } | null = null;
+
+/**
+ * Надписи на боку для сборки: включённые, с рисунком и не нулевой
+ * глубины. Вдавленное — не глубже, чем оставит стенку MIN_WALL_MM
+ * (`decalDepthFloor`); срез сверху — там, где начинается заглаженная кромка.
+ */
+export function stateDecals(state: AppState, sideText: TextRaster | null): Decal[] {
+  const floor = decalDepthFloor(state);
+  const topMm = state.heightMm - Math.min(state.hollow.rimRadiusMm, state.hollow.wallMm / 2);
+  const decals: Decal[] = [];
+  const text = state.sideText;
+  if (text.on && sideText && text.depthMm !== 0) {
+    decals.push({
+      art: { kind: 'text', raster: sideText },
+      angleDeg: text.angleDeg,
+      heightAt: text.heightAt,
+      depthMm: Math.max(text.depthMm, floor),
+      topMm,
+    });
+  }
+  const image = state.sideImage;
+  if (image.on && image.image && image.depthMm !== 0) {
+    if (pictureCache?.data !== image.image.data) pictureCache = { data: image.image.data, decoded: decodeImage(image.image) };
+    const picture = pictureCache.decoded;
+    if (picture) {
+      // инверсия живёт в картинке состояния, а не в кэше: её переключают, не меняя файла
+      decals.push({
+        art: { kind: 'image', picture: { ...picture, invert: image.image.invert }, sizeMm: image.sizeMm },
+        angleDeg: image.angleDeg,
+        heightAt: image.heightAt,
+        depthMm: Math.max(image.depthMm, floor),
+        topMm,
+      });
+    }
+  }
+  return decals;
+}
+
+/** Глубже этого, мм (со знаком), вдавленная надпись не идёт: стенка остаётся не тоньше MIN_WALL_MM. */
+export function decalDepthFloor(state: AppState): number {
+  return -Math.max(0, state.hollow.wallMm - MIN_WALL_MM);
+}
+
+/**
+ * Состояние + детализация → параметры сборки геометрии. Растры надписей
+ * рисует главный поток (`Rasters`); null — растров нет (так зовёт сверка
+ * cast-builder, `scripts/fixtures.mjs` там). Без надписей и клейма поля не
+ * передаются вовсе: меш байт в байт прежний.
+ */
+export function toBuildParams(state: AppState, segments: number, rasters: Rasters | null = {}): BuildParams {
+  const decals = stateDecals(state, rasters?.sideText ?? null);
   return {
     family: state.family,
     shape: state.shape,
@@ -174,6 +248,7 @@ export function toBuildParams(state: AppState, segments: number, markStrip: Mark
     spout: effectiveSpout(state),
     // выключенная вогнутость идёт прежним путём, меш байт в байт прежний
     ...(state.concave.on ? { concave: state.concave } : {}),
-    ...(state.mark.on ? { mark: { state: state.mark, strip: markStrip } } : {}),
+    ...(state.mark.on ? { mark: { state: state.mark, strip: rasters?.markStrip ?? null } } : {}),
+    ...(decals.length > 0 ? { decals } : {}),
   };
 }

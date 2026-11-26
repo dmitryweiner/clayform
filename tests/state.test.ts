@@ -88,6 +88,8 @@ describe('toBuildParams', () => {
 
   it('детализация прокидывается в обе оси сетки', () => {
     expect(toBuildParams(defaultState(), 128)).toMatchObject({ nu: 128, nv: 128 });
+    // сверка cast-builder зовёт без растров так
+    expect(toBuildParams(defaultState(), 128, null)).toEqual(toBuildParams(defaultState(), 128));
   });
 });
 

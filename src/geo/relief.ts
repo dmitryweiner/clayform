@@ -6,7 +6,7 @@
 // число гребней даёт ступеньку по шву, которую видно и на печати, и в
 // гипсовой форме, — поэтому частота вокруг оси округляется до целого.
 
-export const WAVE_SHAPES = ['sin', 'tri', 'square', 'rounded'] as const;
+export const WAVE_SHAPES = ['sin', 'tri', 'square', 'rounded', 'thread'] as const;
 export type WaveShape = (typeof WAVE_SHAPES)[number];
 
 export const WAVE_AXES = ['z', 'theta', 'spiral'] as const;
@@ -75,14 +75,19 @@ export interface ReliefState {
 const TAU = Math.PI * 2;
 const SQUARE_SOFT = 4; // крутизна сглаженного меандра
 const SQUARE_NORM = Math.tanh(SQUARE_SOFT);
+/** Полуширина нити в долях периода: валик занимает 30 % периода. */
+const THREAD_HALF = 0.15;
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 const frac = (x: number): number => x - Math.floor(x);
 
 /**
  * Периодическая форма волны, период 1, значения в [-1, 1].
- * Все формы нечётные: 0 в начале периода, +1 на четверти, −1 на трёх
- * четвертях — так переключение формы не сдвигает рисунок.
+ * Гребень у всех форм — на четверти периода, так переключение формы не
+ * сдвигает рисунок. Все, кроме нити, нечётные: 0 в начале периода, −1 на
+ * трёх четвертях. Нить — узкий валик на ровном поле (с отрицательной
+ * глубиной — узкая бороздка): так выглядит гончарная «волна», проведённая
+ * по сырой стенке, — линия, а не гофра.
  */
 export function waveform(shape: WaveShape, turns: number): number {
   const q = frac(turns);
@@ -102,6 +107,10 @@ export function waveform(shape: WaveShape, turns: number): number {
       const half = q < 0.5 ? q : q - 0.5;
       const arc = Math.sqrt(Math.max(0, 1 - (4 * half - 1) * (4 * half - 1)));
       return q < 0.5 ? arc : -arc;
+    }
+    case 'thread': {
+      const off = Math.abs(q - 0.25) / THREAD_HALF;
+      return off >= 1 ? 0 : 0.5 * (1 + Math.cos(Math.PI * off));
     }
   }
 }

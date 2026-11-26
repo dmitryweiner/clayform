@@ -23,6 +23,8 @@ import type { AppState } from '../state/schema';
 import { sanitizeState, toBuildParams, effectiveSpout, lidRelief } from '../state/schema';
 import type { MarkRaster } from '../geo/mark';
 import { sanitizeMarkRaster } from '../geo/mark';
+import type { TextRaster } from 'maker-kit/core/raster';
+import { isTextRaster } from 'maker-kit/core/raster';
 import type { Message } from '../geo/message';
 import type { JobProgress } from 'maker-kit/core/progress';
 import { serveJobs } from 'maker-kit/worker/serve';
@@ -58,11 +60,14 @@ serveJobs<CsgJob, JobPart[]>({
  * он живёт здесь, а не тянется параметром через каждую сборку.
  */
 let markStrip: MarkRaster | null = null;
+/** Растр текста на боку текущей задачи — по той же причине. */
+let sideText: TextRaster | null = null;
 
 function run(csg: CsgApi, report: Report, job: CsgJob): JobPart[] {
-  // Граница воркера — такая же внешняя граница, как ссылка или UI.
+  // Граница воркера — такая же внешняя граница, как файл пресета или UI.
   const state = sanitizeState(job.state);
   markStrip = sanitizeMarkRaster(job.markStrip);
+  sideText = isTextRaster(job.sideText) ? job.sideText : null;
   if (job.kind === 'vessel-preview') {
     return [vesselPart(csg, report, state, job.segments)];
   }
@@ -85,11 +90,11 @@ function fitOf(state: AppState): LidFit | null {
  * пользователь остановился. Сплошной мастер для оснастки cast-builder
  * заливает из него сам.
  */
-function printableVessel(csg: CsgApi, state: AppState, segments: number): SurfaceMesh {
+function printableVessel(csg: CsgApi, state: AppState, segments: number, fine = false): SurfaceMesh {
   const fit = fitOf(state);
   return buildPrintableVessel(
     csg,
-    toBuildParams(state, segments, markStrip),
+    { ...toBuildParams(state, segments, { markStrip, sideText }), decalFine: fine },
     state.hollow,
     state.handle,
     effectiveSpout(state),
@@ -119,7 +124,8 @@ function vesselParts(csg: CsgApi, report: Report, state: AppState, segments: num
   const progress = new Progress(report, fit ? 3 : 2);
   progress.next({ code: 'progress.vessel' });
 
-  const meshes: { id: string; mesh: SurfaceMesh }[] = [{ id: state.family, mesh: printableVessel(csg, state, segments) }];
+  // экспорт — тела надписей мелким шагом
+  const meshes: { id: string; mesh: SurfaceMesh }[] = [{ id: state.family, mesh: printableVessel(csg, state, segments, true) }];
   if (fit) {
     progress.next({ code: 'progress.lid' });
     const lid = buildLidMesh(fit, state.lid, segments, { relief: lidRelief(state) });

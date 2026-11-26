@@ -11,6 +11,11 @@ export type MessageCode =
   // клеймо на дне (mark)
   | 'mark.tooLong'
   | 'mark.noRoom'
+  // надписи на боку (decal)
+  | 'text.clipped'
+  | 'text.tooDeep'
+  | 'image.clipped'
+  | 'image.tooDeep'
   // вогнутое дно (concave)
   | 'concave.tooDeep'
   | 'concave.noRoom'

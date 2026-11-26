@@ -7,6 +7,7 @@
 //   node scripts/smoke.mjs --shots shots      # + скриншот на каждое семейство
 //   node scripts/smoke.mjs --res 384          # экспорт на предельной сетке
 //   node scripts/smoke.mjs --slow             # главный поток ×6 на шагах полосы прогресса
+//   node scripts/smoke.mjs --trace            # каждый шаг со временем от старта: найти медленный
 //
 // Браузер открывается в ru-RU: проверки читают русский текст. Английский
 // интерфейс проверяет отдельный шаг «lang» (переключение и чистый en-US).
@@ -34,13 +35,37 @@ async function auditVerdict(page) {
   return page.locator('#audit').textContent();
 }
 
+/**
+ * Вердикт после точной сборки: она подъезжает из воркера после паузы и
+ * переписывает вердикт быстрого превью. Ждём, пока вердикт устоится на
+ * полторы секунды, — так всё равно, успела ли сборка до первого взгляда.
+ */
+async function settledVerdict(page) {
+  let last = '';
+  let since = Date.now();
+  const deadline = Date.now() + 40000;
+  while (Date.now() < deadline) {
+    const now = (await page.locator('#audit').textContent()) ?? '';
+    if (now !== last) {
+      last = now;
+      since = Date.now();
+    } else if (!now.includes('проверка') && (await page.locator('#progressWrap').isHidden()) && Date.now() - since > 1500) {
+      return now;
+    }
+    await page.waitForTimeout(150);
+  }
+  return `не устоялся: ${last}`;
+}
+
 const app = await launch({ preview: flags.has('preview') });
 const { errors } = app;
 /** Шаг сценария: им помечены ошибки консоли, и его же называет провал. */
 let step = 'start';
+const started = Date.now();
 const label = (text) => {
   step = text;
   app.label(text);
+  if (flags.has('trace')) console.log(`${String(Date.now() - started).padStart(7)} мс  ${text}`);
 };
 // одна страница на весь сценарий; браузер в ru-RU — проверки читают русский текст
 const { page } = await app.open({ locale: 'ru-RU' });
@@ -185,6 +210,22 @@ async function scenario() {
   }
   await page.selectOption('#wave_axis', 'z');
 
+  // готовые узоры волны: каждый собирается замкнутым и узнаётся списком;
+  // правка ползунка волны делает узор своим
+  for (const preset of await page.$$eval('#wave_preset option', (o) => o.map((x) => x.value).filter(Boolean))) {
+    label(`wave-preset:${preset}`);
+    await page.selectOption('#wave_preset', preset);
+    const verdict = await auditVerdict(page);
+    if (!verdict.includes('замкнуто ✓')) errors.push(`[wave-preset:${preset}] audit="${verdict}"`);
+    if ((await page.inputValue('#wave_preset')) !== preset) errors.push(`[wave-preset:${preset}] список не узнал узор`);
+    if (!(await page.locator('#wave2_on').isChecked())) errors.push(`[wave-preset:${preset}] вторая волна выключена`);
+    if (shotsDir) await page.screenshot({ path: `${shotsDir}/wave-${preset}.png` });
+  }
+  await page.fill('#wave_freq_n', '7');
+  await page.press('#wave_freq_n', 'Enter');
+  if ((await page.inputValue('#wave_preset')) !== '') errors.push('[wave-preset] правка не сделала узор своим');
+  await setOn('wave2', false);
+
   label('roulette');
   await setOn('roulette', true);
   await page.fill('#roul0_bandWidth', '40');
@@ -293,22 +334,19 @@ async function scenario() {
   await auditVerdict(page);
   if ((await page.locator('#status').textContent()) !== beforeNew) errors.push('[new] отмена не вернула прежнее изделие');
 
-  // ссылка переносит состояние: открываем её в чистой вкладке и сверяем статус
-  label('share');
+  // ссылки 🔗 больше нет: старая ссылка `#s=…` открывает приложение как
+  // обычно — с изделием из браузера, без ошибок
+  label('old-link');
   await pickPreset(presetValues[1]);
   await auditVerdict(page);
-  const beforeShare = await page.locator('#status').textContent();
-  await page.click('#shareBtn');
-  await page.waitForTimeout(300);
-  const shared = page.url();
-  if (!shared.includes('#s=')) errors.push(`[share] в адресе нет токена: ${shared}`);
+  const beforeLink = await page.locator('#status').textContent();
+  if (await page.locator('#shareBtn').count()) errors.push('[old-link] кнопка 🔗 на месте');
+  const base = page.url().split('#')[0];
   await page.goto('about:blank');
-  await page.goto(shared);
+  await page.goto(`${base}#s=eyJmYW1pbHkiOiJ2YXNlIn0`);
   await auditVerdict(page);
-  const afterShare = await page.locator('#status').textContent();
-  if (afterShare !== beforeShare) {
-    errors.push(`[share] состояние не восстановилось: "${beforeShare}" → "${afterShare}"`);
-  }
+  const afterLink = await page.locator('#status').textContent();
+  if (afterLink !== beforeLink) errors.push(`[old-link] открылось не изделие из браузера: "${beforeLink}" → "${afterLink}"`);
 
   // пресет файлом: сохранили, сменили форму, открыли файл — состояние вернулось
   label('preset-file');
@@ -367,7 +405,7 @@ async function scenario() {
   // изделие живёт в браузере: страница, открытая заново без ссылки, — с ним же
   label('reload');
   const beforeReload = await page.locator('#status').textContent();
-  await page.goto(shared.split('#')[0]);
+  await page.goto(page.url().split('#')[0]);
   await auditVerdict(page);
   const afterReload = await page.locator('#status').textContent();
   if (afterReload !== beforeReload) errors.push(`[reload] изделие не пережило перезагрузку: "${beforeReload}" → "${afterReload}"`);
@@ -644,6 +682,8 @@ async function scenario() {
   // строка ужимается с предупреждением.
   label('mark');
   await page.locator('#familyGrid .family-btn').nth(0).click();
+  // клеймо — в группе «Надписи», лого — подблок в нём
+  if (!(await page.locator('#decorCards #card_mark #card_markLogo').count())) errors.push('[mark] нет подблока лого в «Надписях»');
   await setOn('mark', true);
   await page.fill('#mark_text', 'Мастерская');
   for (const [id, value] of [
@@ -695,6 +735,7 @@ async function scenario() {
   await page.click('#mark_logoRemove');
   await page.waitForTimeout(150);
   if (await page.locator('#mark_logoSize').isVisible()) errors.push('[mark] лого не убралось');
+  if (await page.locator('#mark_logoRemove').isVisible()) errors.push('[mark] ✕ остался без лого');
   await setOn('mark', false);
   await page.waitForTimeout(150);
 
@@ -754,6 +795,66 @@ async function scenario() {
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/concave.png` });
   await expectDownloads(1, 'concave');
   await setOn('concave', false);
+  await page.waitForTimeout(150);
+
+  // Надписи на боку: текст и картинка на каждом семействе, выпуклые и
+  // вдавленные, через шов u = 0; сверяем вердикт точной сборки — той, где
+  // их тела прибавлены и вычтены булевыми операциями.
+  label('decor');
+  if (!(await page.locator('#decorCards > #card_text + #card_image + #card_mark').count()))
+    errors.push('[decor] порядок карточек «Надписей»');
+  for (let i = 0; i < families.length; i++) {
+    const name = families[i];
+    await page.locator('#familyGrid .family-btn').nth(i).click();
+    await setOn('text', true);
+    await page.fill('#text_text', 'Мама\nClay');
+    await page.press('#text_text', 'Tab');
+    for (const [id, value] of [
+      ['text_depth', '1.5'],
+      ['text_depth', '-1'],
+      ['text_angle', '90'],
+      ['text_angle', '0'],
+    ]) {
+      await page.fill(`#${id}_n`, value);
+      await page.press(`#${id}_n`, 'Enter');
+      const verdict = await settledVerdict(page);
+      if (!verdict.includes('замкнуто ✓')) errors.push(`[decor:${name}:${id}=${value}] audit="${verdict}"`);
+    }
+    await setOn('image', true);
+    if (i === 0) await page.setInputFiles('#image_file', 'tests/fixtures/ornament.png');
+    for (const [id, value] of [
+      ['image_angle', '-60'],
+      ['image_depth', '1'],
+      ['image_depth', '-1'],
+    ]) {
+      await page.fill(`#${id}_n`, value);
+      await page.press(`#${id}_n`, 'Enter');
+      const verdict = await settledVerdict(page);
+      if (!verdict.includes('замкнуто ✓')) errors.push(`[decor:${name}:${id}=${value}] audit="${verdict}"`);
+    }
+    const blockers = await messages('bad');
+    if (blockers) errors.push(`[decor:${name}] blockers="${blockers}"`);
+    if (shotsDir) await page.screenshot({ path: `${shotsDir}/decor-${name}.png` });
+  }
+  // у самого дна текст обрезается, вдавленный глубже стенки — ужимается; панель говорит об обоих
+  await page.fill('#text_height_n', '0');
+  await page.press('#text_height_n', 'Enter');
+  await page.fill('#text_depth_n', '-5');
+  await page.press('#text_depth_n', 'Enter');
+  await auditVerdict(page);
+  for (const code of ['text.clipped', 'text.tooDeep']) {
+    if (!(await page.locator(`#messages [data-code="${code}"]`).count())) errors.push(`[decor] нет предупреждения ${code}`);
+  }
+  await page.fill('#text_height_n', '0.5');
+  await page.press('#text_height_n', 'Enter');
+  await page.fill('#text_depth_n', '1');
+  await page.press('#text_depth_n', 'Enter');
+  await settledVerdict(page);
+  await expectDownloads(1, 'decor');
+  await page.click('#image_fileRemove');
+  if (await page.locator('#image_fileRemove').isVisible()) errors.push('[decor] ✕ картинки остался без неё');
+  await setOn('image', false);
+  await setOn('text', false);
   await page.waitForTimeout(150);
 
   /** Видимый текст приложения, где кириллица — непереведённое. Имена своих пресетов не в счёт. */
@@ -839,8 +940,13 @@ async function scenario() {
    * теле, а не в шапке: свёрнутую карточку сначала раскрываем.
    */
   async function setOn(id, on) {
-    const card = page.locator(`#card_${id}`);
-    if ((await card.getAttribute('class')).includes('collapsed')) await card.locator('.fcard-head').click();
+    // подблок («Волна волны», «Лого») раскрывается вместе с внешней карточкой
+    await page.locator(`#card_${id}`).evaluate((node) => {
+      for (let card = node; card; card = card.parentElement?.closest('.fcard') ?? null) {
+        const head = card.querySelector(':scope > .fcard-head');
+        if (card.classList.contains('collapsed') && head instanceof HTMLElement) head.click();
+      }
+    });
     await page.setChecked(`#${id}_on`, on);
   }
 

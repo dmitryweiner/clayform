@@ -52,8 +52,8 @@ interpolated with cubic Hermite splines and the Fritsch–Carlson limiter: a
 plain spline overshoots the control points by 5–10 %, and a “180 mm belly”
 turns into 190.
 
-**Relief** — a wave along the height, around the axis or in a spiral, in four
-shapes (sine, triangle, square, half-round ridges). Depth in millimetres, a
+**Relief** — a wave along the height, around the axis or in a spiral, in five
+shapes (sine, triangle, square, half-round ridges, a thin thread). Depth in millimetres, a
 zone of effect along the height. The spiral pitch is fractional: per turn the
 wave argument grows by freq × pitch, and the seam closes when the product is
 whole — with 16 crests, pitches in multiples of ¹⁄₁₆ work.
@@ -61,7 +61,9 @@ whole — with 16 crests, pitches in multiples of ¹⁄₁₆ work.
 **A second wave** combines with the first in two ways. *Weave* is the
 product of the waves: one runs around, the other along the height, giving
 basketry or a waffle. *Modulation* lets the second wave bend the first,
-shifting its crests and changing their depth; stranger and richer.
+shifting its crests and changing their depth; stranger and richer. Five
+ready **patterns** (ripple, flow, basket, flame, swirl) set both waves at
+once: a good combination is hard to find by hand.
 
 **Roulette** — a stamping wheel rolled along a band: plain band, rope, Greek
 key, zigzag, dots, diamonds, notches, lattice — or **your own image**. Up to
@@ -83,7 +85,7 @@ described by an ASCII grid, so new variants are added as lines of text.
 An image ornament is any file, scaled down to 64 pixels on its long side in
 greyscale: white is full depth, black is the plain wall, and the invert
 switch swaps them. Proportions are kept, and the band width sets the image
-height. The image lives right in the state and travels with the link.
+height. The image lives right in the state and travels with the preset file.
 Detail finer than the mesh step is invisible in the preview — raise the
 resolution for export.
 
@@ -118,6 +120,13 @@ All seat diameters are derived from the mouth of the piece, so the lid always
 fits; it can rest on the rim or sink onto a gallery inside the mouth. It is
 exported as a separate file — or, with “Lid alongside”, in one file with the
 piece, skirt down, to print in one go.
+
+**Text and a picture on the side** — up to three lines in the mark's fonts
+and a picture from a file, raised or engraved, follow the wall: around along
+the arc, up along the silhouette. Waves and roulette fade out under them.
+The worker adds and subtracts their solids with booleans, so the letters
+have sheer edges; until that build arrives, the preview shows a coarse
+imprint.
 
 **A maker's mark** is impressed into the base: a line of text around the
 edge (four free fonts with Cyrillic — Rubik, PT Serif, Comfortaa, Oswald),
@@ -154,8 +163,8 @@ what goes into the STL.
 (in the browser, “Piece N” by default; renamed in place, ↗ to open, 🗑 twice
 to delete; a ● before the name when the piece has left its preset) and as
 files: 📂 opens a JSON (you can also drop it onto the window), ⬇️ saves the
-current state to `clayform-<name>.json`. The 🔗 link carries the whole
-state. The piece is kept in the browser and is there after a reload; 📄
+current state to `clayform-<name>.json` — that is how a piece is moved or
+given away. The piece is kept in the browser and is there after a reload; 📄
 starts a new one. Undo and redo — ↩ ↪, Ctrl/Cmd+Z on any keyboard layout: a dragged
 slider is one step.
 
@@ -215,6 +224,8 @@ src/geo/       pure geometry core, no Three.js, in millimetres
   concave      concave base: its section and the floor of even thickness over it
   bottom       the outer base on its own grid, for the mark or a concave base
   mark         maker's mark on the base: a line of text and a logo
+  decal        side text and picture: the layout on the wall, the calm field, the imprint
+  decalSolid   their solids for the worker: letter outlines, a heightfield, bent onto the wall
   handle       handle: a section swept along a Bézier arc (sweep)
   spout        spout: pulled lip and applied tube with a channel
   attach       shared by applied parts: sinking an end into the wall
@@ -224,7 +235,7 @@ src/geo/       pure geometry core, no Three.js, in millimetres
   assemble     body ∪ handles ∪ spout, and the same minus cavity and channel,
                on maker-kit's bridge to manifold-3d (WASM)
   message      messages to the user as codes — the core knows no language
-src/state/     state, sanitising, presets, links, the piece kept in the browser
+src/state/     state, sanitising, presets, the preset file, the piece kept in the browser
 src/worker/    protocol, the CSG worker and its client
 src/i18n/      ru (reference) and en dictionaries, language, templates
 src/ui/        cards, controls, silhouette graph
@@ -235,7 +246,7 @@ The invariants everything rests on:
 
 - **`src/geo/` knows nothing of Three.js** — the same separation as in mathsculpt.
 - **Everything coming from outside goes through `sanitizeState`.** The core
-  may assume valid parameters; a person may have edited the link. The worker
+  may assume valid parameters; a person may have edited a preset file. The worker
   boundary is “outside” too: it sanitises the incoming state again.
 - **`src/main.ts` knows nothing of WASM.** Not a single import path from the
   main thread leads to `maker-kit/csg/*` or `manifold-3d`; CI checks that
