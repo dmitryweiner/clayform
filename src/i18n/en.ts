@@ -14,7 +14,6 @@ export const en: Record<keyof typeof ru, string> = {
   'app.title': 'ClayForm — pottery and slip-casting molds for 3D printing',
   'topbar.presets.title': 'Built-in and saved presets',
   'topbar.fileOpen.title': 'Open a preset file (or drop the file onto the window)',
-  'topbar.share.title': 'Copy link',
   'unit.mm': 'mm',
   'unit.deg': '°',
 

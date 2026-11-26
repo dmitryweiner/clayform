@@ -2,7 +2,6 @@
 // а не просто «оно не упало».
 
 import { BLANK_PRESET, PRESETS, presetById, presetSignature } from '../src/state/presets';
-import { encodeStateToken, decodeStateToken, tokenFromHash } from '../src/state/share';
 import { defaultState, sanitizeState, toBuildParams } from '../src/state/schema';
 import { buildHollowVessel } from '../src/geo/hollow';
 import { lidFit, lidSeat, buildLidMesh } from '../src/geo/lid';
@@ -83,42 +82,6 @@ describe('встроенные пресеты', () => {
 
   it('неизвестный id даёт null, а не бросок', () => {
     expect(presetById('samovar')).toBeNull();
-  });
-});
-
-describe('ссылки на состояние', () => {
-  it('состояние переживает круг «закодировать → раскодировать»', () => {
-    for (const preset of PRESETS) {
-      const state = preset.build();
-      expect(decodeStateToken(encodeStateToken(state)), preset.id).toEqual(state);
-    }
-  });
-
-  it('токен содержит только безопасные для URL символы', () => {
-    expect(encodeStateToken(defaultState())).toMatch(/^[A-Za-z0-9\-_]+$/);
-  });
-
-  it('испорченный токен не роняет приложение', () => {
-    for (const token of ['', 'не-base64!!', 'YWJj', 'e30', 'AAAA']) {
-      expect(() => decodeStateToken(token)).not.toThrow();
-    }
-    expect(decodeStateToken('не-base64!!')).toBeNull();
-  });
-
-  it('подделанные значения зажимаются, а не проходят насквозь', () => {
-    const token = encodeStateToken(defaultState());
-    const tampered = JSON.parse(atob(token.replace(/-/g, '+').replace(/_/g, '/')));
-    tampered.heightMm = 99999;
-    tampered.family = 'самовар';
-    const restored = decodeStateToken(encodeStateToken(tampered));
-    expect(restored?.heightMm).toBeLessThanOrEqual(400);
-    expect(restored?.family).toBe('pot');
-  });
-
-  it('tokenFromHash достаёт токен и отсеивает мусор', () => {
-    expect(tokenFromHash('#s=abcDEF-_123')).toBe('abcDEF-_123');
-    expect(tokenFromHash('#other=1')).toBeNull();
-    expect(tokenFromHash('')).toBeNull();
   });
 });
 

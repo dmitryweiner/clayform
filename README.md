@@ -83,7 +83,7 @@ described by an ASCII grid, so new variants are added as lines of text.
 An image ornament is any file, scaled down to 64 pixels on its long side in
 greyscale: white is full depth, black is the plain wall, and the invert
 switch swaps them. Proportions are kept, and the band width sets the image
-height. The image lives right in the state and travels with the link.
+height. The image lives right in the state and travels with the preset file.
 Detail finer than the mesh step is invisible in the preview — raise the
 resolution for export.
 
@@ -154,8 +154,8 @@ what goes into the STL.
 (in the browser, “Piece N” by default; renamed in place, ↗ to open, 🗑 twice
 to delete; a ● before the name when the piece has left its preset) and as
 files: 📂 opens a JSON (you can also drop it onto the window), ⬇️ saves the
-current state to `clayform-<name>.json`. The 🔗 link carries the whole
-state. The piece is kept in the browser and is there after a reload; 📄
+current state to `clayform-<name>.json` — that is how a piece is moved or
+given away. The piece is kept in the browser and is there after a reload; 📄
 starts a new one. Undo and redo — ↩ ↪, Ctrl/Cmd+Z on any keyboard layout: a dragged
 slider is one step.
 
@@ -224,7 +224,7 @@ src/geo/       pure geometry core, no Three.js, in millimetres
   assemble     body ∪ handles ∪ spout, and the same minus cavity and channel,
                on maker-kit's bridge to manifold-3d (WASM)
   message      messages to the user as codes — the core knows no language
-src/state/     state, sanitising, presets, links, the piece kept in the browser
+src/state/     state, sanitising, presets, the preset file, the piece kept in the browser
 src/worker/    protocol, the CSG worker and its client
 src/i18n/      ru (reference) and en dictionaries, language, templates
 src/ui/        cards, controls, silhouette graph
@@ -235,7 +235,7 @@ The invariants everything rests on:
 
 - **`src/geo/` knows nothing of Three.js** — the same separation as in mathsculpt.
 - **Everything coming from outside goes through `sanitizeState`.** The core
-  may assume valid parameters; a person may have edited the link. The worker
+  may assume valid parameters; a person may have edited a preset file. The worker
   boundary is “outside” too: it sanitises the incoming state again.
 - **`src/main.ts` knows nothing of WASM.** Not a single import path from the
   main thread leads to `maker-kit/csg/*` or `manifold-3d`; CI checks that

@@ -450,7 +450,7 @@ export function defaultFamilyParams(id: string): Params {
  * Приводит произвольный объект к валидному набору параметров семейства:
  * лишние ключи отбрасываются, отсутствующие и нечисловые заменяются
  * дефолтом, остальные зажимаются в диапазон. Единственная точка, через
- * которую в ядро попадают числа из UI и share-ссылок.
+ * которую в ядро попадают числа из UI и файлов пресетов.
  */
 export function clampFamilyParams(id: string, raw: Partial<Params>): Params {
   const family = familyById(id);

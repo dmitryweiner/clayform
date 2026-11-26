@@ -19,7 +19,6 @@ export const ru = {
   'app.title': 'ClayForm — посуда и литейные формы для 3D-печати',
   'topbar.presets.title': 'Готовые и свои пресеты',
   'topbar.fileOpen.title': 'Открыть пресет из файла (или перетащите файл на окно)',
-  'topbar.share.title': 'Скопировать ссылку',
   'unit.mm': 'мм',
   'unit.deg': '°',
 

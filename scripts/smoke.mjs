@@ -293,22 +293,19 @@ async function scenario() {
   await auditVerdict(page);
   if ((await page.locator('#status').textContent()) !== beforeNew) errors.push('[new] отмена не вернула прежнее изделие');
 
-  // ссылка переносит состояние: открываем её в чистой вкладке и сверяем статус
-  label('share');
+  // ссылки 🔗 больше нет: старая ссылка `#s=…` открывает приложение как
+  // обычно — с изделием из браузера, без ошибок
+  label('old-link');
   await pickPreset(presetValues[1]);
   await auditVerdict(page);
-  const beforeShare = await page.locator('#status').textContent();
-  await page.click('#shareBtn');
-  await page.waitForTimeout(300);
-  const shared = page.url();
-  if (!shared.includes('#s=')) errors.push(`[share] в адресе нет токена: ${shared}`);
+  const beforeLink = await page.locator('#status').textContent();
+  if (await page.locator('#shareBtn').count()) errors.push('[old-link] кнопка 🔗 на месте');
+  const base = page.url().split('#')[0];
   await page.goto('about:blank');
-  await page.goto(shared);
+  await page.goto(`${base}#s=eyJmYW1pbHkiOiJ2YXNlIn0`);
   await auditVerdict(page);
-  const afterShare = await page.locator('#status').textContent();
-  if (afterShare !== beforeShare) {
-    errors.push(`[share] состояние не восстановилось: "${beforeShare}" → "${afterShare}"`);
-  }
+  const afterLink = await page.locator('#status').textContent();
+  if (afterLink !== beforeLink) errors.push(`[old-link] открылось не изделие из браузера: "${beforeLink}" → "${afterLink}"`);
 
   // пресет файлом: сохранили, сменили форму, открыли файл — состояние вернулось
   label('preset-file');
@@ -367,7 +364,7 @@ async function scenario() {
   // изделие живёт в браузере: страница, открытая заново без ссылки, — с ним же
   label('reload');
   const beforeReload = await page.locator('#status').textContent();
-  await page.goto(shared.split('#')[0]);
+  await page.goto(page.url().split('#')[0]);
   await auditVerdict(page);
   const afterReload = await page.locator('#status').textContent();
   if (afterReload !== beforeReload) errors.push(`[reload] изделие не пережило перезагрузку: "${beforeReload}" → "${afterReload}"`);

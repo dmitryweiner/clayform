@@ -60,7 +60,7 @@ serveJobs<CsgJob, JobPart[]>({
 let markStrip: MarkRaster | null = null;
 
 function run(csg: CsgApi, report: Report, job: CsgJob): JobPart[] {
-  // Граница воркера — такая же внешняя граница, как ссылка или UI.
+  // Граница воркера — такая же внешняя граница, как файл пресета или UI.
   const state = sanitizeState(job.state);
   markStrip = sanitizeMarkRaster(job.markStrip);
   if (job.kind === 'vessel-preview') {

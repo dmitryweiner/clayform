@@ -61,7 +61,6 @@ import { concaveLayout, concaveWarnings } from './geo/concave';
 import type { AppState } from './state/schema';
 import { defaultState, stateForFamily, sanitizeState, toBuildParams, effectiveSpout, lidRelief } from './state/schema';
 import { BLANK_PRESET, PRESETS, presetById, presetSignature } from './state/presets';
-import { encodeStateToken, decodeStateToken, tokenFromHash } from './state/share';
 import { encodePresetFile, decodePresetFile, presetFileName } from './state/presetFile';
 import type { ClayPreset } from './state/userPresets';
 import { savePresetAs, userPresetsRecord } from './state/userPresets';
@@ -127,7 +126,6 @@ const saveBtn = el('saveBtn', HTMLButtonElement);
 const fileOpenBtn = el('fileOpenBtn', HTMLButtonElement);
 const fileSaveBtn = el('fileSaveBtn', HTMLButtonElement);
 const fileInput = el('fileInput', HTMLInputElement);
-const shareBtn = el('shareBtn', HTMLButtonElement);
 const undoBtn = el('undoBtn', HTMLButtonElement);
 const redoBtn = el('redoBtn', HTMLButtonElement);
 const progress = createProgress(el('progressWrap', HTMLDivElement), { t });
@@ -148,14 +146,10 @@ const historyKeys = bindHistory({
 });
 
 /**
- * С чем открываемся. Ссылка со состоянием важнее всего: по ней открывают
- * чужую работу. Без неё — изделие, сохранённое в браузере (оно же
- * переживает перезагрузку на новую версию), без него — изделие по умолчанию.
+ * С чем открываемся: изделие, сохранённое в браузере (оно же переживает
+ * перезагрузку на новую версию), без него — изделие по умолчанию.
  */
 function openingProject(): StoredProject {
-  const token = tokenFromHash(location.hash);
-  const linked = token ? decodeStateToken(token) : null;
-  if (linked) return { state: linked, ref: '', name: '' };
   return loadRecord(storage, projectRecord) ?? { state: defaultState(), ref: '', name: '' };
 }
 
@@ -615,15 +609,9 @@ function renderPresets(): void {
   });
 }
 
-/**
- * Изделие — в браузер: после каждой законченной правки, отмены, смены
- * пресета или имени. Ссылка `#s=` в адресе описывала изделие на момент,
- * когда ею поделились: после правки перезагрузка должна открыть правленое,
- * поэтому ссылка из адреса уходит.
- */
+/** Изделие — в браузер: после каждой законченной правки, отмены, смены пресета или имени. */
 function keepProject(): void {
   projectWrite = saveRecord(storage, projectRecord, { state, ref: presetRef, name: givenName });
-  if (tokenFromHash(location.hash)) window.history.replaceState(null, '', location.pathname + location.search);
   showBanner();
 }
 
@@ -754,17 +742,6 @@ saveBtn.addEventListener('click', () => {
     keepProject();
     flash(saveBtn, '✓');
   }
-});
-
-shareBtn.addEventListener('click', () => {
-  const token = encodeStateToken(state);
-  location.hash = `s=${token}`;
-  // Ссылка уже в адресной строке; буфер обмена — удобство, и его отсутствие
-  // (нет разрешения, не тот протокол) не должно выглядеть как поломка.
-  void navigator.clipboard?.writeText(`${location.origin}${location.pathname}#s=${token}`).then(
-    () => flash(shareBtn, '✓'),
-    () => flash(shareBtn, '↑'),
-  );
 });
 
 function flash(button: HTMLButtonElement, mark: string): void {
