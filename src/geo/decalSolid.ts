@@ -62,7 +62,7 @@ export function decalSolids(
   for (const decal of decals) {
     const layout = decalLayout(decal, profile, heightMm);
     const solid =
-      decal.art.kind === 'text' ? textSolid(csg, scope, decal, layout) : pictureSolid(csg, scope, decal, layout, profile, heightMm, o);
+      decal.art.kind === 'text' ? textSolid(csg, scope, decal, layout, o) : pictureSolid(csg, scope, decal, layout, profile, heightMm, o);
     if (!solid) continue;
     const bent = scope.keep(
       scope.keep(solid.refineToLength(refine)).warp((vertex) => {
@@ -75,25 +75,28 @@ export function decalSolids(
     (decal.depthMm > 0 ? out.raised : out.engraved).push(bent);
   }
 
-  // глубина вдавленного уже зажата стенкой (`stateDecals`); основание выпуклого — не глубже половины стенки
-  function textSolid(api: CsgApi, keep: CsgScope, item: Decal, layout: DecalLayout): Manifold | null {
-    if (item.art.kind !== 'text') return null;
-    const { raster } = item.art;
-    const ppm = raster.pxPerMm;
-    const up = raster.height - raster.originY;
-    const rings = traceContours(raster).map((ring) => ring.map(([x, y]): [number, number] => [(x - raster.originX) / ppm, (y - up) / ppm]));
-    if (rings.length === 0) return null;
-    const letters = keep.keep(new api.CrossSection(rings, 'Positive'));
-    const inside = keep.keep(letters.intersect(rectSection(api, keep, layout.room)));
-    if (inside.isEmpty()) return null;
-    const [z0, z1] = item.depthMm > 0 ? [-embed(o.wallMm), item.depthMm] : [item.depthMm, CLEAR_MM];
-    return keep.keep(keep.keep(inside.extrude(z1 - z0)).translate([0, 0, z0]));
-  }
-
   return out;
 }
 
 const embed = (wallMm: number): number => Math.min(EMBED_MM, wallMm / 2);
+
+/**
+ * Текст призмой из контуров букв. Глубина вдавленного уже зажата стенкой
+ * (`stateDecals`); основание выпуклого — не глубже половины стенки.
+ */
+function textSolid(csg: CsgApi, scope: CsgScope, decal: Decal, layout: DecalLayout, o: DecalSolidOptions): Manifold | null {
+  if (decal.art.kind !== 'text') return null;
+  const { raster } = decal.art;
+  const ppm = raster.pxPerMm;
+  const up = raster.height - raster.originY;
+  const rings = traceContours(raster).map((ring) => ring.map(([x, y]): [number, number] => [(x - raster.originX) / ppm, (y - up) / ppm]));
+  if (rings.length === 0) return null;
+  const letters = scope.keep(new csg.CrossSection(rings, 'Positive'));
+  const inside = scope.keep(letters.intersect(rectSection(csg, scope, layout.room)));
+  if (inside.isEmpty()) return null;
+  const [z0, z1] = decal.depthMm > 0 ? [-embed(o.wallMm), decal.depthMm] : [decal.depthMm, CLEAR_MM];
+  return scope.keep(scope.keep(inside.extrude(z1 - z0)).translate([0, 0, z0]));
+}
 
 function rectSection(csg: CsgApi, scope: CsgScope, rect: Rect): CrossSection {
   return scope.keep(scope.keep(csg.CrossSection.square([rect.x1 - rect.x0, rect.y1 - rect.y0])).translate([rect.x0, rect.y0]));

@@ -7,6 +7,7 @@
 //   node scripts/smoke.mjs --shots shots      # + скриншот на каждое семейство
 //   node scripts/smoke.mjs --res 384          # экспорт на предельной сетке
 //   node scripts/smoke.mjs --slow             # главный поток ×6 на шагах полосы прогресса
+//   node scripts/smoke.mjs --trace            # каждый шаг со временем от старта: найти медленный
 //
 // Браузер открывается в ru-RU: проверки читают русский текст. Английский
 // интерфейс проверяет отдельный шаг «lang» (переключение и чистый en-US).
@@ -60,9 +61,11 @@ const app = await launch({ preview: flags.has('preview') });
 const { errors } = app;
 /** Шаг сценария: им помечены ошибки консоли, и его же называет провал. */
 let step = 'start';
+const started = Date.now();
 const label = (text) => {
   step = text;
   app.label(text);
+  if (flags.has('trace')) console.log(`${String(Date.now() - started).padStart(7)} мс  ${text}`);
 };
 // одна страница на весь сценарий; браузер в ru-RU — проверки читают русский текст
 const { page } = await app.open({ locale: 'ru-RU' });
