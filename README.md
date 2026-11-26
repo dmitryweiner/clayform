@@ -121,6 +121,13 @@ fits; it can rest on the rim or sink onto a gallery inside the mouth. It is
 exported as a separate file — or, with “Lid alongside”, in one file with the
 piece, skirt down, to print in one go.
 
+**Text and a picture on the side** — up to three lines in the mark's fonts
+and a picture from a file, raised or engraved, follow the wall: around along
+the arc, up along the silhouette. Waves and roulette fade out under them.
+The worker adds and subtracts their solids with booleans, so the letters
+have sheer edges; until that build arrives, the preview shows a coarse
+imprint.
+
 **A maker's mark** is impressed into the base: a line of text around the
 edge (four free fonts with Cyrillic — Rubik, PT Serif, Comfortaa, Oswald),
 optionally followed by the date, and an uploaded logo in the middle
@@ -217,6 +224,8 @@ src/geo/       pure geometry core, no Three.js, in millimetres
   concave      concave base: its section and the floor of even thickness over it
   bottom       the outer base on its own grid, for the mark or a concave base
   mark         maker's mark on the base: a line of text and a logo
+  decal        side text and picture: the layout on the wall, the calm field, the imprint
+  decalSolid   their solids for the worker: letter outlines, a heightfield, bent onto the wall
   handle       handle: a section swept along a Bézier arc (sweep)
   spout        spout: pulled lip and applied tube with a channel
   attach       shared by applied parts: sinking an end into the wall

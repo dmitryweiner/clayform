@@ -34,6 +34,28 @@ async function auditVerdict(page) {
   return page.locator('#audit').textContent();
 }
 
+/**
+ * Вердикт после точной сборки: она подъезжает из воркера после паузы и
+ * переписывает вердикт быстрого превью. Ждём, пока вердикт устоится на
+ * полторы секунды, — так всё равно, успела ли сборка до первого взгляда.
+ */
+async function settledVerdict(page) {
+  let last = '';
+  let since = Date.now();
+  const deadline = Date.now() + 40000;
+  while (Date.now() < deadline) {
+    const now = (await page.locator('#audit').textContent()) ?? '';
+    if (now !== last) {
+      last = now;
+      since = Date.now();
+    } else if (!now.includes('проверка') && (await page.locator('#progressWrap').isHidden()) && Date.now() - since > 1500) {
+      return now;
+    }
+    await page.waitForTimeout(150);
+  }
+  return `не устоялся: ${last}`;
+}
+
 const app = await launch({ preview: flags.has('preview') });
 const { errors } = app;
 /** Шаг сценария: им помечены ошибки консоли, и его же называет провал. */
@@ -770,6 +792,66 @@ async function scenario() {
   if (shotsDir) await page.screenshot({ path: `${shotsDir}/concave.png` });
   await expectDownloads(1, 'concave');
   await setOn('concave', false);
+  await page.waitForTimeout(150);
+
+  // Надписи на боку: текст и картинка на каждом семействе, выпуклые и
+  // вдавленные, через шов u = 0; сверяем вердикт точной сборки — той, где
+  // их тела прибавлены и вычтены булевыми операциями.
+  label('decor');
+  if (!(await page.locator('#decorCards > #card_text + #card_image + #card_mark').count()))
+    errors.push('[decor] порядок карточек «Надписей»');
+  for (let i = 0; i < families.length; i++) {
+    const name = families[i];
+    await page.locator('#familyGrid .family-btn').nth(i).click();
+    await setOn('text', true);
+    await page.fill('#text_text', 'Мама\nClay');
+    await page.press('#text_text', 'Tab');
+    for (const [id, value] of [
+      ['text_depth', '1.5'],
+      ['text_depth', '-1'],
+      ['text_angle', '90'],
+      ['text_angle', '0'],
+    ]) {
+      await page.fill(`#${id}_n`, value);
+      await page.press(`#${id}_n`, 'Enter');
+      const verdict = await settledVerdict(page);
+      if (!verdict.includes('замкнуто ✓')) errors.push(`[decor:${name}:${id}=${value}] audit="${verdict}"`);
+    }
+    await setOn('image', true);
+    if (i === 0) await page.setInputFiles('#image_file', 'tests/fixtures/ornament.png');
+    for (const [id, value] of [
+      ['image_angle', '-60'],
+      ['image_depth', '1'],
+      ['image_depth', '-1'],
+    ]) {
+      await page.fill(`#${id}_n`, value);
+      await page.press(`#${id}_n`, 'Enter');
+      const verdict = await settledVerdict(page);
+      if (!verdict.includes('замкнуто ✓')) errors.push(`[decor:${name}:${id}=${value}] audit="${verdict}"`);
+    }
+    const blockers = await messages('bad');
+    if (blockers) errors.push(`[decor:${name}] blockers="${blockers}"`);
+    if (shotsDir) await page.screenshot({ path: `${shotsDir}/decor-${name}.png` });
+  }
+  // у самого дна текст обрезается, вдавленный глубже стенки — ужимается; панель говорит об обоих
+  await page.fill('#text_height_n', '0');
+  await page.press('#text_height_n', 'Enter');
+  await page.fill('#text_depth_n', '-5');
+  await page.press('#text_depth_n', 'Enter');
+  await auditVerdict(page);
+  for (const code of ['text.clipped', 'text.tooDeep']) {
+    if (!(await page.locator(`#messages [data-code="${code}"]`).count())) errors.push(`[decor] нет предупреждения ${code}`);
+  }
+  await page.fill('#text_height_n', '0.5');
+  await page.press('#text_height_n', 'Enter');
+  await page.fill('#text_depth_n', '1');
+  await page.press('#text_depth_n', 'Enter');
+  await settledVerdict(page);
+  await expectDownloads(1, 'decor');
+  await page.click('#image_fileRemove');
+  if (await page.locator('#image_fileRemove').isVisible()) errors.push('[decor] ✕ картинки остался без неё');
+  await setOn('image', false);
+  await setOn('text', false);
   await page.waitForTimeout(150);
 
   /** Видимый текст приложения, где кириллица — непереведённое. Имена своих пресетов не в счёт. */
