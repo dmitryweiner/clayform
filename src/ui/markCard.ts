@@ -1,4 +1,4 @@
-// Карточка клейма на донышке: строка, шрифт, дата, лого.
+// Карточка клейма на донышке: строка, шрифт, дата; лого — подблоком.
 
 import type { MarkState } from '../geo/mark';
 import {
@@ -15,9 +15,8 @@ import {
   todayIso,
 } from '../geo/mark';
 import { createCard } from 'maker-kit/ui/card';
-import type { CardHandle } from 'maker-kit/ui/card';
 import { make } from 'maker-kit/ui/dom';
-import type { Change, Control, ControlsHandle } from './controls';
+import type { Change, Control } from './controls';
 import { renderControls } from './controls';
 import { t } from '../i18n';
 import { MARK_FONT_FILES } from './fonts';
@@ -103,10 +102,14 @@ const MARK_CONTROLS: Control<MarkState>[] = [
     get: (s) => s.depthMm,
     set: (s, v) => ({ ...s, depthMm: v }),
   },
+];
+
+/** Подблок «Лого»: картинка с ✕ рядом с «Файл…», инверсия, поворот, размер. */
+const LOGO_CONTROLS: Control<MarkState>[] = [
   {
     kind: 'image',
     key: 'logo',
-    label: 'mark.logo',
+    label: 'mark.logoFile',
     hint: 'mark.logo.hint',
     maxPx: LOGO_MAX_PX,
     get: (s) => s.logo?.image,
@@ -114,6 +117,7 @@ const MARK_CONTROLS: Control<MarkState>[] = [
       ...s,
       logo: { image, angleDeg: s.logo?.angleDeg ?? 0, sizeMm: s.logo?.sizeMm ?? 25 },
     }),
+    remove: { key: 'logoRemove', label: 'mark.logoRemove', apply: (s) => ({ ...s, logo: null }) },
   },
   {
     kind: 'check',
@@ -147,19 +151,10 @@ const MARK_CONTROLS: Control<MarkState>[] = [
     get: (s) => s.logo?.sizeMm ?? 25,
     set: (s, v) => (s.logo ? { ...s, logo: { ...s.logo, sizeMm: v } } : s),
   },
-  {
-    kind: 'button',
-    key: 'logoRemove',
-    label: 'mark.logoRemove',
-    button: 'mark.logoRemove.button',
-    when: hasLogo,
-    apply: (s) => ({ ...s, logo: null }),
-  },
 ];
 
 export interface MarkCardHandle {
-  card: CardHandle;
-  rows: ControlsHandle<MarkState>;
+  sync(state: MarkState): void;
 }
 
 /** Карточка клейма; `onView` — развернуть камеру на донышко. */
@@ -184,5 +179,21 @@ export function renderMarkCard(
   const host = make('div');
   card.body.append(view, host);
   const rows = renderControls(host, MARK_CONTROLS, read, write, 'mark');
-  return { card, rows };
+  // лого — подблок: складная карточка кита внутри карточки клейма, «включена», пока лого есть
+  const logoCard = createCard(card.body, {
+    id: 'markLogo',
+    title: 'mark.logo',
+    desc: 'mark.logo.hint',
+    enabled: hasLogo(read()),
+    t,
+  });
+  const logoRows = renderControls(logoCard.body, LOGO_CONTROLS, read, write, 'mark');
+  return {
+    sync(state): void {
+      card.setEnabled(state.on);
+      logoCard.setEnabled(hasLogo(state));
+      rows.sync(state);
+      logoRows.sync(state);
+    },
+  };
 }

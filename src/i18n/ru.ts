@@ -25,7 +25,8 @@ export const ru = {
   // --- разделы панели ---
   'panel.shape': 'Форма',
   'panel.relief': 'Рельеф',
-  'panel.attach': 'Ручка, носик, крышка, клеймо',
+  'panel.attach': 'Ручка, носик, крышка',
+  'panel.decor': 'Надписи',
   'panel.export': 'Экспорт STL',
   'panel.resolution': 'Детализация',
 
@@ -255,13 +256,13 @@ export const ru = {
   'mark.depth.hint': 'насколько клеймо вдавлено в дно, мм; у полого изделия — не глубже, чем позволит толщина дна',
   'mark.logo': 'Лого',
   'mark.logo.hint': 'картинка в центре дна: белое вдавливается на всю глубину, чёрное остаётся',
+  'mark.logoFile': 'Картинка',
   'mark.logoInvert': 'Инвертировать',
   'mark.logoAngle': 'Поворот лого',
   'mark.logoAngle.hint': 'по часовой, если смотреть на дно, °',
   'mark.logoSize': 'Размер лого',
   'mark.logoSize.hint': 'длинная сторона картинки на дне, мм',
   'mark.logoRemove': 'Убрать лого',
-  'mark.logoRemove.button': 'Убрать',
   'mark.view': 'Показать дно',
   'lid.title': 'Крышка',
   'lid.desc':

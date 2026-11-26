@@ -657,6 +657,8 @@ async function scenario() {
   // строка ужимается с предупреждением.
   label('mark');
   await page.locator('#familyGrid .family-btn').nth(0).click();
+  // клеймо — в группе «Надписи», лого — подблок в нём
+  if (!(await page.locator('#decorCards #card_mark #card_markLogo').count())) errors.push('[mark] нет подблока лого в «Надписях»');
   await setOn('mark', true);
   await page.fill('#mark_text', 'Мастерская');
   for (const [id, value] of [
@@ -708,6 +710,7 @@ async function scenario() {
   await page.click('#mark_logoRemove');
   await page.waitForTimeout(150);
   if (await page.locator('#mark_logoSize').isVisible()) errors.push('[mark] лого не убралось');
+  if (await page.locator('#mark_logoRemove').isVisible()) errors.push('[mark] ✕ остался без лого');
   await setOn('mark', false);
   await page.waitForTimeout(150);
 

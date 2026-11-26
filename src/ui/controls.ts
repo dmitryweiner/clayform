@@ -29,7 +29,10 @@ export type SelectOption = Option<Key>;
  */
 export type Change<T> = (next: T, final: boolean) => void;
 
-/** Картинка из файла: кнопка, скрытый <input type=file> и миниатюра. */
+/**
+ * Картинка из файла: кнопка, скрытый <input type=file> и миниатюра; с
+ * `remove` — ещё ✕ рядом с «Файл…», пока картинка есть (`#<приставка>_<key>`).
+ */
 export interface ImageControl<T> {
   kind: 'image';
   key: string;
@@ -40,6 +43,7 @@ export interface ImageControl<T> {
   maxPx?: number;
   get(state: T): RouletteImage | undefined;
   set(state: T, image: RouletteImage): T;
+  remove?: { key: string; label: Key; apply(state: T): T };
 }
 
 export type Control<T> = KitControl<T, Key> | ImageControl<T>;
@@ -103,6 +107,16 @@ function renderImageRow<T>(
   const button = make('button', 'row-btn', t('image.file'));
   button.type = 'button';
   button.addEventListener('click', () => input.click());
+  // ✕ — законченная правка, шаг отмены; подпись — во всплывающей подсказке
+  const remove = control.remove;
+  const removeBtn = remove ? make('button', 'row-btn image-remove', '✕') : null;
+  if (remove && removeBtn) {
+    removeBtn.type = 'button';
+    removeBtn.id = `${idPrefix}_${remove.key}`;
+    removeBtn.title = t(remove.label);
+    removeBtn.setAttribute('aria-label', t(remove.label));
+    removeBtn.addEventListener('click', () => change(remove.apply(read()), true));
+  }
   const thumb = make('canvas', 'ornament-thumb');
   thumb.width = 48;
   thumb.height = 48;
@@ -120,7 +134,7 @@ function renderImageRow<T>(
   });
   // одна ячейка сетки строки: кнопка, миниатюра и размер в линию
   const pick = make('div', 'image-pick');
-  pick.append(button, thumb, note, input);
+  pick.append(button, ...(removeBtn ? [removeBtn] : []), thumb, note, input);
   row.append(name, pick);
   container.append(row);
 
@@ -130,6 +144,7 @@ function renderImageRow<T>(
       drawOrnament(thumb, image);
       thumb.hidden = !image;
       note.textContent = image ? `${image.w}×${image.h}` : t('image.load');
+      if (removeBtn) removeBtn.hidden = !image;
       row.hidden = control.when ? !control.when(state) : false;
     },
   };

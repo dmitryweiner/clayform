@@ -18,6 +18,7 @@ import type { ControlsHandle } from './ui/controls';
 import { renderControls } from './ui/controls';
 import { renderReliefCards } from './ui/reliefCards';
 import { renderAttachCards } from './ui/attachCards';
+import { renderDecorCards } from './ui/decorCards';
 import type { ConcaveCardHandle } from './ui/concaveCard';
 import { renderConcaveCard } from './ui/concaveCard';
 import { renderExportPanel } from './ui/exportPanel';
@@ -112,6 +113,7 @@ const shapeParams = el('shapeParams', HTMLDivElement);
 const concaveHost = el('concaveCard', HTMLDivElement);
 const reliefCards = el('reliefCards', HTMLDivElement);
 const attachCards = el('attachCards', HTMLDivElement);
+const decorCards = el('decorCards', HTMLDivElement);
 const exportParams = el('exportParams', HTMLDivElement);
 const profileGraph = el('profileGraph', HTMLCanvasElement);
 const exportBtn = el('exportBtn', HTMLButtonElement);
@@ -160,6 +162,7 @@ let paramRows: ControlsHandle<AppState>;
 let concaveRows: ConcaveCardHandle;
 let reliefRows: ReturnType<typeof renderReliefCards>;
 let attachRows: ReturnType<typeof renderAttachCards>;
+let decorRows: ReturnType<typeof renderDecorCards>;
 let exportPanel: ReturnType<typeof renderExportPanel>;
 
 function renderPanel(): void {
@@ -190,12 +193,18 @@ function renderPanel(): void {
       handle: () => state.handle,
       spout: () => state.spout,
       lid: () => state.lid,
-      mark: () => state.mark,
     },
     {
       handle: (handle, final) => applyState({ ...state, handle }, final),
       spout: (spout, final) => applyState({ ...state, spout }, final),
       lid: (lid, final) => applyState({ ...state, lid }, final),
+    },
+  );
+
+  decorRows = renderDecorCards(
+    decorCards,
+    { mark: () => state.mark },
+    {
       mark: (mark, final) => applyState({ ...state, mark }, final),
       viewBottom: () => scene?.viewBottom(),
     },
@@ -241,7 +250,8 @@ function syncPanel(): void {
   paramRows.sync(state);
   concaveRows.sync(state.concave);
   reliefRows.sync(state.relief, state.roulette);
-  attachRows.sync(state.handle, state.spout, state.lid, state.mark);
+  attachRows.sync(state.handle, state.spout, state.lid);
+  decorRows.sync(state.mark);
   exportPanel.sync(state);
   historyKeys.refresh();
   showPresetButton();

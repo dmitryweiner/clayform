@@ -105,8 +105,15 @@
 /* кнопка, миниатюра и размер картинки — одна ячейка строки */
 .image-pick {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* ✕ рядом с «Файл…»: квадратная, как −/+ */
+.image-remove {
+  min-inline-size: var(--control-h);
+  padding-inline: 0;
 }
 
 .ornament-thumb {
