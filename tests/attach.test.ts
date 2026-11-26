@@ -214,7 +214,7 @@ describe('полая кружка с ручкой', () => {
 
   it('с вогнутым дном — тоже: замкнута, род 1, полость с помостом вычтена', () => {
     for (const kind of ['sphere', 'flat']) {
-      const params = cup({ concave: sanitizeConcave({ on: true, kind, radiusMm: 120, depthMm: 5 }) });
+      const params = cup({ concave: sanitizeConcave({ on: true, kind, radiusMm: 100, depthMm: 5 }) });
       const hollow = sanitizeHollow({ wallMm: 3, baseMm: 4 });
       const result = buildPrintableVessel(csg, params, hollow, handleOn(), defaultSpout());
       expect(validateMesh(result.mesh).watertight, kind).toBe(true);

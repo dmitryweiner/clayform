@@ -56,6 +56,19 @@ describe('карточка вогнутого дна', () => {
     for (const id of ['concave_depth', 'concave_ring', 'concave_fillet']) expect(hidden(id), id).toBe(false);
   });
 
+  it('пределы и шаги ползунков', () => {
+    const { row } = setup({ ...defaultConcave(), on: true });
+    const range = (id: string): string[] => {
+      const slider = row(id);
+      if (!(slider instanceof HTMLInputElement)) throw new Error(`#${id} is not an input`);
+      return [slider.min, slider.max, slider.step];
+    };
+    expect(range('concave_radius')).toEqual(['20', '100', '1']);
+    expect(range('concave_depth')).toEqual(['0', '10', '0.1']);
+    expect(range('concave_ring')).toEqual(['0.5', '5', '0.1']);
+    expect(range('concave_fillet')).toEqual(['0', '5', '0.1']);
+  });
+
   it('заметка — глубина, которую сказало приложение', () => {
     const { row, card } = setup({ ...defaultConcave(), on: true });
     card.setDepth(4.53);

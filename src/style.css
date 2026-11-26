@@ -82,6 +82,16 @@
   background: var(--accent-soft);
 }
 
+/* складная карточка внутри карточки — «Вогнутое дно» в «Форме»: подблок
+   без своей подложки, от строк над ним его отделяет черта */
+.card .fcard {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-1) 0 0;
+  border-block-start: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+
 #profileGraph {
   inline-size: 100%;
   block-size: 110px;

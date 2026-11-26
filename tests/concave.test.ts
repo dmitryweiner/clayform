@@ -53,9 +53,19 @@ describe('sanitizeConcave', () => {
     expect(odd.on).toBe(false);
     expect(odd.kind).toBe('sphere');
     expect(odd.radiusMm).toBe(defaultConcave().radiusMm);
-    expect(odd.depthMm).toBe(0.5);
-    expect(odd.ringMm).toBe(60);
+    expect(odd.depthMm).toBe(0);
+    expect(odd.ringMm).toBe(5);
     expect(odd.filletMm).toBe(defaultConcave().filletMm);
+  });
+
+  it('значения по умолчанию — внутри пределов ползунков', () => {
+    expect(sanitizeConcave(defaultConcave())).toEqual(defaultConcave());
+    expect(sanitizeConcave({ radiusMm: 300, depthMm: 40, ringMm: 0.1, filletMm: 10 })).toMatchObject({
+      radiusMm: 100,
+      depthMm: 10,
+      ringMm: 0.5,
+      filletMm: 5,
+    });
   });
 
   it('идемпотентен', () => {
@@ -149,6 +159,12 @@ describe('concaveLayout: утопленное плоское дно', () => {
   it('край шире дна — углубления нет, но есть предупреждение', () => {
     expect(concaveLayout(flat(5, 49, 0), 50, 150)).toBeNull();
     expect(concaveWarnings(flat(5, 49, 0), 50, 150)).toEqual([{ code: 'concave.noRoom' }]);
+  });
+
+  it('глубина 0 — дно плоское, как без вогнутости', () => {
+    expect(concaveLayout(flat(0, 3, 1.5), 50, 150)).toBeNull();
+    expect(concaveLayout(flat(0, 3, 0), 50, 150)).toBeNull();
+    expect(concaveWarnings(flat(0, 3, 1.5), 50, 150)).toEqual([]);
   });
 
   it('выключенная вогнутость — ни сечения, ни предупреждений', () => {

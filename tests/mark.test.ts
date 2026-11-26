@@ -196,23 +196,23 @@ describe('клеймо на вогнутом дне', () => {
   });
 
   it('у утопленного дна строка — у края утопленного круга, на ступеньке и поясе оттиска нет', () => {
-    const p = recessed({ kind: 'flat', depthMm: 5, ringMm: 10, filletMm: 1 });
+    const p = recessed({ kind: 'flat', depthMm: 5, ringMm: 5, filletMm: 1 });
     const grid = vesselGrid(p);
     const layout = vesselConcave(p, grid);
     const cap = vesselBottom(p, grid);
     if (!layout || !cap?.heightAt || !cap.section) throw new Error('no concave cap');
     const rho = layout.markMm;
-    expect(rho).toBeLessThan(layout.footprintMm - 10);
+    expect(rho).toBeLessThan(layout.footprintMm - 5);
     // верх букв — на отступ от края утопленного круга
     expect(cap.heightAt(...along(rho - 2.2))).toBeCloseTo(1, 6);
     expect(cap.heightAt(...along(rho - 1.8))).toBe(0);
     // за краем круга — ни на ступеньке, ни на поясе
-    for (const r of [rho + 0.5, layout.footprintMm - 5]) expect(cap.heightAt(r, 0)).toBe(0);
+    for (const r of [rho + 0.5, layout.footprintMm - 2.5]) expect(cap.heightAt(r, 0)).toBe(0);
     expect(cap.section).toEqual(layout.section);
   });
 
   it('у сферы — по всему дну, как на плоском', () => {
-    const p = recessed({ kind: 'sphere', radiusMm: 200 });
+    const p = recessed({ kind: 'sphere', radiusMm: 100 });
     const grid = vesselGrid(p);
     const layout = vesselConcave(p, grid);
     const cap = vesselBottom(p, grid);
@@ -223,8 +223,8 @@ describe('клеймо на вогнутом дне', () => {
 
   it('полое изделие с вогнутым дном и клеймом — замкнуто, оттиск не глубже, чем оставит дно', () => {
     for (const raw of [
-      { kind: 'flat', depthMm: 5, ringMm: 10, filletMm: 1 },
-      { kind: 'sphere', radiusMm: 200 },
+      { kind: 'flat', depthMm: 5, ringMm: 5, filletMm: 1 },
+      { kind: 'sphere', radiusMm: 100 },
     ]) {
       const p = { ...recessed(raw), mark: { state: mark({ depthMm: 1.5 }), strip: strip(400, 50, () => true) } };
       const plain = buildHollowVessel({ ...p, mark: undefined }, { ...defaultHollow(), baseMm: 1.2 });

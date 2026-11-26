@@ -36,14 +36,14 @@ interface Limit {
 
 /** Пределы ползунков: одни и те же для UI и для санатора. */
 export const CONCAVE_LIMITS: Record<'radiusMm' | 'depthMm' | 'ringMm' | 'filletMm', Limit> = {
-  radiusMm: { min: 20, max: 1000 },
-  depthMm: { min: 0.5, max: 40 },
-  ringMm: { min: 1, max: 60 },
-  filletMm: { min: 0, max: 10 },
+  radiusMm: { min: 20, max: 100 },
+  depthMm: { min: 0, max: 10 },
+  ringMm: { min: 0.5, max: 5 },
+  filletMm: { min: 0, max: 5 },
 };
 
 export function defaultConcave(): ConcaveState {
-  return { on: false, kind: 'sphere', radiusMm: 300, depthMm: 3, ringMm: 8, filletMm: 1.5 };
+  return { on: false, kind: 'sphere', radiusMm: 100, depthMm: 3, ringMm: 3, filletMm: 1.5 };
 }
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
@@ -123,6 +123,8 @@ function plan(state: ConcaveState | undefined, flatMm: number, heightMm: number)
     return { layout, warnings: R > state.radiusMm ? [tooDeep(depthMm)] : [] };
   }
 
+  // глубина 0 — дно плоское: тот же путь, что без вогнутости
+  if (!(state.depthMm > 0)) return { layout: null, warnings: [] };
   const rc = a - state.ringMm;
   if (rc < RECESS_MIN_MM) return { layout: null, warnings: [{ code: 'concave.noRoom' }] };
   const depthMm = Math.min(state.depthMm, limit);

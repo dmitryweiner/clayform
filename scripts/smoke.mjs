@@ -707,7 +707,7 @@ async function scenario() {
     await page.locator('#familyGrid .family-btn').nth(i).click();
     await setOn('concave', true);
     await page.selectOption('#concave_kind', 'sphere');
-    for (const value of ['20', '1000', '150']) {
+    for (const value of ['20', '100', '60']) {
       await page.fill('#concave_radius', value);
       const verdict = await auditVerdict(page);
       if (!verdict.includes('замкнуто ✓')) errors.push(`[concave:${name}:radius=${value}] audit="${verdict}"`);
@@ -717,15 +717,16 @@ async function scenario() {
     await page.selectOption('#concave_kind', 'flat');
     if (await page.locator('#concave_radius').isVisible()) errors.push(`[concave:${name}] радиус сферы виден у плоского`);
     for (const [id, value] of [
-      ['concave_depth', '40'],
-      ['concave_fillet', '10'],
-      ['concave_ring', '60'],
-      ['concave_ring', '1'],
+      ['concave_depth', '10'],
+      ['concave_fillet', '5'],
+      ['concave_ring', '5'],
+      ['concave_ring', '0.5'],
       ['concave_fillet', '0'],
-      ['concave_depth', '0.5'],
+      ['concave_depth', '0'],
+      ['concave_depth', '0.1'],
       ['concave_depth', '6'],
       ['concave_fillet', '2'],
-      ['concave_ring', '8'],
+      ['concave_ring', '3'],
     ]) {
       await page.fill(`#${id}`, value);
       const verdict = await auditVerdict(page);
@@ -734,13 +735,18 @@ async function scenario() {
     const blockers = await messages('bad');
     if (blockers) errors.push(`[concave:${name}] blockers="${blockers}"`);
   }
-  // свод нависает нарочно: о свесах у горшка не говорим; глубина больше
+  // свод нависает нарочно: о свесах у горшка не говорим; сфера глубже
   // четверти высоты — ужимается с предупреждением
   await page.locator('#familyGrid .family-btn').nth(0).click();
-  await page.fill('#concave_depth', '40');
+  await page.fill('#concave_depth', '10');
   await auditVerdict(page);
   if (await page.locator('#messages [data-code="warn.overhang"]').count()) errors.push('[concave] вогнутое дно попало в свесы');
+  await page.selectOption('#concave_kind', 'sphere');
+  await page.fill('#concave_radius', '20');
+  await auditVerdict(page);
+  if (await page.locator('#messages [data-code="warn.overhang"]').count()) errors.push('[concave] сфера попала в свесы');
   if (!(await page.locator('#messages [data-code="concave.tooDeep"]').count())) errors.push('[concave] нет предупреждения о глубине');
+  await page.selectOption('#concave_kind', 'flat');
   await page.fill('#concave_depth', '8');
   await page.click('#concave_view');
   // точная сборка подъезжает после паузы — для кадра ждём её
