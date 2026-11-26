@@ -19,6 +19,7 @@ import { sampleField } from 'maker-kit/core/raster';
 import type { ProfileDef } from './profiles';
 import { profileRadius } from './profiles';
 import type { DecodedImage } from './roulette';
+import type { Message } from './message';
 
 /** Что лежит на стенке: текст главного потока или картинка из состояния. */
 export type DecalArt = { kind: 'text'; raster: TextRaster } | { kind: 'image'; picture: DecodedImage; sizeMm: number };
@@ -289,4 +290,19 @@ export function decalField(decals: readonly Decal[], profile: ProfileDef, height
       return depth;
     },
   };
+}
+
+/**
+ * Что сказать о надписи: её обрезала стенка; её вдавили глубже, чем
+ * позволила стенка (`requestedDepthMm` — глубина из панели, у надписи —
+ * уже зажатая).
+ */
+export function decalMessages(decal: Decal, requestedDepthMm: number, profile: ProfileDef, heightMm: number): Message[] {
+  const text = decal.art.kind === 'text';
+  const out: Message[] = [];
+  if (decalLayout(decal, profile, heightMm).clipped) out.push({ code: text ? 'text.clipped' : 'image.clipped' });
+  if (requestedDepthMm < decal.depthMm - 1e-9) {
+    out.push({ code: text ? 'text.tooDeep' : 'image.tooDeep', params: { d: Math.abs(decal.depthMm).toFixed(1) } });
+  }
+  return out;
 }

@@ -10,6 +10,7 @@
 import type { AppState } from '../state/schema';
 import type { Message } from '../geo/message';
 import type { MarkRaster } from '../geo/mark';
+import type { TextRaster } from 'maker-kit/core/raster';
 
 /**
  * Задача воркеру. Обе — про булевы операции, ради которых он и заведён:
@@ -22,6 +23,8 @@ export type CsgJob = ({ kind: 'vessel-preview'; state: AppState; segments: numbe
    * воркер проверяет у растра только размеры (`sanitizeMarkRaster`).
    */
   markStrip?: MarkRaster | null;
+  /** растр текста на боку — так же, как строка клейма; воркер проверяет его `isTextRaster` */
+  sideText?: TextRaster | null;
 };
 
 /**
@@ -49,6 +52,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 export function isCsgJob(job: unknown): job is CsgJob {
   if (!isRecord(job) || !isRecord(job.state)) return false;
   if (job.markStrip !== undefined && job.markStrip !== null && !isRecord(job.markStrip)) return false;
+  if (job.sideText !== undefined && job.sideText !== null && !isRecord(job.sideText)) return false;
   if (job.kind === 'export') return true;
   return job.kind === 'vessel-preview' && typeof job.segments === 'number' && Number.isFinite(job.segments);
 }

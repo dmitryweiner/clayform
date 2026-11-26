@@ -48,6 +48,9 @@ import { buildAppliedSpout } from './geo/spout';
 import { MARK_DEPTH_MAX_MM, markWarnings } from './geo/mark';
 import type { MarkRaster } from './geo/mark';
 import { markStrip } from './ui/markRaster';
+import { sideTextRaster } from './ui/sideTextRaster';
+import type { TextRaster } from 'maker-kit/core/raster';
+import { decalMessages } from './geo/decal';
 import { buildHollowVessel } from './geo/hollow';
 import { lidFit, lidSeat, buildLidMesh, lidHeightMm, lidDomeContext } from './geo/lid';
 import { buildProfile, profileRadius } from './geo/profiles';
@@ -203,8 +206,10 @@ function renderPanel(): void {
 
   decorRows = renderDecorCards(
     decorCards,
-    { mark: () => state.mark },
+    { sideText: () => state.sideText, sideImage: () => state.sideImage, mark: () => state.mark },
     {
+      sideText: (sideText, final) => applyState({ ...state, sideText }, final),
+      sideImage: (sideImage, final) => applyState({ ...state, sideImage }, final),
       mark: (mark, final) => applyState({ ...state, mark }, final),
       viewBottom: () => scene?.viewBottom(),
     },
@@ -251,7 +256,7 @@ function syncPanel(): void {
   concaveRows.sync(state.concave);
   reliefRows.sync(state.relief, state.roulette);
   attachRows.sync(state.handle, state.spout, state.lid);
-  decorRows.sync(state.mark);
+  decorRows.sync(state.sideText, state.sideImage, state.mark);
   exportPanel.sync(state);
   historyKeys.refresh();
   showPresetButton();
@@ -287,6 +292,8 @@ let exactTimer: ReturnType<typeof setTimeout> | null = null;
 let generation = 0;
 /** Растр строки клейма последней сборки — его же получает воркер. */
 let markRaster: MarkRaster | null = null;
+/** Растр текста на боку последней сборки — его же получает воркер. */
+let sideRaster: TextRaster | null = null;
 /** Вогнутое дно последней сборки: проверка меша не считает его свесом. */
 let concave: ConcaveLayout | null = null;
 
@@ -310,7 +317,11 @@ function refresh(): void {
   // Строку клейма рисует шрифтом только главный поток; воркеру она уходит
   // готовым растром вместе с задачей.
   markRaster = markStrip(state.mark, () => refresh());
-  const buildParams = toBuildParams(state, PREVIEW_SEGMENTS, { markStrip: markRaster });
+  sideRaster = sideTextRaster(state.sideText, () => refresh());
+  // Надписи на боку здесь — грубым оттиском по сетке: их тела по паузе
+  // строит воркер, и точная сборка подменит картинку (showExactVessel).
+  const buildParams = { ...toBuildParams(state, PREVIEW_SEGMENTS, { markStrip: markRaster, sideText: sideRaster }), decalProxy: true };
+  const decals = buildParams.decals ?? [];
   // Посадку под крышку считаем от того же силуэта и той же стенки, из
   // которых строится полость: крышка обязана входить именно в неё.
   const fit = state.lid.on ? lidFit(profile, state.heightMm, state.hollow, state.lid) : null;
@@ -344,6 +355,10 @@ function refresh(): void {
   baseWarnings.push(...concaveWarnings(state.concave, flatMm, state.heightMm).map((message) => line('warn', message)));
   // клеймо на вогнутом дне — в утопленном круге
   baseWarnings.push(...markWarnings(buildParams.mark, concave?.markMm ?? flatMm).map((message) => line('warn', message)));
+  for (const decal of decals) {
+    const requested = decal.art.kind === 'text' ? state.sideText.depthMm : state.sideImage.depthMm;
+    baseWarnings.push(...decalMessages(decal, requested, profile, state.heightMm).map((message) => line('warn', message)));
+  }
   if (fit?.tooNarrow) {
     baseWarnings.push(line('warn', { code: 'warn.lidNarrow', params: { d: (fit.seatMm * 2).toFixed(0) } }));
   }
@@ -392,7 +407,7 @@ function refresh(): void {
   // подъезжает точная сборка из воркера и перепроверяет уже её — то самое,
   // что уйдёт в STL.
   auditTimer = setTimeout(() => audit([shell, ...lids]), AUDIT_DELAY_MS);
-  if (state.handle.on || hasAppliedSpout()) {
+  if (state.handle.on || hasAppliedSpout() || decals.length > 0) {
     exactTimer = setTimeout(() => void showExactVessel(stamp, lids), CSG_DELAY_MS);
   }
 }
@@ -408,7 +423,9 @@ async function showExactVessel(stamp: number, lidMeshes: SurfaceMesh[]): Promise
     // построенная здесь она уже стоит в сцене — надетой и точной.
     // Без хода работ: у превью один этап, и шкала «0 из 1» выглядела бы
     // зависшей — полоса кита бежит, пока задача идёт.
-    const done = await progress.track(csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS, markStrip: markRaster }));
+    const done = await progress.track(
+      csg.run({ kind: 'vessel-preview', state, segments: EXACT_SEGMENTS, markStrip: markRaster, sideText: sideRaster }),
+    );
     if (!done || stamp !== generation) return;
     const mesh = toMesh(done.result[0]);
     scene?.setMeshes([mesh, ...lidMeshes]);
@@ -522,7 +539,7 @@ async function runExport(): Promise<void> {
     // подвешивало вкладку на секунды, поэтому считает воркер, а полоса
     // показывает, что он не умер.
     const done = await progress.track(
-      (onProgress) => csg.run({ kind: 'export', state, markStrip: markRaster }, (p) => onProgress(stage(p))),
+      (onProgress) => csg.run({ kind: 'export', state, markStrip: markRaster, sideText: sideRaster }, (p) => onProgress(stage(p))),
       {
         label: 'progress.export',
         delayMs: 0,
