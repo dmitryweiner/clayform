@@ -1,57 +1,31 @@
 // Картинка-орнамент: файл → оттенки серого не больше 64 по длинной стороне
-// (лого клейма — до 128).
-// Живёт в главном потоке, потому что нужен DOM (декодер картинок и канвас);
-// воркеру приходят уже байты в состоянии.
+// (лого клейма — до 128, картинка на боку — до 256). Декодирует и честно
+// усредняет импорт картинки кита (`maker-kit/ui/imageImport`): мелкий штрих
+// не пропадает между выборками, а сереет. Живёт в главном потоке, потому
+// что нужен DOM (декодер картинок и канвас); воркеру приходят уже байты в
+// состоянии.
 
+import { flattenGray, importImage } from 'maker-kit/ui/imageImport';
 import type { RouletteImage, DecodedImage } from '../geo/roulette';
 import { IMAGE_MIN_PX, IMAGE_MAX_PX, decodeImage } from '../geo/roulette';
 import { encodeBase64 } from '../geo/bytes';
 
-/** До такого размера картинку сначала уменьшает браузер — дальше усредняем сами. */
-const SOURCE_MAX_PX = 512;
-
 /**
- * Файл → орнамент. Прозрачное ложится на белое (так картинку видят в любом
- * просмотрщике), яркость — по Rec. 601, уменьшение — честным усреднением по
- * ячейкам: мелкий штрих не пропадает между выборками, а сереет.
+ * Файл → орнамент. Прозрачное ложится на белое — так картинку видят в любом
+ * просмотрщике; совсем узкая картинка тянется до IMAGE_MIN_PX по короткой
+ * стороне.
  */
 export async function imageFromFile(file: File, maxPx = IMAGE_MAX_PX): Promise<RouletteImage> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, SOURCE_MAX_PX / Math.max(bitmap.width, bitmap.height));
-  const sw = Math.max(1, Math.round(bitmap.width * scale));
-  const sh = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = sw;
-  canvas.height = sh;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('canvas 2d context unavailable');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, sw, sh);
-  ctx.drawImage(bitmap, 0, 0, sw, sh);
-  bitmap.close();
-  const source = ctx.getImageData(0, 0, sw, sh).data;
-
-  const long = Math.max(sw, sh);
-  const target = Math.min(maxPx, long);
-  const fit = (side: number): number => Math.min(maxPx, Math.max(IMAGE_MIN_PX, Math.round((side / long) * target)));
-  const w = fit(sw);
-  const h = fit(sh);
-
+  const picture = await importImage(file, maxPx);
+  const gray = flattenGray(picture, 255);
+  const w = Math.max(IMAGE_MIN_PX, picture.width);
+  const h = Math.max(IMAGE_MIN_PX, picture.height);
+  if (w === picture.width && h === picture.height) return { w, h, data: encodeBase64(gray), invert: false };
+  // ближайший сосед: тянется только полоска в пару пикселей
   const bytes = new Uint8Array(w * h);
   for (let j = 0; j < h; j++) {
-    const y0 = Math.floor((j * sh) / h);
-    const y1 = Math.max(y0 + 1, Math.floor(((j + 1) * sh) / h));
     for (let i = 0; i < w; i++) {
-      const x0 = Math.floor((i * sw) / w);
-      const x1 = Math.max(x0 + 1, Math.floor(((i + 1) * sw) / w));
-      let sum = 0;
-      for (let y = y0; y < y1; y++) {
-        for (let x = x0; x < x1; x++) {
-          const k = (y * sw + x) * 4;
-          sum += 0.299 * source[k] + 0.587 * source[k + 1] + 0.114 * source[k + 2];
-        }
-      }
-      bytes[j * w + i] = Math.round(sum / ((y1 - y0) * (x1 - x0)));
+      bytes[j * w + i] = gray[Math.floor((j * picture.height) / h) * picture.width + Math.floor((i * picture.width) / w)];
     }
   }
   return { w, h, data: encodeBase64(bytes), invert: false };
